@@ -7,9 +7,8 @@ from Human import Human
 from Calendar import Calendar
 
 class Place:
-    def __init__(self, placeId: int, rank, location: dpt):
+    def __init__(self, placeId: int, location: dpt):
         self.id = placeId
-        self.rank = rank
         self.location = location
         self.fireRisk = 0
         self.insuranceStance = 0

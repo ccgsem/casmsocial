@@ -3,6 +3,8 @@ from Household import Household
 from School import School
 from Work import Work
 
+from repast4py.space import DiscretePoint as dpt
+
 def initHumans(personFile: str, placeMap: Dict, scheduleMap: Dict, thisRank: int, context, grid):
 
     with open(personFile, 'r', newline='') as f:
@@ -30,17 +32,29 @@ def initHumans(personFile: str, placeMap: Dict, scheduleMap: Dict, thisRank: int
             context.add(human)
             grid.move(human, startingLocation)
 
+def pointInBounds(point, bounds):
+    xInBounds = point.x >= bounds.xmin and point.x < (bounds.xmin + bounds.xextent)
+    yInBounds = point.y >= bounds.ymin and point.y < (bounds.ymin + bounds.yextent)
+    zInBounds = point.z >= bounds.zmin and point.z < (bounds.zmin + bounds.zextent)
 
-def initPlaces(rank: int, householdFile: str, schoolFile: str, workFile: str):
+    return xInBounds and yInBounds and zInBounds
+
+def initPlaces(rank: int, householdFile: str, schoolFile: str, workFile: str, grid):
+    placeMap = {}
+    localPlaces = []
+
     with open(placeFile, 'r', newline='') as f:
         places = DictReader(f)
         for p in places:
             placeId = p['sp_id']
-            rank = latlon to rank
-            location = latlon to location
-            place = Place(placeId, rank, location)
+            location = dpt(x=p['x'], y=p['y'], z=0)
+            place = Place(placeId, location)
 
             placeMap[placeId] = place
+
+            localBounds = grid.get_local_bounds()
+            if pointInBounds(location, localBounds):
+                localPlaces.append(place)
 
     return placeMap, localPlaces
 
