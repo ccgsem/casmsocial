@@ -13,6 +13,7 @@ class Place:
         self.fireRisk = 0
         self.insuranceStance = 0
         self.hasInsurance = False
+        self.rank = -1
 
         self.peopleAtPlace = []
 

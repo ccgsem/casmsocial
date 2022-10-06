@@ -12,7 +12,7 @@ class Calendar:
         self.isNewMonth = False
         self.isNewYear = False
 
-    def step(self):
+    def calendarStep(self):
         self.isNewDay = False
         self.isNewWeek = False
         self.isNewMonth = False

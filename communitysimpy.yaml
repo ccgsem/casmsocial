@@ -1,7 +1,14 @@
 random.seed: 42
-stop.at: 50
+stop.at: 6
 human.count: 10
-world.width: 20
-world.height: 20
+world.width: 2
+world.height: 2
+steps.per.day: 3
+activity.file: 'data/test_activities.csv'
+household.file: 'data/test_hh.csv'
+school.file: 'data/test_schools.csv'
+work.file: 'data/test_work.csv'
+contact.file: 'data/test_contact_network.csv'
+person.file: 'data/test_persons.csv'
 meet_log_file: 'output/meet_log.csv'
 agent_log_file: 'output/agent_log.csv'

@@ -13,6 +13,7 @@ from Schedule import Schedule
 from Place import Place
 from Calendar import Calendar
 
+from InitMethods import initHumans, initPlaces, initSchedules, initContacts
 
 class Model:
     """
@@ -47,19 +48,19 @@ class Model:
         self.context.add_projection(self.grid)
 
         rank = comm.Get_rank()
-        self.calendar = Calendar(params['steps.per.day'])
+        self.steps_per_day = int(params['steps.per.day'])
+        self.cal = Calendar(self.steps_per_day)
 
         scheduleMap = initSchedules(params['activity.file'])
-        # agent_id_map is a map of personID->repast4py.Agent.uid
-        self.agent_id_map = {}
-
+        
         # place_map is a dict of placeID->place object
         # local_places is a list of place objects "located" on this process
         self.place_map, self.local_places = initPlaces(
             rank,
             params['household.file'],
             params['school.file'],
-            params['work.file']
+            params['work.file'],
+            self.grid
             )
 
         # contact_map is a dict of personID->{placeID->[personID]}
@@ -68,7 +69,9 @@ class Model:
 
         self.rng = repast4py.random.default_rng
         
-        initHumans(params['person.file'], self.place_map, rank, self.context, self.grid)
+        # agent_id_map is a map of personID->repast4py.Agent.uid
+        self.agent_id_map = {}
+        self.agent_id_map = initHumans(params['person.file'], self.place_map, scheduleMap, rank, self.context, self.grid)
         
         # for i in range(params['human.count']):
         #     # get a random x,y location in the grid
@@ -101,21 +104,21 @@ class Model:
 
     def step(self):
         tick = self.runner.schedule.tick
-        self.calendar.step()
+        self.cal.calendarStep()
 
         for human in self.context.agents():
             human.move(tick, self.grid, self.place_map)
 
         self.context.synchronize(restoreHuman)
 
-        add_people_to_places()
-        make_contacts(tick)
+        self.add_people_to_places()
+        self.make_contacts(tick)
 
         for human in self.context.agents():
-            human.step(self.calendar)
+            human.step(self.cal)
 
         for place in self.local_places:
-            place.step(self.calendar)
+            place.step(self.cal)
 
         # for human in self.context.agents():
         #     human.count_colocations(self.grid)
@@ -139,10 +142,11 @@ class Model:
 
     def make_contacts(self, tick):
         for human in self.context.agents():
-            currentPlace = human.currentPlaceID
             contactsLen = len(self.contact_map[human.id])
 
-            contactIDs = self.contact_map[human.id][tick % contactsLen]
+            cycledStep = tick % self.steps_per_day
+            humansContactMap = self.contact_map[human.id]
+            contactIDs = humansContactMap[cycledStep] if cycledStep in humansContactMap else []
             contacts = []
             for contactID in contactIDs:
                 contacts.append(self.context.agent(self.agent_id_map[contactID]))
