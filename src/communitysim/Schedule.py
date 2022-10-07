@@ -11,7 +11,7 @@ from typing import Tuple
         ...
 """
 class Schedule:
-    def __init__(self, activities: [int]):
+    def __init__(self, activities):
         self.repeat = len(activities)
         self.activities = activities
 
@@ -33,4 +33,4 @@ def restoreSchedule(schedule_data: Tuple) -> Schedule:
     Returns:
         A new Schedule object.
     """
-    return Schedule(schedule_data[1])
+    return Schedule(schedule_data)

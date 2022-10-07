@@ -4,10 +4,13 @@ from repast4py.space import DiscretePoint as dpt
 
 from typing import Tuple, Dict
 
-from Schedule import Schedule
+from Schedule import Schedule, restoreSchedule
 from Calendar import Calendar
 
 from csv import DictReader
+
+from mpi4py import MPI
+rank = MPI.COMM_WORLD.Get_rank()
 
 
 class Human(core.Agent):
@@ -63,7 +66,7 @@ class Human(core.Agent):
         assert(activityType < len(self.places))
         self.currentPlaceID = self.places[activityType]
         placeLocation = place_map[self.currentPlaceID].location
-        print(f"Agent {self.id} is moving to place {self.currentPlaceID} at tick {tick}.")
+        print(f"Rank {rank}: Agent {self.id} is moving to place {self.currentPlaceID} at tick {tick}.")
 
         self.pt = grid.move(self, placeLocation)
 
@@ -80,6 +83,7 @@ class Human(core.Agent):
 
     def make_contacts(self, contacts):
         for contact in contacts:
+            print(f"Rank {rank}: Agent {self.id} is contacting Agent {contact.id}")
             self.risk += contact.risk
     
     def step(self, calendar: Calendar):

@@ -111,6 +111,8 @@ class Model:
 
         self.context.synchronize(restoreHuman)
 
+        self.get_local_ids()
+
         self.add_people_to_places()
         self.make_contacts(tick)
 
