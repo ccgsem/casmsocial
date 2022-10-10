@@ -6,8 +6,10 @@ from typing import Tuple, Dict
 
 from Schedule import Schedule, restoreSchedule
 from Calendar import Calendar
+from Parameters import Parameters
 
 from csv import DictReader
+import numpy as np
 
 from mpi4py import MPI
 rank = MPI.COMM_WORLD.Get_rank()
@@ -40,6 +42,8 @@ class Human(core.Agent):
         self.pt = starting_location
         self.currentPlaceID: str = self.places[0]
         self.risk = starting_risk
+        self.influenceSusceptibility = Parameters.influenceSusceptibility
+        self.interpersonalInfluence = Parameters.interpersonalInfluence
 
         print(f"Human {self.id} is ready!")
 
@@ -82,16 +86,20 @@ class Human(core.Agent):
         # self.meet_count += num_here
 
     def make_contacts(self, contacts):
-        for contact in contacts:
-            print(f"Rank {rank}: Agent {self.id} is contacting Agent {contact.id}")
-            self.risk += contact.risk
+        riskTimesInfluence = np.Array([c.risk * c.interpersonalInfluence for c in contacts])
+        influence = riskTimesInfluence.sum()
+
+        self.updateRiskPerception(self.influenceSusceptibility, influence)
     
     def step(self, calendar: Calendar):
-        if calendar.isNewWeek:
-            self.updateRiskPerception()
-
-    def updateRiskPerception(self):
         pass
+
+    def updateRiskPerception(self, susceptibility, influence):
+        
+        newRisk = susceptibility * influenceNum
+        newRisk += (1 - susceptibility) * self.risk
+
+        self.risk = newRisk
 
 
 human_cache = {}

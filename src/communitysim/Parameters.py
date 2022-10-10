@@ -1,0 +1,29 @@
+
+class Parameters:
+    shopPL = 0.2
+    shopPM = 0.5
+    shopPH = 0.8
+    fuelPL = 0.2
+    fuelPM = 0.5
+    fuelPH = 0.8
+    purchasePL = 0.2
+    purchasePM = 0.5
+    purchasePH = 0.8
+    cost_to_income_threshold = 0.5
+    inflation_factor = 1.19
+    provideInsPL = 0.05
+    provideInsPM = 0.5
+    provideInsPH = 0.95
+    wildfireRiskLow = 0.1
+    wildfireRiskMed = 0.3
+    wildfireRiskHigh = 0.7
+    structLossLow = 0.36
+    structLossMed = 0.55
+    structLossHigh = 0.8
+    neighborhoodInsuredBelowThrehold = 0.2 # threshold of percent of households in census block insured with given insurance provider
+    neighborhoodInsuredAboveThrehold = 0.2 # threshold of percent of households in census block insured with given insurance provider
+    influenceSusceptibility = 0.2
+    interpersonalInfluence = 1.0
+    percievedRiskL = 0.33
+    perceivedRiskM = 0.66
+    perceivedRiskH = 1.0

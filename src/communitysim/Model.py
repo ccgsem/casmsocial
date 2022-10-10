@@ -71,7 +71,7 @@ class Model:
         
         # agent_id_map is a map of personID->repast4py.Agent.uid
         self.agent_id_map = {}
-        self.agent_id_map = initHumans(params['person.file'], self.place_map, scheduleMap, rank, self.context, self.grid)
+        self.agent_id_map = initHumans(params['person.file'], self.place_map, scheduleMap, rank, self.context, self.grid, rng)
         
         # for i in range(params['human.count']):
         #     # get a random x,y location in the grid

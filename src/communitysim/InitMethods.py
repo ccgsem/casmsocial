@@ -9,7 +9,7 @@ from csv import DictReader
 
 from repast4py.space import DiscretePoint as dpt
 
-def initHumans(personFile: str, placeMap: Dict, scheduleMap: Dict, thisRank: int, context, grid):
+def initHumans(personFile: str, placeMap: Dict, scheduleMap: Dict, thisRank: int, context, grid, rng):
     agentIdMap = {}
 
     with open(personFile, 'r', newline='') as f:
@@ -31,8 +31,10 @@ def initHumans(personFile: str, placeMap: Dict, scheduleMap: Dict, thisRank: int
             ]
 
             schedule = scheduleMap[personID]
+
+            startingRisk = rng.random()
             
-            human = Human(personID, rank, schedule, places, startingLocation)
+            human = Human(personID, rank, schedule, places, startingLocation, startingRisk)
             human_cache[human.uid] = human
             agentIdMap[personID] = human.uid
             context.add(human)
@@ -54,7 +56,7 @@ def initPlacesFromFile(rank: int, placeType: str, placeFile: str, placeMap, loca
             location = dpt(x=int(p['x']), y=int(p['y']), z=0)
             place = None
             if placeType == 'household':
-                place = Household(placeId, location)
+                place = Household(p)
             elif placeType == 'work':
                 place = Work(placeId, location)
             elif placeType == 'school':

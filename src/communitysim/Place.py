@@ -11,7 +11,7 @@ class Place:
         self.id = placeId
         self.location = location
         self.fireRisk = 0
-        self.insuranceStance = 0
+        self.perceivedRisk = 0
         self.hasInsurance = False
         self.rank = -1
 
@@ -27,11 +27,14 @@ class Place:
     def peopleAtPlace(self):
         return self.peopleAtPlace
 
-    def updateInsuranceStance(self):
-        self.insuranceStance = 0
+    def shopForInsurance(self, rng):
+        pass
 
-    def isGettingInsurance(self, rng):
-        return False
+    def reduceFuel(self):
+        pass
 
-    def step(self, calendar):
+    def purchaseInsurance(self, offers):
+        pass
+
+    def step(self, calendar, rng):
         pass
