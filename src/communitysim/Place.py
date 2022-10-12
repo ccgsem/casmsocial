@@ -3,10 +3,10 @@ from repast4py.space import DiscretePoint as dpt
 
 from csv import DictReader
 
-from Human import Human
-from Calendar import Calendar
+from .Human import Human
+from .Calendar import Calendar
 
-class Place:
+class Place(object):
     def __init__(self, placeId: int, location: dpt):
         self.id = placeId
         self.location = location

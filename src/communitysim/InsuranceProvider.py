@@ -1,5 +1,5 @@
 
-class InsuranceProvider:
+class InsuranceProvider(object):
     def __init__(self):
         pass
 

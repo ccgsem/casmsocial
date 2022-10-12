@@ -4,9 +4,9 @@ from repast4py.space import DiscretePoint as dpt
 
 from typing import Tuple, Dict
 
-from Schedule import Schedule, restoreSchedule
-from Calendar import Calendar
-from Parameters import Parameters
+from .Schedule import Schedule, restoreSchedule
+from .Calendar import Calendar
+from .Parameters import Parameters
 
 from csv import DictReader
 import numpy as np
@@ -86,7 +86,7 @@ class Human(core.Agent):
         # self.meet_count += num_here
 
     def make_contacts(self, contacts):
-        riskTimesInfluence = np.Array([c.risk * c.interpersonalInfluence for c in contacts])
+        riskTimesInfluence = np.array([c.risk * c.interpersonalInfluence for c in contacts])
         influence = riskTimesInfluence.sum()
 
         self.updateRiskPerception(self.influenceSusceptibility, influence)
@@ -96,7 +96,7 @@ class Human(core.Agent):
 
     def updateRiskPerception(self, susceptibility, influence):
         
-        newRisk = susceptibility * influenceNum
+        newRisk = susceptibility * influence
         newRisk += (1 - susceptibility) * self.risk
 
         self.risk = newRisk

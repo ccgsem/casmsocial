@@ -8,14 +8,14 @@ from typing import Dict, Tuple
 from mpi4py import MPI
 from dataclasses import dataclass
 
-from Human import Human, restoreHuman
-from Schedule import Schedule
-from Place import Place
-from Calendar import Calendar
+from .Human import Human, restoreHuman
+from .Schedule import Schedule
+from .Place import Place
+from .Calendar import Calendar
 
-from InitMethods import initHumans, initPlaces, initSchedules, initContacts
+from .InitMethods import initHumans, initPlaces, initSchedules, initContacts
 
-class Model:
+class Model(object):
     """
     The Model class encapsulates the simulation, and is
     responsible for initialization (scheduling events, creating agents,
@@ -71,7 +71,7 @@ class Model:
         
         # agent_id_map is a map of personID->repast4py.Agent.uid
         self.agent_id_map = {}
-        self.agent_id_map = initHumans(params['person.file'], self.place_map, scheduleMap, rank, self.context, self.grid, rng)
+        self.agent_id_map = initHumans(params['person.file'], self.place_map, scheduleMap, rank, self.context, self.grid, self.rng)
         
         # for i in range(params['human.count']):
         #     # get a random x,y location in the grid
@@ -120,7 +120,7 @@ class Model:
             human.step(self.cal)
 
         for place in self.local_places:
-            place.step(self.cal)
+            place.step(self.cal, self.rng)
 
         # for human in self.context.agents():
         #     human.count_colocations(self.grid)

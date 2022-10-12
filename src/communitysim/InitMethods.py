@@ -1,8 +1,8 @@
-from Human import Human, human_cache
-from Household import Household
-from School import School
-from Work import Work
-from Schedule import Schedule
+from .Human import Human, human_cache
+from .Household import Household
+from .School import School
+from .Work import Work
+from .Schedule import Schedule
 
 from typing import Dict
 from csv import DictReader

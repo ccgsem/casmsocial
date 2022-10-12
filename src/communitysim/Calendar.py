@@ -1,5 +1,5 @@
 
-class Calendar:
+class Calendar(object):
     def __init__(self, steps_per_day: int):
         self.steps_per_day = steps_per_day
         self.step = 0

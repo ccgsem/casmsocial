@@ -10,7 +10,7 @@ from typing import Tuple
         - step 2 -> activities[2]
         ...
 """
-class Schedule:
+class Schedule(object):
     def __init__(self, activities):
         self.repeat = len(activities)
         self.activities = activities

@@ -1,17 +1,17 @@
-from Place import Place
-from Calendar import Calendar
-from Parameters import Parameters
+from .Place import Place
+from .Calendar import Calendar
+from .Parameters import Parameters
 
 from typing import Dict
 from repast4py.space import DiscretePoint as dpt
 
-from InsuranceProvider import shopInsuranceProviders
+from .InsuranceProvider import shopInsuranceProviders
 
 class Household(Place):
     def __init__(self, initDict: Dict):
         placeId = initDict['sp_id']
         location = dpt(x=int(initDict['x']), y=int(initDict['y']), z=0)
-        super(placeId, location)
+        super().__init__(placeId, location)
 
         self.hasInsurance = initDict['has_hazard_insurance'] == '1'
         self.isOwner = initDict['occupancy_status'] == 'owner_occupied'

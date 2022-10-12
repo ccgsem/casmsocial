@@ -1,5 +1,5 @@
 
-class Parameters:
+class Parameters(object):
     shopPL = 0.2
     shopPM = 0.5
     shopPH = 0.8
