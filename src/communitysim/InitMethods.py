@@ -1,4 +1,4 @@
-from .Person import Person, human_cache
+from .Person import Person, person_cache
 from .Household import Household
 from .School import School
 from .Work import Work
@@ -34,11 +34,11 @@ def initPersons(personFile: str, placeMap: Dict, scheduleMap: Dict, thisRank: in
 
             startingRisk = rng.random()
             
-            human = Person(personID, rank, schedule, places, startingLocation, startingRisk)
-            human_cache[human.uid] = human
-            agentIdMap[personID] = human.uid
-            context.add(human)
-            grid.move(human, startingLocation)
+            person = Person(personID, rank, schedule, places, startingLocation, startingRisk)
+            person_cache[person.uid] = person
+            agentIdMap[personID] = person.uid
+            context.add(person)
+            grid.move(person, startingLocation)
     return agentIdMap
 
 def pointInBounds(point, bounds):

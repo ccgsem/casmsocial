@@ -73,14 +73,14 @@ class Model(object):
         self.agent_id_map = {}
         self.agent_id_map = initPersons(params['person.file'], self.place_map, scheduleMap, rank, self.context, self.grid, self.rng)
         
-        # for i in range(params['human.count']):
+        # for i in range(params['person.count']):
         #     # get a random x,y location in the grid
         #     pt = self.grid.get_random_local_pt(rng)
         #     # create and add the walker to the context
-        #     humanSchedule = Schedule(1, [0])
-        #     human = Person(i, rank, humanSchedule, [0], pt)
-        #     self.context.add(human)
-        #     self.grid.move(human, pt)
+        #     personSchedule = Schedule(1, [0])
+        #     person = Person(i, rank, personSchedule, [0], pt)
+        #     self.context.add(person)
+        #     self.grid.move(person, pt)
 
         # pt = self.grid.get_random_local_pt(rng)
         # place = Place(rank, pt)
@@ -96,8 +96,8 @@ class Model(object):
         # self.data_set = logging.ReducingDataSet(loggers, MPI.COMM_WORLD, params['meet_log_file'])
 
         # count the initial colocations at time 0 and log
-        # for human in self.context.agents():
-        #     human.count_colocations(self.grid, self.meet_log)
+        # for person in self.context.agents():
+        #     person.count_colocations(self.grid, self.meet_log)
         # self.data_set.log(0)
         # self.meet_log.max_meets = self.meet_log.min_meets = self.meet_log.total_meets = 0
         self.log_agents()
@@ -106,8 +106,8 @@ class Model(object):
         tick = self.runner.schedule.tick
         self.cal.calendarStep()
 
-        for human in self.context.agents():
-            human.move(tick, self.grid, self.place_map)
+        for person in self.context.agents():
+            person.move(tick, self.grid, self.place_map)
 
         self.context.synchronize(restorePerson)
 
@@ -116,14 +116,14 @@ class Model(object):
         self.add_people_to_places()
         self.make_contacts(tick)
 
-        for human in self.context.agents():
-            human.step(self.cal)
+        for person in self.context.agents():
+            person.step(self.cal)
 
         for place in self.local_places:
             place.step(self.cal, self.rng)
 
-        # for human in self.context.agents():
-        #     human.count_colocations(self.grid)
+        # for person in self.context.agents():
+        #     person.count_colocations(self.grid)
 
         # self.data_set.log(tick)
         # clear the meet log counts for the next tick
@@ -134,30 +134,30 @@ class Model(object):
             place.reset()
 
     def get_local_ids(self):
-        for human in self.context.agents():
-            if human.id not in self.agent_id_map:
-                self.agent_id_map[human.id] = human.uid
+        for person in self.context.agents():
+            if person.id not in self.agent_id_map:
+                self.agent_id_map[person.id] = person.uid
 
     def add_people_to_places(self):
-        for human in self.context.agents():
-            self.place_map[human.currentPlaceID].addPerson(human)
+        for person in self.context.agents():
+            self.place_map[person.currentPlaceID].addPerson(person)
 
     def make_contacts(self, tick):
-        for human in self.context.agents():
-            contactsLen = len(self.contact_map[human.id])
+        for person in self.context.agents():
+            contactsLen = len(self.contact_map[person.id])
 
             cycledStep = tick % self.steps_per_day
-            humansContactMap = self.contact_map[human.id]
-            contactIDs = humansContactMap[cycledStep] if cycledStep in humansContactMap else []
+            personsContactMap = self.contact_map[person.id]
+            contactIDs = personsContactMap[cycledStep] if cycledStep in personsContactMap else []
             contacts = []
             for contactID in contactIDs:
                 contacts.append(self.context.agent(self.agent_id_map[contactID]))
-            human.make_contacts(contacts)
+            person.make_contacts(contacts)
 
     def log_agents(self):
         tick = self.runner.schedule.tick
-        for human in self.context.agents():
-            self.agent_logger.log_row(tick, human.id, human.uid_rank)#, human.meet_count)
+        for person in self.context.agents():
+            self.agent_logger.log_row(tick, person.id, person.uid_rank)#, person.meet_count)
 
         self.agent_logger.write()
 

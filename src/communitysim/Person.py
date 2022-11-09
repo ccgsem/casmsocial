@@ -22,7 +22,7 @@ class Person(core.Agent):
         """Constructor for the Person class.
         
         Arguments:
-            local_id: The ID for this human on this process, combines with the rank
+            local_id: The ID for this person on this process, combines with the rank
                 to form a simulation-wide unique ID.
             rank: The rank of this process.
             schedule: A Schedule class object that will provide a place type int 
@@ -102,32 +102,32 @@ class Person(core.Agent):
         self.risk = newRisk
 
 
-human_cache = {}
+person_cache = {}
 
-def restorePerson(human_data: Tuple):
-    """Creates or updates a local human from human_data.
+def restorePerson(person_data: Tuple):
+    """Creates or updates a local person from person_data.
 
     Args:
-        human_data: tuple containing the data returned by Person.save(). 
+        person_data: tuple containing the data returned by Person.save(). 
     """ 
-    uid = human_data[0]
-    pt_array = human_data[3]
+    uid = person_data[0]
+    pt_array = person_data[3]
     pt = dpt(pt_array[0], pt_array[1], 0)
-    currentPlaceID = human_data[4]
-    risk = human_data[5]
+    currentPlaceID = person_data[4]
+    risk = person_data[5]
 
-    if uid in human_cache:
-        human = human_cache[uid]
+    if uid in person_cache:
+        person = person_cache[uid]
     else:
-        schedule = restoreSchedule(human_data[1])
-        human = Person(uid[0], uid[2], schedule, human_data[2], pt)
-        human_cache[uid] = human
+        schedule = restoreSchedule(person_data[1])
+        person = Person(uid[0], uid[2], schedule, person_data[2], pt)
+        person_cache[uid] = person
 
     # Update fields that might be old from the cache
-    human.pt = pt 
-    human.currentPlaceID = currentPlaceID
-    human.risk = risk
+    person.pt = pt 
+    person.currentPlaceID = currentPlaceID
+    person.risk = risk
 
-    return human
+    return person
 
 
