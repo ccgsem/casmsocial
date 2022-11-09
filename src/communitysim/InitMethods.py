@@ -1,4 +1,4 @@
-from .Person import Human, human_cache
+from .Person import Person, human_cache
 from .Household import Household
 from .School import School
 from .Work import Work
@@ -9,7 +9,7 @@ from csv import DictReader
 
 from repast4py.space import DiscretePoint as dpt
 
-def initHumans(personFile: str, placeMap: Dict, scheduleMap: Dict, thisRank: int, context, grid, rng):
+def initPersons(personFile: str, placeMap: Dict, scheduleMap: Dict, thisRank: int, context, grid, rng):
     agentIdMap = {}
 
     with open(personFile, 'r', newline='') as f:
@@ -34,7 +34,7 @@ def initHumans(personFile: str, placeMap: Dict, scheduleMap: Dict, thisRank: int
 
             startingRisk = rng.random()
             
-            human = Human(personID, rank, schedule, places, startingLocation, startingRisk)
+            human = Person(personID, rank, schedule, places, startingLocation, startingRisk)
             human_cache[human.uid] = human
             agentIdMap[personID] = human.uid
             context.add(human)

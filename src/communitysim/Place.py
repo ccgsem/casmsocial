@@ -3,7 +3,7 @@ from repast4py.space import DiscretePoint as dpt
 
 from csv import DictReader
 
-from .Person import Human
+from .Person import Person
 from .Calendar import Calendar
 
 class Place(object):
@@ -20,7 +20,7 @@ class Place(object):
     def reset(self):
         self.peopleAtPlace.clear()
 
-    def addPerson(self, person: Human):
+    def addPerson(self, person: Person):
         if person is not None:
             self.peopleAtPlace.append(person)
 

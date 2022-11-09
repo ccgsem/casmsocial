@@ -1,4 +1,4 @@
-""" Human Agent Base Class """
+""" Person Agent Base Class """
 from repast4py import core
 from repast4py.space import DiscretePoint as dpt
 
@@ -15,11 +15,11 @@ from mpi4py import MPI
 rank = MPI.COMM_WORLD.Get_rank()
 
 
-class Human(core.Agent):
+class Person(core.Agent):
     TYPE = 0
 
     def __init__(self, local_id: int, rank: int, schedule: Schedule, places: [int], starting_location: dpt, starting_risk: int=0):
-        """Constructor for the Human class.
+        """Constructor for the Person class.
         
         Arguments:
             local_id: The ID for this human on this process, combines with the rank
@@ -30,13 +30,13 @@ class Human(core.Agent):
                 implementation-agnostic so "0" could mean "home" in one simulation 
                 or "grocery store" in another.
             places: A list of place_id's that correspond to values coming out of 
-                the schedule. e.g. if the schedule returns "0", this Human will 
+                the schedule. e.g. if the schedule returns "0", this Person will 
                 try to go to the place with the ID of places[0]
-            starting_location: A DiscretePoint for this Human's starting location 
+            starting_location: A DiscretePoint for this Person's starting location 
                 on a grid projection. Set to null and override the move() function 
                 if not using a grid projection.
         """
-        super().__init__(id=local_id, type=Human.TYPE, rank=rank)
+        super().__init__(id=local_id, type=Person.TYPE, rank=rank)
         self.schedule = schedule
         self.places = places
         self.pt = starting_location
@@ -45,13 +45,13 @@ class Human(core.Agent):
         self.influenceSusceptibility = Parameters.influenceSusceptibility
         self.interpersonalInfluence = Parameters.interpersonalInfluence
 
-        print(f"Human {self.id} is ready!")
+        print(f"Person {self.id} is ready!")
 
     def save(self) -> Tuple:
-        """Saves the state of this Human as a Tuple.
+        """Saves the state of this Person as a Tuple.
 
         Returns:
-            The saved state of this Human. 
+            The saved state of this Person. 
         """ 
         return (
             self.uid,
@@ -104,11 +104,11 @@ class Human(core.Agent):
 
 human_cache = {}
 
-def restoreHuman(human_data: Tuple):
+def restorePerson(human_data: Tuple):
     """Creates or updates a local human from human_data.
 
     Args:
-        human_data: tuple containing the data returned by Human.save(). 
+        human_data: tuple containing the data returned by Person.save(). 
     """ 
     uid = human_data[0]
     pt_array = human_data[3]
@@ -120,7 +120,7 @@ def restoreHuman(human_data: Tuple):
         human = human_cache[uid]
     else:
         schedule = restoreSchedule(human_data[1])
-        human = Human(uid[0], uid[2], schedule, human_data[2], pt)
+        human = Person(uid[0], uid[2], schedule, human_data[2], pt)
         human_cache[uid] = human
 
     # Update fields that might be old from the cache

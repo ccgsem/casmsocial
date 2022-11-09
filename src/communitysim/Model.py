@@ -8,12 +8,12 @@ from typing import Dict, Tuple
 from mpi4py import MPI
 from dataclasses import dataclass
 
-from .Person import Human, restoreHuman
+from .Person import Person, restorePerson
 from .Schedule import Schedule
 from .Place import Place
 from .Calendar import Calendar
 
-from .InitMethods import initHumans, initPlaces, initSchedules, initContacts
+from .InitMethods import initPersons, initPlaces, initSchedules, initContacts
 
 class Model(object):
     """
@@ -71,14 +71,14 @@ class Model(object):
         
         # agent_id_map is a map of personID->repast4py.Agent.uid
         self.agent_id_map = {}
-        self.agent_id_map = initHumans(params['person.file'], self.place_map, scheduleMap, rank, self.context, self.grid, self.rng)
+        self.agent_id_map = initPersons(params['person.file'], self.place_map, scheduleMap, rank, self.context, self.grid, self.rng)
         
         # for i in range(params['human.count']):
         #     # get a random x,y location in the grid
         #     pt = self.grid.get_random_local_pt(rng)
         #     # create and add the walker to the context
         #     humanSchedule = Schedule(1, [0])
-        #     human = Human(i, rank, humanSchedule, [0], pt)
+        #     human = Person(i, rank, humanSchedule, [0], pt)
         #     self.context.add(human)
         #     self.grid.move(human, pt)
 
@@ -109,7 +109,7 @@ class Model(object):
         for human in self.context.agents():
             human.move(tick, self.grid, self.place_map)
 
-        self.context.synchronize(restoreHuman)
+        self.context.synchronize(restorePerson)
 
         self.get_local_ids()
 
