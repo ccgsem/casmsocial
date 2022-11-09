@@ -8,7 +8,7 @@ from typing import Dict, Tuple
 from mpi4py import MPI
 from dataclasses import dataclass
 
-from .Human import Human, restoreHuman
+from .Person import Human, restoreHuman
 from .Schedule import Schedule
 from .Place import Place
 from .Calendar import Calendar

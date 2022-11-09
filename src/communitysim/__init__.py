@@ -7,7 +7,7 @@ __version__ = '0.3.0'
 from .Calendar import Calendar
 #from .GeoUtility import GeoUtility
 from .Household import Household
-from .Human import Human
+from .Person import Human
 #from .InitMethods import InitMethods
 from .Model import Model
 from .Parameters import Parameters

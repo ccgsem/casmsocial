@@ -1,4 +1,4 @@
-from .Human import Human, human_cache
+from .Person import Human, human_cache
 from .Household import Household
 from .School import School
 from .Work import Work
