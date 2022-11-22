@@ -24,6 +24,14 @@ class Household(Place):
         self.belowPoverty = initDict['below_poverty'] == 'TRUE'
         self.reasonNoInsurance = 'denied' ## Need to replace with reason household may not have insurance (denied,unaffordable,did_not_shop)
         self.structureLossProbability = 0.89 ## Need to replace with properties structure loss probability from properties file
+        self.income = initDict['hh_income']
+        if self.hasMortgage:
+            costs = initDict['owner_costs_with_mortgage']
+        else if self.isOwner:
+            costs = initDict['owner_costs_without_mortgage']
+        else:
+            costs = initDict['renter_costs']
+        self.hhCosts = converHHCosts(self,costs)
         ####
 
 
@@ -34,6 +42,16 @@ class Household(Place):
         if calendar.isNewMonth:
             self.shopForInsurance(rng)
             self.reduceFuel()
+    
+    def convertHHCosts(self,costs):
+        cost = costs.split('_')
+        if cost != 'not':
+            cost_low = cost[1]
+            cost_high = cost[2]
+            cost = (cost_low + cost_high) / 2
+        else:
+            cost = 0
+        return cost
 
     def shopForInsurance(self, rng):
         if self.hasInsurance:
@@ -174,4 +192,46 @@ class Household(Place):
     ####
 
     def purchaseInsurance(self, offers):
+        ## Did at least one insurance agent provide an offer?
+        # if len offers > 0:
+            ## Loop through each premium offer, and see which ones are affordable
+            # currentRiskTolerance = 3
+            # bestOffer = []
+            # canAfford = False
+            # bestCostToIncomeRatio = 99999
+            # for o in offers:
+                # isAffordable, costToIncomeRatio = canAffordInsurance(self,o.premium)
+                ## If multiple offers are affordable, select the offer coming from the provider with the lowest risk tolerance 
+                ## If none of the offers are affordable, select the one that is closest to being affordable
+                # if costToIncomeRatio < bestCostToIncomeRatio:
+                    # if o.riskTolerance == 'high':
+                        # riskTolerance = 2;
+                    # else if o.riskTolerance = 'med':
+                        # riskTolerance = 1
+                    # else:
+                        # riskTolerance = 0
+
+                    # if riskTolerance < currentRiskTolrance:
+                        # currentRiskTolerance = riskTolerance
+                        # bestOffer = o
+                        # canAfford = isAffordable
+            # pPurchase = rng.random()   
+            # if canAfford:
+                ## If an affordable insurance is found and has been selected, the probablity of purchasing the insurance is high 
+                # if pReduce < Parameters.puchasePH:
+                    # purchase insurance
+            # else
+                ## If none of the insurance premiums are affordable, the probability of purchasing insurance is low
+                # if pReduce < Parameters.puchasePL:
+                    # purchase insurance
+
         pass
+    
+    def canAffordInsurance(self,premium):
+        costs_to_income_ratio = (self.hhCosts + premium) / ((self.income * Parameters.inflation_factor)/12)
+        can_afford = False
+        if costs_to_income_ratio <= Parameters.cost_to_income_threshold:
+            can_afford = True
+        return can_afford, costs_to_income_ratio
+
+
