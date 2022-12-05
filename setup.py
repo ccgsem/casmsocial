@@ -15,7 +15,8 @@ requirements = [
     'numpy>=1.19',
     'pandas>=1.2',
     'repast4py>=1.0.b1',
-    'GDAL>=3.5'
+    'GDAL>=3.5',
+    'pyarrow>=10.0'
 ]
 
 test_requirements = ['pytest>=3', ]
