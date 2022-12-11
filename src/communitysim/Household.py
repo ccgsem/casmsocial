@@ -46,8 +46,8 @@ class Household(Place):
     def convertHHCosts(self,costs):
         cost = costs.split('_')
         if cost != 'not':
-            cost_low = cost[0]
-            cost_high = cost[1]
+            cost_low = float(cost[0])
+            cost_high = float(cost[1])
             cost = (cost_low + cost_high) / 2
         else:
             cost = 0
