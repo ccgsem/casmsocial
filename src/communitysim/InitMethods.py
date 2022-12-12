@@ -1,4 +1,5 @@
 from .Person import Person, person_cache
+from .Place import Place
 from .Household import Household
 from .School import School
 from .Work import Work
@@ -6,6 +7,8 @@ from .Schedule import Schedule
 
 from typing import Dict
 from csv import DictReader
+import pathlib
+import pyarrow.parquet as pq
 
 from repast4py.space import DiscretePoint as dpt
 
@@ -84,15 +87,22 @@ def initPlaces(rank: int, householdFile: str, schoolFile: str, workFile: str, gr
 
     return placeMap, localPlaces
 
-def initSchedules(scheduleFile: str):
+def initSchedules(scheduleFile: pathlib.Path):
     # scheduleMap looks like:
     # personID -> Schedule object
     scheduleMap = {}
-    with open(scheduleFile, 'r', newline='') as f:
-        activities = DictReader(f)
-        for a in activities:
-            scheduleMap[int(a['sp_persons_id'])] = Schedule(
-                [int(activity) for activity in a['activity_ids'].split(':')]
+
+    # This should be the most eficient way to extract the data via pyarrow
+    # See 
+    table = pq.read_table(scheduleFile)
+
+    for batch in table.to_batches():
+        # for row in zip(*batch.columns):
+        #     print(row)
+        d = batch.to_pydict()
+        for sp_persons_id, activity_ids in zip(d['sp_persons_id'], d['activity_ids']):
+            scheduleMap[sp_persons_id] = Schedule(
+                [int(activity) for activity in activity_ids.split(':')]
             )
 
     return scheduleMap

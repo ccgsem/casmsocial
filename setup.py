@@ -18,6 +18,7 @@ requirements = [
     'scipy>=1.9'
     'GDAL>=3.5',
     'pyarrow>=10.0'
+    'python-dotenv>=0.21'
 ]
 
 test_requirements = ['pytest>=3', ]

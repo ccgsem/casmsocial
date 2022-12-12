@@ -7,6 +7,9 @@ import numpy as np
 from typing import Dict, Tuple
 from mpi4py import MPI
 from dataclasses import dataclass
+from dotenv import find_dotenv, load_dotenv
+import os
+import pathlib
 
 from .Person import Person, restorePerson
 from .Schedule import Schedule
@@ -47,11 +50,25 @@ class Model(object):
                                      occupancy=space.OccupancyType.Multiple, buffer_size=2, comm=comm)
         self.context.add_projection(self.grid)
 
+        # the data input path should be defined by $COMMUNITYSIM_DATA_PATH
+        # load $OMMUNITYSIM_DATA_PATH from .env
+        load_dotenv(find_dotenv())
+        data_input_path = os.environ.get("COMMUNITYSIM_DATA_PATH")
+
+        if not data_input_path:
+            data_input_path = pathlib.Path.cwd()
+        else:
+            data_input_path = pathlib.Path(data_input_path)
+
         rank = comm.Get_rank()
         self.steps_per_day = int(params['steps.per.day'])
         self.cal = Calendar(self.steps_per_day)
 
-        scheduleMap = initSchedules(params['activity.file'])
+        activity_file = data_input_path / params['activity.file']
+
+        scheduleMap = initSchedules(activity_file)
+
+        return None
         
         # place_map is a dict of placeID->place object
         # local_places is a list of place objects "located" on this process
@@ -166,4 +183,5 @@ class Model(object):
         self.agent_logger.close()
 
     def start(self):
-        self.runner.execute()
+        #self.runner.execute()
+        pass

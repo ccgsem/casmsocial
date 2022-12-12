@@ -41,13 +41,13 @@ class Household(Place):
             self.perceivedRisk = self.peopleAtPlace[0].risk
         if calendar.isNewMonth:
             self.shopForInsurance(rng)
-            self.reduceFuel()
+            self.reduceFuel(rng)
     
     def convertHHCosts(self,costs):
-        cost = costs.split('_')
+        cost = [float(x) for x in costs.split('_')]
         if cost != 'not':
-            cost_low = float(cost[0])
-            cost_high = float(cost[1])
+            cost_low = cost[0]
+            cost_high = cost[1]
             cost = (cost_low + cost_high) / 2
         else:
             cost = 0
@@ -80,7 +80,7 @@ class Household(Place):
         if self.fuelReductionLevel == "full":
             return
 
-        pReduce = rng.random()
+        pReduce = self.rng.random()
         match self.reasonNoInsurance:
             case 'denied':
                 if self.hasInsurance:
