@@ -87,25 +87,25 @@ class Household(Place):
                     return
                 if self.belowPoverty:
                     if pReduce < Parameters.fuelPL:
-                        reduceFuelAtProperty(self)
+                        self.reduceFuelAtProperty()
                 else:
                     if self.hasMortgage:
                         if pReduce < Parameters.fuelPH:
-                            reduceFuelAtProperty(self)
+                            self.reduceFuelAtProperty()
                     else:
                         if self.perceivedRisk < Parameters.percievedRiskL:
                             if pReduce < Parameters.fuelPM:
-                                reduceFuelAtProperty(self)
+                                self.reduceFuelAtProperty()
                         elif self.perceivedRisk < Parameters.perceivedRiskM:
                             if self.fuelReductionLevel == 'heavy':
                                 if pReduce < Parameters.fuelPM:
-                                   reduceFuelAtProperty(self)
+                                   self.reduceFuelAtProperty()
                             else:
                                 if pReduce < Parameters.fuelPH:
-                                    reduceFuelAtProperty(self)
+                                    self.reduceFuelAtProperty()
                         elif self.perceivedRisk < Parameters.perceivedRiskH:
                             if pReduce < Parameters.fuelPH:
-                                reduceFuelAtProperty(self)
+                                self.reduceFuelAtProperty()
             case 'did_not_shop':
                 if self.hasInsurance:
                     return
@@ -115,58 +115,58 @@ class Household(Place):
                     return
                 if self.perceivedRisk < Parameters.percievedRiskL:
                     if pReduce < Parameters.fuelPL:
-                        reduceFuelAtProperty(self)
+                        self.reduceFuelAtProperty()
                 elif self.perceivedRisk < Parameters.percievedRiskM:
                     if self.fuelReductionLevel == 'heavy':
                         if pReduce < Parameters.fuelPL:
-                            reduceFuelAtProperty(self)
+                            self.reduceFuelAtProperty()
                     else:
                         if pReduce < Parameters.fuelPM:
-                            reduceFuelAtProperty(self)
+                            self.reduceFuelAtProperty()
                 elif self.perceivedRisk < Parameters.percievedRiskH:
                     if self.fuelReductionLevel == 'heavy':
                         if pReduce < Parameters.fuelPM:
-                            reduceFuelAtProperty(self)
+                            self.reduceFuelAtProperty()
                     else:
                         if pReduce < Parameters.fuelPH:
-                            reduceFuelAtProperty(self)
+                            self.reduceFuelAtProperty()
             case 'unaffordable':
                 if self.belowPoverty:
                     if pReduce < Parameters.fuelPL:
-                        reduceFuelAtProperty(self)
+                        self.reduceFuelAtProperty()
                 else:
                     if self.hasMortgage:
                         if pReduce < Parameters.fuelPH:
-                            reduceFuelAtProperty(self)
+                            self.reduceFuelAtProperty()
                     else:
                         if self.perceivedRisk < Parameters.percievedRiskL:
                             if pReduce < Parameters.fuelPL:
-                                reduceFuelAtProperty(self)
+                                self.reduceFuelAtProperty()
                         elif self.perceivedRisk < Parameters.percievedRiskM:
                             if self.fuelReductionLevel == 'heavy':
                                 if pReduce < Parameters.fuelPM:
-                                    reduceFuelAtProperty(self)
+                                    self.reduceFuelAtProperty()
                             else:
                                 if pReduce < Parameters.fuelPH:
-                                    reduceFuelAtProperty(self)
+                                    self.reduceFuelAtProperty()
                         elif self.perceivedRisk < Parameters.percievedRiskH:
                             if pReduce < Parameters.fuelPH:
-                                reduceFuelAtProperty(self)
+                                self.reduceFuelAtProperty()
             case 'na': # household has insurance
                 if self.belowPoverty:
                     return
                 if self.perceivedRisk < Parameters.percievedRiskL:
-                    reduceFuelAtProperty(self)
+                    self.reduceFuelAtProperty()
                 elif self.perceivedRisk < Parameters.perceivedRiskM:
                     if self.fuelReductionLevel == 'heavy':
                         if pReduce < Parameters.fuelPL:
-                            reduceFuelAtProperty(self)
+                            self.reduceFuelAtProperty()
                     else:
                         if pReduce < Parameters.fuelPM:
-                            reduceFuelAtProperty(self)
+                            self.reduceFuelAtProperty()
                 elif self.perceivedRisk < Parameters.percievedRiskH:
                     if pReduce < Parameters.fuelPH:
-                        reduceFuelAtProperty(self)
+                        self.reduceFuelAtProperty()
         ####
         
     #### Bianica Additions
