@@ -68,17 +68,17 @@ class Model(object):
 
         scheduleMap = initSchedules(activity_file)
 
-        return None
-        
         # place_map is a dict of placeID->place object
         # local_places is a list of place objects "located" on this process
         self.place_map, self.local_places = initPlaces(
             rank,
-            params['household.file'],
-            params['school.file'],
-            params['work.file'],
+            data_input_path / params['household.file'],
+            data_input_path / params['school.file'],
+            data_input_path / params['work.file'],
             self.grid
             )
+
+        return None        
 
         # contact_map is a dict of personID->{placeID->[personID]}
         # i.e. it is a map of personIDs to a list of contacted persons at each place

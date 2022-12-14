@@ -52,21 +52,32 @@ def pointInBounds(point, bounds):
     return xInBounds and yInBounds and zInBounds
 
 def initPlacesFromFile(rank: int, placeType: str, placeFile: str, placeMap, localPlaces, grid):
-    with open(placeFile, 'r', newline='') as f:
-        places = DictReader(f)
-        for p in places:
+    table = pq.read_table(placeFile)
+
+    columns = table.column_names
+    # with open(placeFile, 'r', newline='') as f:
+    #     places = DictReader(f)
+    #     for p in places:
+    for batch in table.to_batches():
+        for row in zip(*batch.columns):
+            row = [x.as_py() for x in row]  # convert arrow scalars to python
+            p = dict(zip(table.column_names, row))
+            print(p)
+            break
+            
             placeId = p['sp_id']
             location = dpt(x=int(p['x']), y=int(p['y']), z=0)
             place = None
-            if placeType == 'household':
-                place = Household(p)
-            elif placeType == 'work':
-                place = Work(placeId, location)
-            elif placeType == 'school':
-                place = School(placeId, location)
-            else:
-                print(f'Error: Bad placetype during place initialization: {placeType}')
-                place = Place(placeId, location)
+            match placeType:
+                case 'household':
+                    place = Household(p)
+                case 'work':
+                    place = Work(placeId, location)
+                case  'school':
+                    place = School(placeId, location)
+                case _:
+                    print(f'Error: Bad placetype during place initialization: {placeType}')
+                    place = Place(placeId, location)
 
             placeMap[placeId] = place
 
@@ -93,7 +104,7 @@ def initSchedules(scheduleFile: pathlib.Path):
     scheduleMap = {}
 
     # This should be the most eficient way to extract the data via pyarrow
-    # See 
+    # See https://stackoverflow.com/questions/53157495/fastest-way-to-iterate-pyarrow-table/55633193#55633193
     table = pq.read_table(scheduleFile)
 
     for batch in table.to_batches():
