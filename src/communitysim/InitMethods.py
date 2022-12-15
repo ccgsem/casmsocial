@@ -62,11 +62,16 @@ def initPlacesFromFile(rank: int, placeType: str, placeFile: str, placeMap, loca
         for row in zip(*batch.columns):
             row = [x.as_py() for x in row]  # convert arrow scalars to python
             p = dict(zip(table.column_names, row))
-            print(p)
-            break
             
             placeId = p['sp_id']
+
+            # `location` is currently referenced required but not used
+            if 'x' not in p:
+                p['x'] = 0
+            if 'y' not in p:
+                p['y'] = 0
             location = dpt(x=int(p['x']), y=int(p['y']), z=0)
+
             place = None
             match placeType:
                 case 'household':

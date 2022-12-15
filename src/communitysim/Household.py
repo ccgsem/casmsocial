@@ -44,13 +44,17 @@ class Household(Place):
             self.reduceFuel(rng)
     
     def convertHHCosts(self,costs):
-        cost = [float(x) for x in costs.split('_')]
-        if cost != 'not':
-            cost_low = cost[0]
-            cost_high = cost[1]
+        if  costs != 'none': # in which case `cost[0] != 'none'`
+            cost = costs.split('_')
+            cost_high = float(cost[1])  # assume cost[1] is always a number
+            try:
+                cost_low = float(cost[0]) # cost[0] may equal 'over' instead of a number
+            except ValueError:
+                cost_low = cost_high
             cost = (cost_low + cost_high) / 2
         else:
             cost = 0
+
         return cost
 
     def shopForInsurance(self, rng):
