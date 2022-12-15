@@ -1,0 +1,14 @@
+random.seed: 42
+stop.at: 6
+human.count: 10
+world.width: 2
+world.height: 2
+steps.per.day: 3
+activity.file: 'wildfire-population/activities_simplified.parquet'
+household.file: 'wildfire-population/hh_expanded.parquet'
+school.file: 'wildfire-population/schools.parquet'
+work.file: 'wildfire-population/work.parquet'
+contact.file: 'wildfire-population/contact_network_simplified.parquet'
+person.file: 'wildfire-population/persons.parquet'
+meet_log_file: 'output/meet_log.csv'
+agent_log_file: 'output/agent_log.csv'
