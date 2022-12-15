@@ -12,13 +12,27 @@ import pyarrow.parquet as pq
 
 from repast4py.space import DiscretePoint as dpt
 
-def initPersons(personFile: str, placeMap: Dict, scheduleMap: Dict, thisRank: int, context, grid, rng):
+def initPersons(
+    personFile: pathlib.Path,
+    placeMap: Dict,
+    scheduleMap: Dict,
+    thisRank: int,
+    context,
+    grid,
+    rng) -> dict[int,int]:
+
     agentIdMap = {}
 
-    with open(personFile, 'r', newline='') as f:
-        persons = DictReader(f)
-        for p in persons:
-            personID = int(p['sp_id'])
+    # with open(personFile, 'r', newline='') as f:
+    #     persons = DictReader(f)
+    table = pq.read_table(personFile)
+
+    for batch in table.to_batches():
+        for row in zip(*batch.columns):
+            row = [x.as_py() for x in row]  # convert arrow scalars to python
+            p = dict(zip(table.column_names, row))
+
+            personID = p['sp_id']
             hhId = p['sp_hh_id']
             rank = placeMap[hhId].rank
 
@@ -42,6 +56,7 @@ def initPersons(personFile: str, placeMap: Dict, scheduleMap: Dict, thisRank: in
             agentIdMap[personID] = person.uid
             context.add(person)
             grid.move(person, startingLocation)
+    
     return agentIdMap
 
 def pointInBounds(point, bounds):
@@ -51,10 +66,16 @@ def pointInBounds(point, bounds):
 
     return xInBounds and yInBounds and zInBounds
 
-def initPlacesFromFile(rank: int, placeType: str, placeFile: str, placeMap, localPlaces, grid):
+def initPlacesFromFile(
+    rank: int,
+    placeType: str,
+    placeFile: pathlib.Path,
+    placeMap: dict[int, Place],
+    localPlaces,
+    grid) -> tuple([dict[int, Place], list[int]]):
+
     table = pq.read_table(placeFile)
 
-    columns = table.column_names
     # with open(placeFile, 'r', newline='') as f:
     #     places = DictReader(f)
     #     for p in places:
@@ -93,7 +114,13 @@ def initPlacesFromFile(rank: int, placeType: str, placeFile: str, placeMap, loca
 
     return placeMap, localPlaces
 
-def initPlaces(rank: int, householdFile: str, schoolFile: str, workFile: str, grid):
+def initPlaces(
+    rank: int,
+    householdFile: str,
+    schoolFile: str,
+    workFile: str,
+    grid) -> tuple([dict[int, Place], list[int]]):
+
     placeMap = {}
     localPlaces = []
 
@@ -103,7 +130,10 @@ def initPlaces(rank: int, householdFile: str, schoolFile: str, workFile: str, gr
 
     return placeMap, localPlaces
 
-def initSchedules(scheduleFile: pathlib.Path):
+def initSchedules(
+    scheduleFile: pathlib.Path
+    ) -> dict[int, Schedule]:
+
     # scheduleMap looks like:
     # personID -> Schedule object
     scheduleMap = {}
@@ -123,18 +153,23 @@ def initSchedules(scheduleFile: pathlib.Path):
 
     return scheduleMap
 
-def initContacts(contactFile: str):
+def initContacts(
+    contactFile: pathlib.Path
+    ) -> dict[int,dict[int,int]]:
+
     # contactMap looks like:
     # personID -> { step -> [ otherPersonIDs ] }
     contactMap = {}
 
-    with open(contactFile, 'r', newline='') as f:
-        contacts = DictReader(f)
-        for contact in contacts:
-            source = int(contact['from_person'])
-            target = int(contact['to_person'])
-            step = int(contact['step'])
+    # with open(contactFile, 'r', newline='') as f:
+    #     contacts = DictReader(f)
+    table = pq.read_table(contactFile)
 
+    for batch in table.to_batches():
+        # for row in zip(*batch.columns):
+        #     print(row)
+        d = batch.to_pydict()
+        for source, target, step in zip(d['from_person'], d['to_person'], d['step']):
             if source not in contactMap:
                 contactMap[source] = {}
 

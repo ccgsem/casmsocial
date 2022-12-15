@@ -18,6 +18,7 @@ from .Calendar import Calendar
 
 from .InitMethods import initPersons, initPlaces, initSchedules, initContacts
 
+
 class Model(object):
     """
     The Model class encapsulates the simulation, and is
@@ -30,7 +31,11 @@ class Model(object):
         params: the simulation input parameters
     """
 
-    def __init__(self, comm: MPI.Intracomm, params: Dict):
+    def __init__(
+        self,
+        comm: MPI.Intracomm,
+        params: Dict):
+
         # create the schedule
         self.runner = schedule.init_schedule_runner(comm)
         self.runner.schedule_repeating_event(1, 1, self.step)
@@ -46,8 +51,9 @@ class Model(object):
         box = space.BoundingBox(0, params['world.width'], 0, params['world.height'], 0, 0)
         # create a SharedGrid of 'box' size with sticky borders that allows multiple agents
         # in each grid location.
-        self.grid = space.SharedGrid(name='grid', bounds=box, borders=space.BorderType.Sticky,
-                                     occupancy=space.OccupancyType.Multiple, buffer_size=2, comm=comm)
+        self.grid = space.SharedGrid(
+            name='grid', bounds=box, borders=space.BorderType.Sticky, occupancy=space.OccupancyType.Multiple, buffer_size=2, comm=comm
+        )
         self.context.add_projection(self.grid)
 
         # the data input path should be defined by $COMMUNITYSIM_DATA_PATH
@@ -75,21 +81,30 @@ class Model(object):
             data_input_path / params['household.file'],
             data_input_path / params['school.file'],
             data_input_path / params['work.file'],
-            self.grid
-            )
-
-        return None        
+            self.grid,
+        )
 
         # contact_map is a dict of personID->{placeID->[personID]}
         # i.e. it is a map of personIDs to a list of contacted persons at each place
-        self.contact_map = initContacts(params['contact.file'])
+        self.contact_map = initContacts(data_input_path / params['contact.file'])
 
+        print(F"rank {rank}: contacts size={len(self.contact_map)}")
+ 
         self.rng = repast4py.random.default_rng
-        
+
         # agent_id_map is a map of personID->repast4py.Agent.uid
         self.agent_id_map = {}
-        self.agent_id_map = initPersons(params['person.file'], self.place_map, scheduleMap, rank, self.context, self.grid, self.rng)
-        
+        self.agent_id_map = initPersons(
+            data_input_path / params['person.file'],
+            self.place_map,
+            scheduleMap,
+            rank,
+            self.context,
+            self.grid,
+            self.rng)
+
+        print(F"rank {rank}: number of person agents={len(self.agent_id_map )}")
+
         # for i in range(params['person.count']):
         #     # get a random x,y location in the grid
         #     pt = self.grid.get_random_local_pt(rng)
@@ -104,7 +119,9 @@ class Model(object):
         # self.place_map = { rank: place }
 
         # initialize the logging
-        self.agent_logger = logging.TabularLogger(comm, params['agent_log_file'], ['tick', 'agent_id', 'agent_uid_rank'])#, 'meet_count'])
+        self.agent_logger = logging.TabularLogger(
+            comm, params['agent_log_file'], ['tick', 'agent_id', 'agent_uid_rank']
+        )  # , 'meet_count'])
 
         # self.meet_log = MeetLog()
         # loggers = logging.create_loggers(self.meet_log, op=MPI.SUM, names={'total_meets': 'total'}, rank=rank)
@@ -119,7 +136,7 @@ class Model(object):
         # self.meet_log.max_meets = self.meet_log.min_meets = self.meet_log.total_meets = 0
         self.log_agents()
 
-    def step(self):
+    def step(self) -> None:
         tick = self.runner.schedule.tick
         self.cal.calendarStep()
 
@@ -146,20 +163,20 @@ class Model(object):
         # clear the meet log counts for the next tick
         # self.meet_log.max_meets = self.meet_log.min_meets = self.meet_log.total_meets = 0
 
-    def reset(self):
+    def reset(self) -> None:
         for place in self.local_places:
             place.reset()
 
-    def get_local_ids(self):
+    def get_local_ids(self) -> None:
         for person in self.context.agents():
             if person.id not in self.agent_id_map:
                 self.agent_id_map[person.id] = person.uid
 
-    def add_people_to_places(self):
+    def add_people_to_places(self) -> None:
         for person in self.context.agents():
             self.place_map[person.currentPlaceID].addPerson(person)
 
-    def make_contacts(self, tick):
+    def make_contacts(self, tick) -> None:
         for person in self.context.agents():
             contactsLen = len(self.contact_map[person.id])
 
@@ -171,17 +188,16 @@ class Model(object):
                 contacts.append(self.context.agent(self.agent_id_map[contactID]))
             person.make_contacts(contacts)
 
-    def log_agents(self):
+    def log_agents(self) -> None:
         tick = self.runner.schedule.tick
         for person in self.context.agents():
-            self.agent_logger.log_row(tick, person.id, person.uid_rank)#, person.meet_count)
+            self.agent_logger.log_row(tick, person.id, person.uid_rank)  # , person.meet_count)
 
         self.agent_logger.write()
 
-    def at_end(self):
+    def at_end(self) -> None:
         # self.data_set.close()
         self.agent_logger.close()
 
-    def start(self):
-        #self.runner.execute()
-        pass
+    def start(self) -> None:
+        self.runner.execute()
