@@ -177,8 +177,10 @@ class Model(object):
             self.place_map[person.currentPlaceID].addPerson(person)
 
     def make_contacts(self, tick) -> None:
+
         for person in self.context.agents():
-            contactsLen = len(self.contact_map[person.id])
+            if person.id not in self.contact_map:  # if person has no network
+                continue
 
             cycledStep = tick % self.steps_per_day
             personsContactMap = self.contact_map[person.id]

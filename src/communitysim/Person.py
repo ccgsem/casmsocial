@@ -18,7 +18,14 @@ rank = MPI.COMM_WORLD.Get_rank()
 class Person(core.Agent):
     TYPE = 0
 
-    def __init__(self, local_id: int, rank: int, schedule: Schedule, places: [int], starting_location: dpt, starting_risk: int=0):
+    def __init__(
+        self,
+        local_id: int,
+        rank: int,
+        schedule: Schedule,
+        places: list[int],
+        starting_location: dpt,
+        starting_risk: int=0):
         """Constructor for the Person class.
         
         Arguments:
@@ -45,7 +52,7 @@ class Person(core.Agent):
         self.influenceSusceptibility = Parameters.influenceSusceptibility
         self.interpersonalInfluence = Parameters.interpersonalInfluence
 
-        print(f"Person {self.id} is ready!")
+        #print(f"Person {self.id} is ready!")
 
     def save(self) -> Tuple:
         """Saves the state of this Person as a Tuple.
