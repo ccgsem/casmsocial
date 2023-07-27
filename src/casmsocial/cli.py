@@ -1,13 +1,13 @@
-"""Console script for communitysimpy."""
+"""Console script for casmsocial."""
 import sys
 import click
 
 
 @click.command()
 def main(args=None):
-    """Console script for communitysimpy."""
+    """Console script for casmsocial."""
     click.echo("Replace this message by putting your code into "
-               "communitysimpy.cli.main")
+               "casmsocial.cli.main")
     click.echo("See click documentation at https://click.palletsprojects.com/")
     return 0
 

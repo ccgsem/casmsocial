@@ -1,4 +1,4 @@
-Welcome to communitysimpy's documentation!
+Welcome to casmsocial's documentation!
 ======================================
 
 .. toctree::

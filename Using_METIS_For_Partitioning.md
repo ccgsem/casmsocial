@@ -1,4 +1,4 @@
-# Using METIS for Graph Partitioning with communitysim
+# Using METIS for Graph Partitioning with casmsocial
 
 ## Overview
 

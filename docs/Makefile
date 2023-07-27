@@ -4,7 +4,7 @@
 # You can set these variables from the command line.
 SPHINXOPTS    =
 SPHINXBUILD   = python -msphinx
-SPHINXPROJ    = communitysimpy
+SPHINXPROJ    = casmsocial
 SOURCEDIR     = .
 BUILDDIR      = _build
 

@@ -1,5 +1,5 @@
 click==8.13
--e git+ssh://git@github.com/ccgsem/communitysim.git@4def83de6e13a523e626793edc95bc61928d7607#egg=communitysimpy
+-e git+ssh://git@github.com/ccgsem/casmsocial.git@4def83de6e13a523e626793edc95bc61928d7607#egg=casmsocial
 Cython==0.29.32
 llvmlite==0.39.0
 mpi4py==3.1.3

@@ -1,4 +1,4 @@
-"""Top-level package for communitysimpy."""
+"""Top-level package for casmsocial."""
 
 __author__ = """Jon C. Cline"""
 __email__ = 'jon.c.cline@gmail.com'

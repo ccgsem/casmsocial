@@ -1,26 +1,26 @@
 ==============
-communitysimpy
+casmsocial
 ==============
 
 
-.. image:: https://img.shields.io/pypi/v/communitysimpy.svg
-        :target: https://pypi.python.org/pypi/communitysimpy
+.. image:: https://img.shields.io/pypi/v/casmsocial.svg
+        :target: https://pypi.python.org/pypi/casmsocial
 
-.. image:: https://img.shields.io/travis/clinejc/communitysimpy.svg
-        :target: https://travis-ci.com/clinejc/communitysimpy
+.. image:: https://img.shields.io/travis/clinejc/casmsocial.svg
+        :target: https://travis-ci.com/clinejc/casmsocial
 
-.. image:: https://readthedocs.org/projects/communitysimpy/badge/?version=latest
-        :target: https://communitysimpy.readthedocs.io/en/latest/?version=latest
+.. image:: https://readthedocs.org/projects/casmsocial/badge/?version=latest
+        :target: https://casmsocial.readthedocs.io/en/latest/?version=latest
         :alt: Documentation Status
 
 
 
 
-communitysim is a Python framework for implementing agent-based models that simulate the dynamics of a synthetic population
+casmsocial is a Python framework for implementing agent-based models that simulate the dynamics of a synthetic population
 
 
 * Free software: MIT license
-* Documentation: https://communitysimpy.readthedocs.io.
+* Documentation: https://casmsocial.readthedocs.io.
 
 
 Features
@@ -37,4 +37,4 @@ This package was created with Cookiecutter_ and the `audreyr/cookiecutter-pypack
 .. _`audreyr/cookiecutter-pypackage`: https://github.com/audreyr/cookiecutter-pypackage
 
 
-mpirun -n 4 python communitysimpy/communitysimpy.py communitysimpy/communitysimpy.yaml
+mpirun -n 4 python casmsocial/casmsocial.py casmsocial/casmsocial.yaml

@@ -2,6 +2,6 @@
 Usage
 =====
 
-To use communitysimpy in a project::
+To use casmsocial in a project::
 
-    import communitysimpy
+    import casmsocial

@@ -9,7 +9,7 @@ if "%SPHINXBUILD%" == "" (
 )
 set SOURCEDIR=.
 set BUILDDIR=_build
-set SPHINXPROJ=communitysimpy
+set SPHINXPROJ=casmsocial
 
 if "%1" == "" goto help
 
