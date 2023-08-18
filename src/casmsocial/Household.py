@@ -5,7 +5,6 @@ from .Parameters import Parameters
 from typing import Dict
 from repast4py.space import DiscretePoint as dpt
 
-from .InsuranceProvider import shopInsuranceProviders
 
 class Household(Place):
     def __init__(self, initDict: Dict):
@@ -13,69 +12,9 @@ class Household(Place):
         location = dpt(x=int(initDict['x']), y=int(initDict['y']), z=0)
         super().__init__(placeId, location)
 
-        self.hasInsurance = initDict['has_hazard_insurance'] == '1'
-        self.isOwner = initDict['occupancy_status'] == 'owner_occupied'
-        self.hasMortgage = initDict['owner_costs_with_mortgage'] != 'not_applicable'
-        
-        self.insurancePurchaseData = int(initDict['ins_purchase_date']) if self.hasInsurance else -1
-
-        #### Bianica Additions
-        self.fuelReductionLevel = 'none' ## Need to replace with actual current level of fuel reduction from properties file
-        self.belowPoverty = initDict['below_poverty'] == 'TRUE'
-        self.reasonNoInsurance = 'denied' ## Need to replace with reason household may not have insurance (denied,unaffordable,did_not_shop)
-        self.structureLossProbability = 0.89 ## Need to replace with properties structure loss probability from properties file
-        self.income = initDict['hh_income']
-        if self.hasMortgage:
-            costs = initDict['owner_costs_with_mortgage']
-        elif self.isOwner:
-            costs = initDict['owner_costs_without_mortgage']
-        else:
-            costs = initDict['renter_costs']
-        self.hhCosts = self.convertHHCosts(costs)
-        ####
-
-
     
     def step(self, calendar: Calendar, rng):
-        if len(self.peopleAtPlace) != 0:
-            self.perceivedRisk = self.peopleAtPlace[0].risk
-        if calendar.isNewMonth:
-            self.shopForInsurance(rng)
-            self.reduceFuel(rng)
-    
-    def convertHHCosts(self,costs):
-        if  costs != 'none': # in which case `cost[0] != 'none'`
-            cost = costs.split('_')
-            cost_high = float(cost[1])  # assume cost[1] is always a number
-            try:
-                cost_low = float(cost[0]) # cost[0] may equal 'over' instead of a number
-            except ValueError:
-                cost_low = cost_high
-            cost = (cost_low + cost_high) / 2
-        else:
-            cost = 0
-
-        return cost
-
-    def shopForInsurance(self, rng):
-        if self.hasInsurance:
-            return
-        if not self.isOwner:
-            return
-        if self.hasMortgage:
-            shopInsuranceProviders(self)
-            return
-
-        pShop = rng.random()
-        if self.perceivedRisk < Parameters.percievedRiskL:
-            if pShop < Parameters.shopPL:
-                shopInsuranceProviders(self)
-        elif self.perceivedRisk < Parameters.perceivedRiskM:
-            if pShop < Parameters.shopPM:
-                shopInsuranceProviders(self)
-        elif self.perceivedRisk < Parameters.perceivedRiskH:
-            if pShop < Parameters.shopPH:
-                shopInsuranceProviders(self)
+	pass
     
     def reduceFuel(self):
         #### Bianica Additions

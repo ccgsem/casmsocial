@@ -56,10 +56,10 @@ class Model(object):
         )
         self.context.add_projection(self.grid)
 
-        # the data input path should be defined by $COMMUNITYSIM_DATA_PATH
+        # the data input path should be defined by $CASMSOCIAL_DATA_PATH
         # load $OMMUNITYSIM_DATA_PATH from .env
         load_dotenv(find_dotenv())
-        data_input_path = os.environ.get("COMMUNITYSIM_DATA_PATH")
+        data_input_path = os.environ.get("CASMSOCIAL_DATA_PATH")
 
         if not data_input_path:
             data_input_path = pathlib.Path.cwd()

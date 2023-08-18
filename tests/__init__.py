@@ -1,1 +1,1 @@
-"""Unit test package for communitysimpy."""
+"""Unit test package for casmsocial."""
