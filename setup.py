@@ -15,9 +15,9 @@ requirements = [
     'numpy>=1.19',
     'pandas>=1.2',
     'repast4py>=1.0.b1',
-    'scipy>=1.9'
-    'GDAL>=3.5',
-    'pyarrow>=10.0'
+    'scipy>=1.9',
+    'GDAL==3.7.3',
+    'pyarrow>=10.0',
     'python-dotenv>=0.21'
 ]
 
