@@ -14,7 +14,7 @@ class Household(Place):
 
     
     def step(self, calendar: Calendar, rng):
-	pass
+	    pass
     
     def reduceFuel(self):
         #### Bianica Additions
