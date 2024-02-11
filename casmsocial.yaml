@@ -4,11 +4,11 @@ human.count: 10
 world.width: 2
 world.height: 2
 steps.per.day: 3
-activity.file: 'data/test_activities.csv'
-household.file: 'data/test_hh.csv'
-school.file: 'data/test_schools.csv'
-work.file: 'data/test_work.csv'
-contact.file: 'data/test_contact_network.csv'
-person.file: 'data/test_persons.csv'
+activity.file: 'casmsocial/data/dcsim_test_population/activities.parquet'
+household.file: 'casmsocial/data/dcsim_test_population/hh.parquet'
+school.file: 'casmsocial/data/dcsim_test_population/schools.parquet'
+work.file: 'casmsocial/data/dcsim_test_population/work.parquet'
+contact.file: 'casmsocial/data/dcsim_test_population/contact_network.parquet'
+person.file: 'casmsocial/data/dcsim_test_population/persons.parquet'
 meet_log_file: 'output/meet_log.csv'
 agent_log_file: 'output/agent_log.csv'
