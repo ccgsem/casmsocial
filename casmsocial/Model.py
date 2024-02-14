@@ -16,7 +16,7 @@ from .Schedule import Schedule
 from .Place import Place
 from .Calendar import Calendar
 
-from .InitMethods import initPersons, initPlaces, initSchedules, initContacts
+from .InitMethods import initPersons, initPlaces, initActivities, initContacts
 
 
 class Model(object):
@@ -68,11 +68,7 @@ class Model(object):
 
         rank = comm.Get_rank()
         self.steps_per_day = int(params['steps.per.day'])
-        self.cal = Calendar(self.steps_per_day)
-
-        activity_file = data_input_path / params['activity.file']
-
-        scheduleMap = initSchedules(activity_file)
+        self.cal = Calendar()
 
         # place_map is a dict of placeID->place object
         # local_places is a list of place objects "located" on this process
@@ -82,6 +78,11 @@ class Model(object):
             data_input_path / params['school.file'],
             data_input_path / params['work.file'],
             self.grid,
+        )
+
+        # activitiesMap is a dict of personID->Schedule object
+        activitiesMap = initActivities(
+            data_input_path / params['activity.file']
         )
 
         # contact_map is a dict of personID->{placeID->[personID]}
@@ -97,7 +98,7 @@ class Model(object):
         self.agent_id_map = initPersons(
             data_input_path / params['person.file'],
             self.place_map,
-            scheduleMap,
+            activitiesMap,
             rank,
             self.context,
             self.grid,

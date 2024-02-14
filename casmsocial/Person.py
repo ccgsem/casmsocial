@@ -3,6 +3,7 @@ from repast4py import core
 from repast4py.space import DiscretePoint as dpt
 
 from typing import Tuple, Dict
+from pydantic import BaseModel
 
 from .Schedule import Schedule, restoreSchedule
 from .Calendar import Calendar
@@ -13,6 +14,35 @@ import numpy as np
 
 from mpi4py import MPI
 rank = MPI.COMM_WORLD.Get_rank()
+
+
+# class PersonData(BaseModel):
+#     schedule: Schedule
+#     places: list[int]
+#     pt: dpt
+#     currentPlaceID: str
+#     risk: int
+#     influenceSusceptibility: float
+#     interpersonalInfluence: float
+
+#     def __init__(
+#         self,
+#         schedule: Schedule,
+#         places: list[int],
+#         pt: dpt,
+#         currentPlaceID: str,
+#         risk: int,
+#         influenceSusceptibility: float,
+#         interpersonalInfluence: float) -> None:
+#         super().__init__(
+#             schedule=schedule,
+#             places=places,
+#             pt=pt,
+#             currentPlaceID=currentPlaceID,
+#             risk=risk,
+#             influenceSusceptibility=influenceSusceptibility,
+#             interpersonalInfluence=interpersonalInfluence
+#         )
 
 
 class Person(core.Agent):
@@ -43,7 +73,20 @@ class Person(core.Agent):
                 on a grid projection. Set to null and override the move() function 
                 if not using a grid projection.
         """
-        super().__init__(id=local_id, type=Person.TYPE, rank=rank)
+        super().__init__(
+            id=local_id,
+            type=Person.TYPE,
+            rank=rank)
+        # self = PersonData(
+        #     schedule=schedule,
+        #     places=places,
+        #     pt=starting_location,
+        #     currentPlaceID=places[0],
+        #     risk=starting_risk,
+        #     influenceSusceptibility=Parameters.influenceSusceptibility,
+        #     interpersonalInfluence=Parameters.interpersonalInfluence
+        # )
+
         self.schedule = schedule
         self.places = places
         self.pt = starting_location

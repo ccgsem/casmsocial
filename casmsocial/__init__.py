@@ -12,6 +12,6 @@ from .Person import Person
 from .Model import Model
 from .Parameters import Parameters
 from .Place import Place
-from .Schedule import Schedule
+from .Activities import Act
 from .School import School
 from .Work import Work

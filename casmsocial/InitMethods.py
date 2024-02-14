@@ -3,7 +3,7 @@ from .Place import Place
 from .Household import Household
 from .School import School
 from .Work import Work
-from .Schedule import Schedule
+from .Activities import Act
 
 from typing import Dict
 from csv import DictReader
@@ -130,35 +130,36 @@ def initPlaces(
 
     return placeMap, localPlaces
 
-def initSchedules(
-    scheduleFile: pathlib.Path
-    ) -> dict[int, Schedule]:
-
+def initActivities(
+        activitiesFile: pathlib.Path
+    ) -> dict[int, list[int]]:
     # scheduleMap looks like:
     # personID -> Schedule object
-    scheduleMap = {}
+    act_map = {}
 
     # This should be the most eficient way to extract the data via pyarrow
     # See https://stackoverflow.com/questions/53157495/fastest-way-to-iterate-pyarrow-table/55633193#55633193
-    table = pq.read_table(scheduleFile)
-
+    table = pq.read_table(activitiesFile)
+    
     for batch in table.to_batches():
         # for row in zip(*batch.columns):
         #     print(row)
         d = batch.to_pydict()
-        for sp_persons_id, activity_ids in zip(d['sp_persons_id'], d['activity_ids']):
-            scheduleMap[sp_persons_id] = Schedule(
-                [int(activity) for activity in activity_ids.split(':')]
-            )
+        for sp_persons_id, activity_id, activity_seq, start, end in zip(d['sp_persons_id'], d['activity_id'], d['activity_sequence'], d['starttime_min'], d['endtime_min']):
+            if sp_persons_id not in act_map:
+                act_map[sp_persons_id] = [Act(sp_persons_id, activity_id, activity_seq, start, end)]
+            else:
+                act_map[sp_persons_id].append(Act(sp_persons_id, activity_id, activity_seq, start, end))
 
-    return scheduleMap
+    return act_map
 
 def initContacts(
     contactFile: pathlib.Path
     ) -> dict[int,dict[int,int]]:
 
     # contactMap looks like:
-    # personID -> { step -> [ otherPersonIDs ] }
+    # personID -> { hour_of_day -> [ otherPersonIDs ] }
+    # dict
     contactMap = {}
 
     # with open(contactFile, 'r', newline='') as f:
@@ -169,13 +170,13 @@ def initContacts(
         # for row in zip(*batch.columns):
         #     print(row)
         d = batch.to_pydict()
-        for source, target, step in zip(d['from_person'], d['to_person'], d['step']):
+        for source, target, hour_of_the_day in zip(d['from_person'], d['to_person'], d['hour']):
             if source not in contactMap:
                 contactMap[source] = {}
 
-            if step not in contactMap[source]:
-                contactMap[source][step] = []
+            if hour_of_the_day not in contactMap[source]:
+                contactMap[source][hour_of_the_day] = []
 
-            contactMap[source][step].append(target)
+            contactMap[source][hour_of_the_day].append(target)
 
     return contactMap
