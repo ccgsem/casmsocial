@@ -137,9 +137,35 @@ class Model(object):
         # self.meet_log.max_meets = self.meet_log.min_meets = self.meet_log.total_meets = 0
         self.log_agents()
 
+    def movePersons(self):
+        """Move all persons"""
+        to_move = []
+        next_place = Place()
+
+        for person in self.context.agents():
+            pass
+
     def step(self) -> None:
         tick = self.runner.schedule.tick
-        self.cal.calendarStep()
+        self.cal.increment()
+
+        print(
+            "Step on "
+            f"day {self.cal.day_of_year}, "
+            f"hour {self.cal.hour_of_day}"
+        )
+
+        for person in self.context.agents():        
+            print(f"Agent {person.id} is at place {person.currentPlaceID} at tick {tick}.")
+            person_data = person.save()
+            print(f"agent id = {person_data[0]}")
+            print(f"activities = {person_data[1]}")
+            print(f"places = {person_data[2]}")
+            print(f"pt = {person_data[3]}")
+            print(f"currentPlaceID = {person_data[4]}")
+            print(f"risk = {person_data[5]}")
+
+        return
 
         for person in self.context.agents():
             person.move(tick, self.grid, self.place_map)

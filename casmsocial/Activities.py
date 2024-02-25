@@ -1,7 +1,8 @@
+from __future__ import annotations
 from pydantic import BaseModel
 import pyarrow.parquet as pq
 
-from .Place import Place
+#from .Place import Place
 
 class Act(BaseModel):
     """Act Class
@@ -29,36 +30,18 @@ class Act(BaseModel):
             endtime_min=endtime_min)
 
 
-class Activity(BaseModel):
-    """Activity Class
-    
-    Names a place that a person will go to a particular time
-    """
-    __id: int
-    __place: Place
-    __schedule_id: int
-    __start_time: float
-    __end_time: float
-    __activity_type:  int
-
-    def __init__(self, record: dict):
-
-        self.__id = id
-        self.__place = place
-        self.__schedule_id = schedule_id
-        self.__start_time = start_time
-        self.__end_time = end_time
-        self.__activity_type = activity_type
-
-
-class Activities(BaseModel):
+class Activities(object):
     """Activities Class"""
-    __id: int
-    __acts: list[Act]
+    # __id: int
+    # __acts: tuple[Act]
 
-    def __init__(self, id: int):
+    def __init__(
+            self,
+            id: int,
+            acts: tuple[Act] = ()
+            ) -> None:
         self.__id = id
-        self.__acts = []
+        self.__acts = list(acts)
 
     def addAct(self, act: Act) -> None:
         self.__acts.append(act)
@@ -66,9 +49,30 @@ class Activities(BaseModel):
     def findActAt(self, time: float) -> Act:
         pass
 
+    @property
     def id(self) -> int:
         return self.__id
+    
+    @property
+    def activities(self) -> list[Act]:
+        return self.__acts
 
+    def data(self) -> tuple:
+        """Get the data for activities in a tuple.
+
+        Returns:
+            The activities data as a tuple. 
+        """
+        return tuple(self.activities)
+   
+    @classmethod
+    def restore(cls, data: tuple[Act]) -> Activities:
+        """Create an  object from the data created in the data() function.
+
+        Returns:
+            A new Schedule object.
+        """
+        return cls(data)
 
 
 class ActivityCreator(object):
@@ -85,8 +89,6 @@ class ActivityCreator(object):
         # This should be the most eficient way to extract the data via pyarrow
         # See https://stackoverflow.com/questions/53157495/fastest-way-to-iterate-pyarrow-table/55633193#55633193
         table = pq.read_table(self.act_filename)
-
-
 
         pass
     

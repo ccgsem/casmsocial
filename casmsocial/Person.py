@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from .Schedule import Schedule, restoreSchedule
 from .Calendar import Calendar
+from .Activities import Act, Activities
 from .Parameters import Parameters
 
 from csv import DictReader
@@ -52,7 +53,7 @@ class Person(core.Agent):
         self,
         local_id: int,
         rank: int,
-        schedule: Schedule,
+        activities: Activities,
         places: list[int],
         starting_location: dpt,
         starting_risk: int=0):
@@ -87,7 +88,7 @@ class Person(core.Agent):
         #     interpersonalInfluence=Parameters.interpersonalInfluence
         # )
 
-        self.schedule = schedule
+        self.activities = activities
         self.places = places
         self.pt = starting_location
         self.currentPlaceID: str = self.places[0]
@@ -105,7 +106,7 @@ class Person(core.Agent):
         """ 
         return (
             self.uid,
-            self.schedule.data(),
+            self.activities.data(),
             self.places,
             self.pt.coordinates,
             self.currentPlaceID,
@@ -169,8 +170,8 @@ def restorePerson(person_data: Tuple):
     if uid in person_cache:
         person = person_cache[uid]
     else:
-        schedule = restoreSchedule(person_data[1])
-        person = Person(uid[0], uid[2], schedule, person_data[2], pt)
+        activities = Activities.restore(person_data[1])
+        person = Person(uid[0], uid[2], activities, person_data[2], pt)
         person_cache[uid] = person
 
     # Update fields that might be old from the cache

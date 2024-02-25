@@ -3,7 +3,7 @@ from .Place import Place
 from .Household import Household
 from .School import School
 from .Work import Work
-from .Activities import Act
+from .Activities import Act, Activities
 
 from typing import Dict
 from csv import DictReader
@@ -15,7 +15,7 @@ from repast4py.space import DiscretePoint as dpt
 def initPersons(
     personFile: pathlib.Path,
     placeMap: Dict,
-    scheduleMap: Dict,
+    activitiesMap: Dict,
     thisRank: int,
     context,
     grid,
@@ -47,11 +47,19 @@ def initPersons(
                 p['sp_school_id']
             ]
 
-            schedule = scheduleMap[personID]
+            schedule = activitiesMap[personID]
+            print(f'personID={personID}, schedule={schedule}')
+            activities = Activities(personID, tuple(schedule))
 
             startingRisk = rng.random()
             
-            person = Person(personID, rank, schedule, places, startingLocation, startingRisk)
+            person = Person(
+                personID,
+                rank,
+                activities,
+                places,
+                startingLocation,
+                startingRisk)
             person_cache[person.uid] = person
             agentIdMap[personID] = person.uid
             context.add(person)
@@ -133,8 +141,8 @@ def initPlaces(
 def initActivities(
         activitiesFile: pathlib.Path
     ) -> dict[int, list[int]]:
-    # scheduleMap looks like:
-    # personID -> Schedule object
+    # activitiesMap looks like:
+    # personID -> Activities object
     act_map = {}
 
     # This should be the most eficient way to extract the data via pyarrow
