@@ -2,7 +2,7 @@
 
 __author__ = "Jon C. Cline"
 __email__ = "jcline@mitre.org"
-__version__ = "0.6.0"
+__version__ = "0.8.0"
 
 from .Calendar import Calendar
 #from .GeoUtility import GeoUtility
