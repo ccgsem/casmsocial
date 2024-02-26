@@ -1,5 +1,5 @@
 random.seed: 42
-stop.at: 6
+stop.at: 24
 human.count: 10
 world.width: 2
 world.height: 2

@@ -1,4 +1,5 @@
 """ Person Agent Base Class """
+from __future__ import annotations
 from repast4py import core
 from repast4py.space import DiscretePoint as dpt
 
@@ -15,35 +16,6 @@ import numpy as np
 
 from mpi4py import MPI
 rank = MPI.COMM_WORLD.Get_rank()
-
-
-# class PersonData(BaseModel):
-#     schedule: Schedule
-#     places: list[int]
-#     pt: dpt
-#     currentPlaceID: str
-#     risk: int
-#     influenceSusceptibility: float
-#     interpersonalInfluence: float
-
-#     def __init__(
-#         self,
-#         schedule: Schedule,
-#         places: list[int],
-#         pt: dpt,
-#         currentPlaceID: str,
-#         risk: int,
-#         influenceSusceptibility: float,
-#         interpersonalInfluence: float) -> None:
-#         super().__init__(
-#             schedule=schedule,
-#             places=places,
-#             pt=pt,
-#             currentPlaceID=currentPlaceID,
-#             risk=risk,
-#             influenceSusceptibility=influenceSusceptibility,
-#             interpersonalInfluence=interpersonalInfluence
-#         )
 
 
 class Person(core.Agent):
@@ -78,15 +50,6 @@ class Person(core.Agent):
             id=local_id,
             type=Person.TYPE,
             rank=rank)
-        # self = PersonData(
-        #     schedule=schedule,
-        #     places=places,
-        #     pt=starting_location,
-        #     currentPlaceID=places[0],
-        #     risk=starting_risk,
-        #     influenceSusceptibility=Parameters.influenceSusceptibility,
-        #     interpersonalInfluence=Parameters.interpersonalInfluence
-        # )
 
         self.activities = activities
         self.places = places
@@ -113,17 +76,47 @@ class Person(core.Agent):
             self.risk
             )
 
-    
-    def move(self, tick: int, grid, place_map: Dict):
+    def move(self, cal: Calendar, grid, place_map: Dict) -> bool:
         """Move to the place indicated by the schedule for this tick.
-        """ 
-        activityType = self.schedule.activityAt(tick)
-        assert(activityType < len(self.places))
-        self.currentPlaceID = self.places[activityType]
-        placeLocation = place_map[self.currentPlaceID].location
-        print(f"Rank {rank}: Agent {self.id} is moving to place {self.currentPlaceID} at tick {tick}.")
+        """
+        success = False
+        next_activity_id = self.selectNextPlace(cal)
+        next_place_id = self.places[next_activity_id]
 
-        self.pt = grid.move(self, placeLocation)
+        place = place_map.get(next_place_id)
+        if place is None:
+            next_place_id = 0  # reset to home
+
+        if place is not None:
+            success = True
+            self.currentPlaceID = next_place_id
+            # print(
+            #    f"Rank {rank}: "
+            #    f"Agent {self.id} is moving to place {self.currentPlaceID}")
+            placeLocation = place.location
+            self.pt = grid.move(self, placeLocation)
+        else:
+            print(f"move for act {next_activity_id} to place {next_place_id} failed.")
+            print(f"places = {self.places}")
+            print(f"Remaining a currentPlaceID = {self.currentPlaceID}")
+
+        return success
+    
+    def selectNextPlace(
+            self,
+            cal: Calendar) -> int:
+        """Select the next place to go to based on the schedule for this tick.
+        """
+        time = cal.minute_of_day
+        act = self.activities.activityAt(time)
+
+        next_activity_id = 0  # home is the default
+        if act is not None:
+            if act.activity_id < len(self.places):
+                next_activity_id = act.activity_id
+            # else:  if the activity is not in the list of places, go home
+ 
+        return next_activity_id
 
     def count_colocations(self, grid):
         # subtract self
@@ -152,33 +145,25 @@ class Person(core.Agent):
 
         self.risk = newRisk
 
+    @classmethod
+    def restore(cls, person_data: Tuple) -> Person:
+        """Creates or updates a local person from person_data.
 
-person_cache = {}
+        Args:
+            person_data: tuple containing the data returned by Person.save(). 
+        """ 
+        uid = person_data[0]
+        pt_array = person_data[3]
+        pt = dpt(pt_array[0], pt_array[1], 0)
+        currentPlaceID = person_data[4]
+        risk = person_data[5]
 
-def restorePerson(person_data: Tuple):
-    """Creates or updates a local person from person_data.
-
-    Args:
-        person_data: tuple containing the data returned by Person.save(). 
-    """ 
-    uid = person_data[0]
-    pt_array = person_data[3]
-    pt = dpt(pt_array[0], pt_array[1], 0)
-    currentPlaceID = person_data[4]
-    risk = person_data[5]
-
-    if uid in person_cache:
-        person = person_cache[uid]
-    else:
         activities = Activities.restore(person_data[1])
         person = Person(uid[0], uid[2], activities, person_data[2], pt)
-        person_cache[uid] = person
+        person.currentPlaceID = currentPlaceID
+        person.risk = risk
 
-    # Update fields that might be old from the cache
-    person.pt = pt 
-    person.currentPlaceID = currentPlaceID
-    person.risk = risk
-
-    return person
+        return person
 
 
+person_cache = {}

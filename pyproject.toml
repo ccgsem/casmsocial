@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "casmsocial"
-version = "0.6.0"
+version = "0.7.0"
 description = "casmsocial is a Python framework for implementing agent-based models that simulate the dynamics of a synthetic population"
 authors = ["Jon C Cline <jcline@mitre.org>", "Jon C Cline <jon.c.cline@gmail.com>"]
 readme = "README.rst"

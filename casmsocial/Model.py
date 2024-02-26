@@ -11,7 +11,7 @@ from dotenv import find_dotenv, load_dotenv
 import os
 import pathlib
 
-from .Person import Person, restorePerson
+from .Person import Person
 from .Schedule import Schedule
 from .Place import Place
 from .Calendar import Calendar
@@ -152,25 +152,28 @@ class Model(object):
         print(
             "Step on "
             f"day {self.cal.day_of_year}, "
-            f"hour {self.cal.hour_of_day}"
+            f"hour {self.cal.hour_of_day}, "
+            f"minute {self.cal.minute_of_day}"
         )
 
-        for person in self.context.agents():        
-            print(f"Agent {person.id} is at place {person.currentPlaceID} at tick {tick}.")
-            person_data = person.save()
-            print(f"agent id = {person_data[0]}")
-            print(f"activities = {person_data[1]}")
-            print(f"places = {person_data[2]}")
-            print(f"pt = {person_data[3]}")
-            print(f"currentPlaceID = {person_data[4]}")
-            print(f"risk = {person_data[5]}")
+        # for person in self.context.agents():        
+        #     print(f"Agent {person.id} is at place {person.currentPlaceID} at tick {tick}.")
+        #     person_data = person.save()
+        #     print(f"agent id = {person_data[0]}")
+        #     print(f"activities = {person_data[1]}")
+        #     print(f"places = {person_data[2]}")
+        #     print(f"pt = {person_data[3]}")
+        #     print(f"currentPlaceID = {person_data[4]}")
+        #     print(f"risk = {person_data[5]}")
 
-        return
-
+        tick = self.cal.minute_of_day
+        countOfBadMoves = 0
         for person in self.context.agents():
-            person.move(tick, self.grid, self.place_map)
+            result = person.move(self.cal, self.grid, self.place_map)
+            if not result:
+                countOfBadMoves += 1
 
-        self.context.synchronize(restorePerson)
+        self.context.synchronize(Person.restore)
 
         self.get_local_ids()
 
@@ -182,6 +185,8 @@ class Model(object):
 
         for place in self.local_places:
             place.step(self.cal, self.rng)
+
+        print(f"number of bad moves = {countOfBadMoves}")
 
         # for person in self.context.agents():
         #     person.count_colocations(self.grid)
@@ -206,12 +211,16 @@ class Model(object):
     def make_contacts(self, tick) -> None:
 
         for person in self.context.agents():
-            if person.id not in self.contact_map:  # if person has no network
+            personsContactMap = self.contact_map.get(person.id)
+            if not personsContactMap:  # if person has no network
+                # print(f"Person {person.id} has no network.")
                 continue
 
-            cycledStep = tick % self.steps_per_day
-            personsContactMap = self.contact_map[person.id]
-            contactIDs = personsContactMap[cycledStep] if cycledStep in personsContactMap else []
+            contactIDs = personsContactMap.get(person.currentPlaceID)
+            if not contactIDs:
+                # print(f"Person {person.id} has no contacts at place {person.currentPlaceID}.")
+                continue
+
             contacts = []
             for contactID in contactIDs:
                 contacts.append(self.context.agent(self.agent_id_map[contactID]))

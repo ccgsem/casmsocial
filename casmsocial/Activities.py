@@ -28,6 +28,10 @@ class Act(BaseModel):
             activity_sequence=activity_sequence,
             starttime_min=starttime_min,
             endtime_min=endtime_min)
+        
+    def contains(self, time: float) -> bool:
+        """Return True if the time is within the start and end times of the activity."""
+        return self.starttime_min <= time and time <= self.endtime_min
 
 
 class Activities(object):
@@ -46,8 +50,15 @@ class Activities(object):
     def addAct(self, act: Act) -> None:
         self.__acts.append(act)
 
-    def findActAt(self, time: float) -> Act:
-        pass
+    def activityAt(self, time: float) -> Act:
+        """Find the activity at a particular time.
+        """
+        next_act = None
+        for act in self.__acts:
+            if act.contains(time):
+                return act
+            
+        return next_act
 
     @property
     def id(self) -> int:
