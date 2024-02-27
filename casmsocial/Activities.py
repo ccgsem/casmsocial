@@ -35,7 +35,10 @@ class Act(BaseModel):
 
 
 class Activities(object):
-    """Activities Class"""
+    """Activities Class
+
+    A collection of activities for a person.
+    """
     # __id: int
     # __acts: tuple[Act]
 
@@ -65,7 +68,7 @@ class Activities(object):
         return self.__id
     
     @property
-    def activities(self) -> list[Act]:
+    def acts(self) -> list[Act]:
         return self.__acts
 
     def data(self) -> tuple:
@@ -81,25 +84,46 @@ class Activities(object):
         """Create an  object from the data created in the data() function.
 
         Returns:
-            A new Schedule object.
+            A new Activities object.
         """
         return cls(data)
+    
+class ActivitiesSuperset(object):
+    """Activities Set Class
+    
+    A set of collections of activities for a person.
+    """
 
+    def __init__(self, activities_superset: tuple[Activities]) -> None:
+        self.__activities_superset = list(activities_superset)
 
-class ActivityCreator(object):
-    """Activity Creator Class"""
+    def __len__(self) -> int:
+        return len(self.__activities_superset)
+    
+    def __getitem__(self, idx: int) -> Activities:
+        return self.__activities_superset[idx]
 
-    def __init__(self, act_filename: str):
-        self.act_filename = act_filename
+    @property
+    def activities_superset(self) -> list[Activities]:
+        return self.__activities_superset
 
-    def run(self: object, map: dict) -> None:
-        """Run method
-        
-        Loads the activity file and creates the activity map
+    def addActivities(self, activities: Activities) -> None:
+        self.__activities_superset.append(activities)
+
+    def data(self) -> tuple:
+        """Get the data for an activities set in a tuple.
+
+        Returns:
+            The activities set data as a tuple. 
         """
-        # This should be the most eficient way to extract the data via pyarrow
-        # See https://stackoverflow.com/questions/53157495/fastest-way-to-iterate-pyarrow-table/55633193#55633193
-        table = pq.read_table(self.act_filename)
+        return self.__activities_superset
 
-        pass
+    @classmethod
+    def restore(cls, data: tuple[Activities]) -> ActivitiesSuperset:
+        """Create an  object from the data created in the data() function.
+
+        Returns:
+            A new ActivitiesSuperset object.
+        """
+        return cls(data)
     

@@ -3,12 +3,9 @@ from __future__ import annotations
 from repast4py import core
 from repast4py.space import DiscretePoint as dpt
 
-from typing import Tuple, Dict
-from pydantic import BaseModel
-
-from .Schedule import Schedule, restoreSchedule
+from typing import Tuple, OrderedDict
 from .Calendar import Calendar
-from .Activities import Act, Activities
+from .Activities import ActivitiesSuperset
 from .Parameters import Parameters
 
 from csv import DictReader
@@ -25,20 +22,24 @@ class Person(core.Agent):
         self,
         local_id: int,
         rank: int,
-        activities: Activities,
+        activities_superset: ActivitiesSuperset,
         places: list[int],
         starting_location: dpt,
         starting_risk: int=0):
         """Constructor for the Person class.
         
         Arguments:
-            local_id: The ID for this person on this process, combines with the rank
-                to form a simulation-wide unique ID.
+            local_id: The ID for this person on this process, combines with the
+                rank to form a simulation-wide unique ID.
             rank: The rank of this process.
-            schedule: A Schedule class object that will provide a place type int 
-                when given the current simulation tick. The place types are 
-                implementation-agnostic so "0" could mean "home" in one simulation 
-                or "grocery store" in another.
+            activities_superset: An object containing a set of one or more
+                activity sequences. Each activity sequence provides a schedule
+                for this Person. The schedule is a list of activities with start
+                and end times. Each activity has a place type (int). The place
+                types are implementation-agnostic so "0" could mean "home" in
+                one simulation or "grocery store" in another. If there are
+                multiple activity sequences, one sequence could be for weekdays
+                and another for weekends, for example.
             places: A list of place_id's that correspond to values coming out of 
                 the schedule. e.g. if the schedule returns "0", this Person will 
                 try to go to the place with the ID of places[0]
@@ -51,7 +52,7 @@ class Person(core.Agent):
             type=Person.TYPE,
             rank=rank)
 
-        self.activities = activities
+        self.activities_superset = activities_superset
         self.places = places
         self.pt = starting_location
         self.currentPlaceID: str = self.places[0]
@@ -69,7 +70,7 @@ class Person(core.Agent):
         """ 
         return (
             self.uid,
-            self.activities.data(),
+            self.activities_superset.data(),
             self.places,
             self.pt.coordinates,
             self.currentPlaceID,
@@ -102,13 +103,24 @@ class Person(core.Agent):
 
         return success
     
+    def selectActivities(self, cal: Calendar) ->  int:
+        """Select the activities for the time of day and day of week.
+        """
+        activities_idx = 0
+        if not cal.is_weekday() and len(self.activities_superset) > 1:
+            activities_idx = 1
+        return activities_idx
+    
     def selectNextPlace(
             self,
             cal: Calendar) -> int:
-        """Select the next place to go to based on the schedule for this tick.
+        """Select the next place to go to based on the schedule for time of
+        day and day of week.
         """
         time = cal.minute_of_day
-        act = self.activities.activityAt(time)
+
+        activities_idx = self.selectActivities(cal)
+        act = self.activities_superset[activities_idx].activityAt(time)
 
         next_activity_id = 0  # home is the default
         if act is not None:
