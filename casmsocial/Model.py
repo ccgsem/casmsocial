@@ -137,6 +137,21 @@ class Model(object):
         # self.meet_log.max_meets = self.meet_log.min_meets = self.meet_log.total_meets = 0
         self.log_agents()
 
+        saved = []
+        for p in self.context.agents():
+            print(f"{p}, schedules={p.schedules.data()}, places={p.places}, pt={p.pt}, currentPlaceID={p.currentPlaceID}, risk={p.risk}")
+            result = p.save()
+            print(result)
+            saved.append(result)
+            if len(saved) > 0:
+                break
+            
+        restored = []
+        for i in saved:
+            p = Person.restore(i)
+            restored.append(p)
+            print(f"{p}, schedules={p.schedules.data()}, places={p.places}, pt={p.pt}, currentPlaceID={p.currentPlaceID}, risk={p.risk}")
+
     def movePersons(self):
         """Move all persons"""
         to_move = []
@@ -147,6 +162,9 @@ class Model(object):
 
     def step(self) -> None:
         tick = self.runner.schedule.tick
+
+        return
+    
         self.cal.increment()
 
         print(

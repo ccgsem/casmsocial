@@ -5,7 +5,7 @@ from repast4py.space import DiscretePoint as dpt
 
 from typing import Tuple, OrderedDict
 from .Calendar import Calendar
-from .Activities import ActivitiesSuperset
+from .Activities import Activities, Schedules
 from .Parameters import Parameters
 
 from csv import DictReader
@@ -22,7 +22,7 @@ class Person(core.Agent):
         self,
         local_id: int,
         rank: int,
-        activities_superset: ActivitiesSuperset,
+        schedules: Schedules,
         places: list[int],
         starting_location: dpt,
         starting_risk: int=0):
@@ -32,7 +32,7 @@ class Person(core.Agent):
             local_id: The ID for this person on this process, combines with the
                 rank to form a simulation-wide unique ID.
             rank: The rank of this process.
-            activities_superset: An object containing a set of one or more
+            schedules: An object containing a set of one or more
                 activity sequences. Each activity sequence provides a schedule
                 for this Person. The schedule is a list of activities with start
                 and end times. Each activity has a place type (int). The place
@@ -52,7 +52,7 @@ class Person(core.Agent):
             type=Person.TYPE,
             rank=rank)
 
-        self.activities_superset = activities_superset
+        self.schedules = schedules
         self.places = places
         self.pt = starting_location
         self.currentPlaceID: str = self.places[0]
@@ -70,9 +70,9 @@ class Person(core.Agent):
         """ 
         return (
             self.uid,
-            self.activities_superset.data(),
-            self.places,
-            self.pt.coordinates,
+            self.schedules.data(),
+            tuple(self.places),  # convert list to tuple
+            tuple(e for e in self.pt.coordinates),  # convert arrary
             self.currentPlaceID,
             self.risk
             )
@@ -107,7 +107,7 @@ class Person(core.Agent):
         """Select the activities for the time of day and day of week.
         """
         activities_idx = 0
-        if not cal.is_weekday() and len(self.activities_superset) > 1:
+        if not cal.is_weekday() and len(self.schedules) > 1:
             activities_idx = 1
         return activities_idx
     
@@ -120,7 +120,7 @@ class Person(core.Agent):
         time = cal.minute_of_day
 
         activities_idx = self.selectActivities(cal)
-        act = self.activities_superset[activities_idx].activityAt(time)
+        act = self.schedules[activities_idx].activityAt(time)
 
         next_activity_id = 0  # home is the default
         if act is not None:
@@ -165,13 +165,13 @@ class Person(core.Agent):
             person_data: tuple containing the data returned by Person.save(). 
         """ 
         uid = person_data[0]
-        pt_array = person_data[3]
+        pt_array = list(person_data[3])
         pt = dpt(pt_array[0], pt_array[1], 0)
         currentPlaceID = person_data[4]
         risk = person_data[5]
 
-        activities = Activities.restore(person_data[1])
-        person = Person(uid[0], uid[2], activities, person_data[2], pt)
+        schedules = Schedules.restore(person_data[1])
+        person = Person(uid[0], uid[2], schedules, person_data[2], pt)
         person.currentPlaceID = currentPlaceID
         person.risk = risk
 

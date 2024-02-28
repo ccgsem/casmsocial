@@ -3,7 +3,7 @@ from .Place import Place
 from .Household import Household
 from .School import School
 from .Work import Work
-from .Activities import Act, Activities, ActivitiesSuperset
+from .Activities import Act, Activities, Schedules
 
 from typing import Dict
 from csv import DictReader
@@ -50,15 +50,15 @@ def initPersons(
             schedule = activitiesMap[personID]
             print(f'personID={personID}, schedule={schedule}')
             activities = Activities(personID, tuple(schedule))
-            activitiesSuperset = ActivitiesSuperset(())
-            activitiesSuperset.addActivities(activities)
+            schedules = Schedules(())
+            schedules.addActivities(activities)
 
             startingRisk = rng.random()
             
             person = Person(
                 personID,
                 rank,
-                activitiesSuperset,
+                schedules,
                 places,
                 startingLocation,
                 startingRisk)
