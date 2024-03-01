@@ -1,9 +1,9 @@
-from .Person import Person, person_cache
-from .Place import Place
-from .Household import Household
-from .School import School
-from .Work import Work
-from .Activities import Act, Activities, Schedules
+from .person import Person, person_cache
+from .place import Place
+from .household import Household
+from .school import School
+from .work import Work
+from .activities import Act, Activities, Schedules
 
 from typing import Dict
 from csv import DictReader

@@ -4,11 +4,10 @@ from repast4py import core
 from repast4py.space import DiscretePoint as dpt
 
 from typing import Tuple, OrderedDict
-from .Calendar import Calendar
-from .Activities import Activities, Schedules
-from .Parameters import Parameters
+from .calendar import Calendar
+from .activities import Activities, Schedules
+from .parameters import Parameters
 
-from csv import DictReader
 import numpy as np
 
 from mpi4py import MPI

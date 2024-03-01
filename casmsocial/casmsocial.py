@@ -3,8 +3,7 @@ from repast4py import parameters
 from mpi4py import MPI
 from typing import Dict
 
-from .Model import Model
-
+from .model import Model
 
 
 def run(params: Dict):

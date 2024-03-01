@@ -1,4 +1,4 @@
-from .Place import Place
+from .place import Place
 
 class School(Place):
     pass

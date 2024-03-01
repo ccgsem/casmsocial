@@ -1,6 +1,6 @@
-from .Place import Place
-from .Calendar import Calendar
-from .Parameters import Parameters
+from .place import Place
+from .calendar import Calendar
+from .parameters import Parameters
 
 from typing import Dict
 from repast4py.space import DiscretePoint as dpt

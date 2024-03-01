@@ -11,12 +11,12 @@ from dotenv import find_dotenv, load_dotenv
 import os
 import pathlib
 
-from .Person import Person
-from .Schedule import Schedule
-from .Place import Place
-from .Calendar import Calendar
+from .person import Person
+from .schedule import Schedule
+from .place import Place
+from .calendar import Calendar
 
-from .InitMethods import initPersons, initPlaces, initActivities, initContacts
+from .initmethods import initPersons, initPlaces, initActivities, initContacts
 
 
 class Model(object):

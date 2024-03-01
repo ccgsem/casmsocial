@@ -2,16 +2,14 @@
 
 __author__ = "Jon C. Cline"
 __email__ = "jcline@mitre.org"
-__version__ = "0.10.1"
+__version__ = "0.11.0"
 
-from .Calendar import Calendar
-#from .GeoUtility import GeoUtility
-from .Household import Household
-from .Person import Person
-#from .InitMethods import InitMethods
-from .Model import Model
-from .Parameters import Parameters
-from .Place import Place
-from .Activities import Act
-from .School import School
-from .Work import Work
+from .calendar import Calendar
+from .household import Household
+from .person import Person
+from .model import Model
+from .parameters import Parameters
+from .place import Place
+from .activities import Act
+from .school import School
+from .work import Work
