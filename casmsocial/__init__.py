@@ -2,7 +2,7 @@
 
 __author__ = "Jon C. Cline"
 __email__ = "jcline@mitre.org"
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 from .calendar import Calendar
 from .household import Household
