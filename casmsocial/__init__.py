@@ -8,7 +8,6 @@ from .calendar import Calendar
 from .household import Household
 from .person import Person
 from .model import Model
-from .parameters import Parameters
 from .place import Place
 from .activities import Act
 from .school import School

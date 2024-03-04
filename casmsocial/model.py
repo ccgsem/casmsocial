@@ -12,7 +12,6 @@ import os
 import pathlib
 
 from .person import Person
-from .schedule import Schedule
 from .place import Place
 from .calendar import Calendar
 
@@ -139,7 +138,7 @@ class Model(object):
 
         saved = []
         for p in self.context.agents():
-            print(f"{p}, schedules={p.schedules.data()}, places={p.places}, pt={p.pt}, currentPlaceID={p.currentPlaceID}, risk={p.risk}")
+            print(f"{p}, schedules={p.schedules.data()}, places={p.places}, pt={p.pt}, currentPlaceID={p.currentPlaceID}")
             result = p.save()
             print(result)
             saved.append(result)
@@ -150,7 +149,7 @@ class Model(object):
         for i in saved:
             p = Person.restore(i)
             restored.append(p)
-            print(f"{p}, schedules={p.schedules.data()}, places={p.places}, pt={p.pt}, currentPlaceID={p.currentPlaceID}, risk={p.risk}")
+            print(f"{p}, schedules={p.schedules.data()}, places={p.places}, pt={p.pt}, currentPlaceID={p.currentPlaceID}")
 
     def movePersons(self):
         """Move all persons"""

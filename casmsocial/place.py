@@ -10,9 +10,6 @@ class Place(object):
     def __init__(self, placeId: int, location: dpt):
         self.id = placeId
         self.location = location
-        self.fireRisk = 0
-        self.perceivedRisk = 0
-        self.hasInsurance = False
         self.rank = -1
 
         self.peopleAtPlace = []
@@ -26,15 +23,6 @@ class Place(object):
 
     def peopleAtPlace(self):
         return self.peopleAtPlace
-
-    def shopForInsurance(self, rng):
-        pass
-
-    def reduceFuel(self):
-        pass
-
-    def purchaseInsurance(self, offers):
-        pass
 
     def step(self, calendar, rng):
         pass

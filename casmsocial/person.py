@@ -3,10 +3,11 @@ from __future__ import annotations
 from repast4py import core
 from repast4py.space import DiscretePoint as dpt
 
-from typing import Tuple, OrderedDict
+from dataclasses  import dataclass, field
+from typing import Dict, Optional, List, Tuple, OrderedDict
+
 from .calendar import Calendar
 from .activities import Activities, Schedules
-from .parameters import Parameters
 
 import numpy as np
 
@@ -55,9 +56,6 @@ class Person(core.Agent):
         self.places = places
         self.pt = starting_location
         self.currentPlaceID: str = self.places[0]
-        self.risk = starting_risk
-        self.influenceSusceptibility = Parameters.influenceSusceptibility
-        self.interpersonalInfluence = Parameters.interpersonalInfluence
 
         #print(f"Person {self.id} is ready!")
 
@@ -72,8 +70,7 @@ class Person(core.Agent):
             self.schedules.data(),
             tuple(self.places),  # convert list to tuple
             tuple(e for e in self.pt.coordinates),  # convert arrary
-            self.currentPlaceID,
-            self.risk
+            self.currentPlaceID
             )
 
     def move(self, cal: Calendar, grid, place_map: Dict) -> bool:
@@ -141,20 +138,10 @@ class Person(core.Agent):
         # self.meet_count += num_here
 
     def make_contacts(self, contacts):
-        riskTimesInfluence = np.array([c.risk * c.interpersonalInfluence for c in contacts])
-        influence = riskTimesInfluence.sum()
-
-        self.updateRiskPerception(self.influenceSusceptibility, influence)
+        pass
     
     def step(self, calendar: Calendar):
         pass
-
-    def updateRiskPerception(self, susceptibility, influence):
-        
-        newRisk = susceptibility * influence
-        newRisk += (1 - susceptibility) * self.risk
-
-        self.risk = newRisk
 
     @classmethod
     def restore(cls, person_data: Tuple) -> Person:
@@ -167,12 +154,10 @@ class Person(core.Agent):
         pt_array = list(person_data[3])
         pt = dpt(pt_array[0], pt_array[1], 0)
         currentPlaceID = person_data[4]
-        risk = person_data[5]
 
         schedules = Schedules.restore(person_data[1])
         person = Person(uid[0], uid[2], schedules, person_data[2], pt)
         person.currentPlaceID = currentPlaceID
-        person.risk = risk
 
         return person
 
