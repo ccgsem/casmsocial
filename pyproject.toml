@@ -32,10 +32,6 @@ ruff = "^0.2.0"
 pytest = "^8.0.0"
 nox = "^2023.4.22"
 
-[tool.poetry_bumpversion.file."casmsocial/__init__.py"]
-search = '__version__ = "{current_version}"'
-replace = '__version__ = "{new_version}"'
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

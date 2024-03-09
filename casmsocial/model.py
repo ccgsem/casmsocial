@@ -15,7 +15,7 @@ from .person import Person
 from .place import Place
 from .calendar import Calendar
 
-from .initmethods import initPersons, initPlaces, initActivities, initContacts
+from .modelsetup import initPersons, initPlaces, initActivities, initContacts
 
 
 class Model(object):
