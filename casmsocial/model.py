@@ -15,7 +15,7 @@ from .person import Person
 from .place import Place
 from .calendar import Calendar
 
-from .modelsetup import initPersons, initPlaces, initActivities, initContacts
+from .modelsetup import ModelSetup #initPersons, initPlaces, initActivities, initContacts
 
 
 class Model(object):
@@ -71,7 +71,7 @@ class Model(object):
 
         # place_map is a dict of placeID->place object
         # local_places is a list of place objects "located" on this process
-        self.place_map, self.local_places = initPlaces(
+        self.place_map, self.local_places = ModelSetup.initPlaces(
             rank,
             data_input_path / params['household.file'],
             data_input_path / params['school.file'],
@@ -80,13 +80,15 @@ class Model(object):
         )
 
         # activitiesMap is a dict of personID->Schedule object
-        activitiesMap = initActivities(
+        activitiesMap = ModelSetup.initActivities(
             data_input_path / params['activity.file']
         )
 
         # contact_map is a dict of personID->{placeID->[personID]}
         # i.e. it is a map of personIDs to a list of contacted persons at each place
-        self.contact_map = initContacts(data_input_path / params['contact.file'])
+        self.contact_map = ModelSetup.initContacts(
+            data_input_path / params['contact.file']
+        )
 
         print(F"rank {rank}: contacts size={len(self.contact_map)}")
  
@@ -94,7 +96,7 @@ class Model(object):
 
         # agent_id_map is a map of personID->repast4py.Agent.uid
         self.agent_id_map = {}
-        self.agent_id_map = initPersons(
+        self.agent_id_map = ModelSetup.initPersons(
             data_input_path / params['person.file'],
             self.place_map,
             activitiesMap,
