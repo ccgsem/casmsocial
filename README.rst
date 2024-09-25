@@ -37,4 +37,4 @@ This package was created with Cookiecutter_ and the `audreyr/cookiecutter-pypack
 .. _`audreyr/cookiecutter-pypackage`: https://github.com/audreyr/cookiecutter-pypackage
 
 
-mpirun -n 4 python casmsocial/casmsocial.py casmsocial/casmsocial.yaml
+mpirun -n 1 python -m casmsocial/casmsocial config/casmsocial.yaml
