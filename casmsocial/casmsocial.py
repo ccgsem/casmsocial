@@ -3,7 +3,7 @@ from repast4py import parameters
 from mpi4py import MPI
 from typing import Dict
 
-from .model import Model
+from casmsocial.model import Model
 
 
 def run(params: Dict):

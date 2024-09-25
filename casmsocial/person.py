@@ -6,8 +6,11 @@ from repast4py.space import DiscretePoint as dpt
 from dataclasses  import dataclass, field
 from typing import Dict, Optional, List, Tuple, OrderedDict
 
-from .calendar import Calendar
-from .activities import Activities, Schedules
+from casmsocial.calendar import Calendar
+from casmsocial.activities import(
+    Activities,
+    Schedules
+)
 
 import numpy as np
 

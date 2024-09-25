@@ -1,4 +1,4 @@
-from .place import Place
+from casmsocial.place import Place
 
 class School(Place):
     pass

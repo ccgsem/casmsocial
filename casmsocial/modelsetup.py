@@ -1,9 +1,13 @@
-from .person import Person, person_cache
-from .place import Place
-from .household import Household
-from .school import School
-from .work import Work
-from .activities import Act, Activities, Schedules
+from casmsocial.person import Person, person_cache
+from casmsocial.place import Place
+from casmsocial.household import Household
+from casmsocial.school import School
+from casmsocial.work import Work
+from casmsocial.activities import (
+    Act,
+    Activities,
+    Schedules
+)
 
 from typing import Dict
 from csv import DictReader

@@ -1,5 +1,5 @@
-from .place import Place
-from .calendar import Calendar
+from casmsocial.place import Place
+from casmsocial.calendar import Calendar
 
 from typing import Dict
 from repast4py.space import DiscretePoint as dpt

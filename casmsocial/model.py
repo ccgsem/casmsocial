@@ -7,15 +7,18 @@ import numpy as np
 from typing import Dict, Tuple
 from mpi4py import MPI
 from dataclasses import dataclass
-from dotenv import find_dotenv, load_dotenv
+from dotenv import (
+    find_dotenv,
+    load_dotenv
+)
 import os
 import pathlib
 
-from .person import Person
-from .place import Place
-from .calendar import Calendar
+from casmsocial.person import Person
+from casmsocial.place import Place
+from casmsocial.calendar import Calendar
 
-from .modelsetup import ModelSetup #initPersons, initPlaces, initActivities, initContacts
+from casmsocial.modelsetup import ModelSetup #initPersons, initPlaces, initActivities, initContacts
 
 
 class Model(object):
