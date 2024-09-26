@@ -24,7 +24,7 @@ RUN python3 -m venv env && \
 
 COPY casmsocial casmsocial
 
-ENV CC=mpic
+ENV CC=mpicc
 ENV CXX=mpicxx
 
 RUN ./env/bin/poetry install

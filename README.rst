@@ -28,6 +28,48 @@ Features
 
 * TODO
 
+Requirements
+------------
+`casmsocial` requires Python 3.11+.
+
+Installation
+------------
+
+After cloning the GitHub repository https://github.com/ccgsem/casmsocial:
+
+Next:
+
+```
+cd casmsocial
+poetry env use 3.12
+poetry shell
+poetry build
+poetry install
+```
+
+To build a Docker image for `casmsocial`:
+
+```
+docker build -t casmsocial . -f dockerfile-mitre
+```
+
+Quickstart
+----------
+
+To run:
+
+```
+mpirun -n 1 python -m casmsocial.casmsocial config/casmsocial.yaml
+```
+
+To run in a Docker container:
+
+```
+docker run -v `pwd`/config:/usr/src/app/config --rm -it --entrypoint bash casmsocial
+root@d332db7567f5:/usr/src/app# poetry shell
+root@d332db7567f5:/usr/src/app# mpirun -n 1 python -m casmsocial.casmsocial config/casmsocial.yaml
+```
+
 Credits
 -------
 
@@ -35,6 +77,3 @@ This package was created with Cookiecutter_ and the `audreyr/cookiecutter-pypack
 
 .. _Cookiecutter: https://github.com/audreyr/cookiecutter
 .. _`audreyr/cookiecutter-pypackage`: https://github.com/audreyr/cookiecutter-pypackage
-
-
-mpirun -n 1 python -m casmsocial/casmsocial config/casmsocial.yaml
