@@ -1,12 +1,19 @@
-from repast4py import core, random, space, schedule, logging, parameters
+from repast4py import (
+    # core,
+    # random,
+    space,
+    schedule,
+    logging
+    # parameters
+)
 from repast4py import context as ctx
 import repast4py
-from repast4py.space import DiscretePoint as dpt
+# from repast4py.space import DiscretePoint as dpt
 
-import numpy as np
-from typing import Dict, Tuple
+# import numpy as np
+from typing import Dict
 from mpi4py import MPI
-from dataclasses import dataclass
+# from dataclasses import dataclass
 from dotenv import (
     find_dotenv,
     load_dotenv
@@ -15,10 +22,13 @@ import os
 import pathlib
 
 from casmsocial.person import Person
-from casmsocial.place import Place
+# from casmsocial.place import Place
 from casmsocial.calendar import Calendar
 
-from casmsocial.modelsetup import ModelSetup #initPersons, initPlaces, initActivities, initContacts
+from casmsocial.modelsetup import (
+    ModelSetup
+    # initPersons, initPlaces, initActivities, initContacts
+)
 
 
 class Model(object):
@@ -36,7 +46,8 @@ class Model(object):
     def __init__(
         self,
         comm: MPI.Intracomm,
-        params: Dict):
+        params: Dict
+    ):
 
         # create the schedule
         self.runner = schedule.init_schedule_runner(comm)
@@ -49,12 +60,24 @@ class Model(object):
         # synchronization
         self.context = ctx.SharedContext(comm)
 
-        # create a bounding box equal to the size of the entire global world grid
-        box = space.BoundingBox(0, params['world.width'], 0, params['world.height'], 0, 0)
-        # create a SharedGrid of 'box' size with sticky borders that allows multiple agents
-        # in each grid location.
+        # create a bounding box equal to the size of the entire global world
+        # grid
+        box = space.BoundingBox(
+            0,
+            params['world.width'],
+            0, params['world.height'],
+            0,
+            0
+        )
+        # create a SharedGrid of 'box' size with sticky borders that allows
+        # multiple agents in each grid location.
         self.grid = space.SharedGrid(
-            name='grid', bounds=box, borders=space.BorderType.Sticky, occupancy=space.OccupancyType.Multiple, buffer_size=2, comm=comm
+            name='grid',
+            bounds=box,
+            borders=space.BorderType.Sticky,
+            occupancy=space.OccupancyType.Multiple,
+            buffer_size=2,
+            comm=comm
         )
         self.context.add_projection(self.grid)
 
@@ -88,13 +111,14 @@ class Model(object):
         )
 
         # contact_map is a dict of personID->{placeID->[personID]}
-        # i.e. it is a map of personIDs to a list of contacted persons at each place
+        # i.e. it is a map of personIDs to a list of contacted persons at each
+        # place
         self.contact_map = ModelSetup.initContacts(
             data_input_path / params['contact.file']
         )
 
         print(F"rank {rank}: contacts size={len(self.contact_map)}")
- 
+
         self.rng = repast4py.random.default_rng
 
         # agent_id_map is a map of personID->repast4py.Agent.uid
@@ -108,7 +132,7 @@ class Model(object):
             self.grid,
             self.rng)
 
-        print(F"rank {rank}: number of person agents={len(self.agent_id_map )}")
+        print(F"rank {rank}: number of person agents={len(self.agent_id_map)}")
 
         # for i in range(params['person.count']):
         #     # get a random x,y location in the grid
@@ -125,41 +149,73 @@ class Model(object):
 
         # initialize the logging
         self.agent_logger = logging.TabularLogger(
-            comm, params['agent_log_file'], ['tick', 'agent_id', 'agent_uid_rank']
+            comm,
+            params['agent_log_file'],
+            ['tick', 'agent_id', 'agent_uid_rank']
         )  # , 'meet_count'])
 
         # self.meet_log = MeetLog()
-        # loggers = logging.create_loggers(self.meet_log, op=MPI.SUM, names={'total_meets': 'total'}, rank=rank)
-        # loggers += logging.create_loggers(self.meet_log, op=MPI.MIN, names={'min_meets': 'min'}, rank=rank)
-        # loggers += logging.create_loggers(self.meet_log, op=MPI.MAX, names={'max_meets': 'max'}, rank=rank)
-        # self.data_set = logging.ReducingDataSet(loggers, MPI.COMM_WORLD, params['meet_log_file'])
+        # loggers = \
+        #     logging.create_loggers(
+        #         self.meet_log,
+        #         op=MPI.SUM,
+        #         names={'total_meets': 'total'},
+        #         rank=rank
+        #     )
+        # loggers += \
+        #     logging.create_loggers(
+        #         self.meet_log,
+        #         op=MPI.MIN,
+        #         names={'min_meets': 'min'},
+        #         rank=rank
+        #     )
+        # loggers += \
+        #     logging.create_loggers(
+        #         self.meet_log,
+        #         op=MPI.MAX,
+        #         names={'max_meets': 'max'},
+        #         rank=rank
+        #     )
+        # self.data_set = \
+        #     logging.ReducingDataSet(
+        #         loggers,
+        #         MPI.COMM_WORLD,
+        #         params['meet_log_file']
+        #     )
 
         # count the initial colocations at time 0 and log
         # for person in self.context.agents():
         #     person.count_colocations(self.grid, self.meet_log)
         # self.data_set.log(0)
-        # self.meet_log.max_meets = self.meet_log.min_meets = self.meet_log.total_meets = 0
+        self.meet_log.max_meets = \
+            self.meet_log.min_meets = self.meet_log.total_meets = 0
         self.log_agents()
 
         saved = []
         for p in self.context.agents():
-            print(f"{p}, schedules={p.schedules.data()}, places={p.places}, pt={p.pt}, currentPlaceID={p.currentPlaceID}")
+            print(
+                f"{p}, schedules={p.schedules.data()}, places={p.places}, "
+                f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
+            )
             result = p.save()
             print(result)
             saved.append(result)
             if len(saved) > 0:
                 break
-            
+
         restored = []
         for i in saved:
             p = Person.restore(i)
             restored.append(p)
-            print(f"{p}, schedules={p.schedules.data()}, places={p.places}, pt={p.pt}, currentPlaceID={p.currentPlaceID}")
+            print(
+                f"{p}, schedules={p.schedules.data()}, places={p.places}, "
+                f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
+            )
 
     def movePersons(self):
         """Move all persons"""
-        to_move = []
-        next_place = Place()
+        # to_move = []
+        # next_place = Place()
 
         for person in self.context.agents():
             pass
@@ -168,7 +224,7 @@ class Model(object):
         tick = self.runner.schedule.tick
 
         return
-    
+
         self.cal.increment()
 
         print(
@@ -178,8 +234,11 @@ class Model(object):
             f"minute {self.cal.minute_of_day}"
         )
 
-        # for person in self.context.agents():        
-        #     print(f"Agent {person.id} is at place {person.currentPlaceID} at tick {tick}.")
+        # for person in self.context.agents():
+        #     print(
+        #         f"Agent {person.id} is at place {person.currentPlaceID} "
+        #         f"at tick {tick}."
+        #     )
         #     person_data = person.save()
         #     print(f"agent id = {person_data[0]}")
         #     print(f"activities = {person_data[1]}")
@@ -215,7 +274,8 @@ class Model(object):
 
         # self.data_set.log(tick)
         # clear the meet log counts for the next tick
-        # self.meet_log.max_meets = self.meet_log.min_meets = self.meet_log.total_meets = 0
+        # self.meet_log.max_meets = \
+        #     self.meet_log.min_meets = self.meet_log.total_meets = 0
 
     def reset(self) -> None:
         for place in self.local_places:
@@ -240,18 +300,23 @@ class Model(object):
 
             contactIDs = personsContactMap.get(person.currentPlaceID)
             if not contactIDs:
-                # print(f"Person {person.id} has no contacts at place {person.currentPlaceID}.")
+                # print(
+                #     f"Person {person.id} has no contacts at "
+                #     f"place {person.currentPlaceID}.")
                 continue
 
             contacts = []
             for contactID in contactIDs:
-                contacts.append(self.context.agent(self.agent_id_map[contactID]))
+                contacts.append(
+                    self.context.agent(self.agent_id_map[contactID])
+                )
             person.make_contacts(contacts)
 
     def log_agents(self) -> None:
         tick = self.runner.schedule.tick
         for person in self.context.agents():
-            self.agent_logger.log_row(tick, person.id, person.uid_rank)  # , person.meet_count)
+            self.agent_logger.log_row(tick, person.id, person.uid_rank)
+            # , person.meet_count)
 
         self.agent_logger.write()
 

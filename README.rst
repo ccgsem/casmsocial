@@ -40,6 +40,7 @@ After cloning the GitHub repository https://github.com/ccgsem/casmsocial:
 Next:
 
 ```
+export CC=mpicxx
 cd casmsocial
 poetry env use 3.12
 poetry shell
@@ -65,9 +66,12 @@ mpirun -n 1 python -m casmsocial.casmsocial config/casmsocial.yaml
 To run in a Docker container:
 
 ```
-docker run -v `pwd`/config:/usr/src/app/config --rm -it --entrypoint bash casmsocial
-root@d332db7567f5:/usr/src/app# poetry shell
-root@d332db7567f5:/usr/src/app# mpirun -n 1 python -m casmsocial.casmsocial config/casmsocial.yaml
+docker run \
+        -v `pwd`/config:/usr/src/app/config \
+        -v ~/Library/CloudStorage/Box-Box/Predicting_Population_Response/data:/usr/src/app/data \
+        --rm -it --entrypoint bash casmsocial
+root@d332db7567f5:/usr/src/app# ./env/bin/poetry shell
+root@d332db7567f5:/usr/src/app# mpirun -n 1 python -m casmsocial.casmsocial config/casmsocial_wc.yaml
 ```
 
 Credits
