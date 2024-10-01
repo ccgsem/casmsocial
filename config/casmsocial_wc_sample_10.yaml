@@ -1,0 +1,13 @@
+random.seed: 42
+stop.at: 24
+world.width: 2
+world.height: 2
+steps.per.day: 24
+activity.file: 'data/processed/wake_county/activities_sample_10.parquet'
+household.file: 'data/processed/wake_county/hh_sample_10.parquet'
+school.file: 'data/processed/wake_county/schools_sample_10.parquet'
+work.file: 'data/processed/wake_county/work_sample_10.parquet'
+contact.file: 'data/processed/wake_county/cn_sample_10.parquet'
+person.file: 'data/processed/wake_county/persons_sample_10.parquet'
+meet_log_file: 'output/meet_log.csv'
+agent_log_file: 'output/agent_log.csv'

@@ -80,6 +80,7 @@ class Person(core.Agent):
         """Move to the place indicated by the schedule for this tick.
         """
         success = False
+        # next_activity_id = int(self.selectNextPlace(cal))
         next_activity_id = self.selectNextPlace(cal)
         next_place_id = self.places[next_activity_id]
 
@@ -124,7 +125,7 @@ class Person(core.Agent):
         next_activity_id = 0  # home is the default
         if act is not None:
             if act.activity_id < len(self.places):
-                next_activity_id = act.activity_id
+                next_activity_id = int(act.activity_id)
             # else:  if the activity is not in the list of places, go home
  
         return next_activity_id

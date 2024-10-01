@@ -187,30 +187,30 @@ class Model(object):
         # for person in self.context.agents():
         #     person.count_colocations(self.grid, self.meet_log)
         # self.data_set.log(0)
-        self.meet_log.max_meets = \
-            self.meet_log.min_meets = self.meet_log.total_meets = 0
+        # self.meet_log.max_meets = \
+        #     self.meet_log.min_meets = self.meet_log.total_meets = 0
         self.log_agents()
 
-        saved = []
-        for p in self.context.agents():
-            print(
-                f"{p}, schedules={p.schedules.data()}, places={p.places}, "
-                f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
-            )
-            result = p.save()
-            print(result)
-            saved.append(result)
-            if len(saved) > 0:
-                break
+        # saved = []
+        # for p in self.context.agents():
+        #     print(
+        #         f"{p}, schedules={p.schedules.data()}, places={p.places}, "
+        #         f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
+        #     )
+        #     result = p.save()
+        #     print(result)
+        #     saved.append(result)
+        #     if len(saved) > 0:
+        #         break
 
-        restored = []
-        for i in saved:
-            p = Person.restore(i)
-            restored.append(p)
-            print(
-                f"{p}, schedules={p.schedules.data()}, places={p.places}, "
-                f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
-            )
+        # restored = []
+        # for i in saved:
+        #     p = Person.restore(i)
+        #     restored.append(p)
+        #     print(
+        #         f"{p}, schedules={p.schedules.data()}, places={p.places}, "
+        #         f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
+        #     )
 
     def movePersons(self):
         """Move all persons"""
@@ -222,8 +222,6 @@ class Model(object):
 
     def step(self) -> None:
         tick = self.runner.schedule.tick
-
-        return
 
         self.cal.increment()
 
@@ -249,6 +247,7 @@ class Model(object):
 
         tick = self.cal.minute_of_day
         countOfBadMoves = 0
+
         for person in self.context.agents():
             result = person.move(self.cal, self.grid, self.place_map)
             if not result:

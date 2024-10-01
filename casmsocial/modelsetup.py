@@ -43,8 +43,6 @@ class ModelSetup:
 
         agentIdMap = {}
 
-        # with open(personFile, 'r', newline='') as f:
-        #     persons = DictReader(f)
         table = pq.read_table(personFile)
 
         for batch in table.to_batches():
@@ -87,6 +85,7 @@ class ModelSetup:
                 agentIdMap[personID] = person.uid
                 context.add(person)
                 grid.move(person, startingLocation)
+                print(person.places)
 
         return agentIdMap
 

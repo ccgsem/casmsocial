@@ -1,9 +1,8 @@
 random.seed: 42
 stop.at: 24
-human.count: 10
 world.width: 2
 world.height: 2
-steps.per.day: 3
+steps.per.day: 24
 activity.file: 'casmsocial/data/dcsim_dmv_100_population/activities_100.parquet'
 household.file: 'casmsocial/data/dcsim_dmv_100_population/hh_100.parquet'
 school.file: 'casmsocial/data/dcsim_dmv_100_population/schools_100.parquet'
