@@ -1,8 +1,16 @@
 from casmsocial.person import Person, person_cache
-from casmsocial.place import Place
+
+from casmsocial.place import (
+    Place,
+    register_place_type
+)
 from casmsocial.household import Household
-from casmsocial.school import School
 from casmsocial.work import Work
+from casmsocial.school import School
+register_place_type(Household)
+register_place_type(Work)
+register_place_type(School)
+
 from casmsocial.activities import (
     Act,
     Activities,
@@ -146,8 +154,8 @@ class ModelSetup:
     def initPlaces(
         rank: int,
         householdFile: str,
-        schoolFile: str,
         workFile: str,
+        schoolFile: str,
         grid
     ) -> Tuple[Dict[int, Place], list[int]]:
 

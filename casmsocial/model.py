@@ -21,8 +21,16 @@ from dotenv import (
 import os
 import pathlib
 
+import numpy as np
+import pandas as pd
+import geopandas as gpd
+
 from casmsocial.person import Person
-# from casmsocial.place import Place
+from casmsocial.place import (
+    Place,
+    get_place_type_idx
+)
+
 from casmsocial.calendar import Calendar
 
 from casmsocial.modelsetup import (
@@ -56,11 +64,36 @@ class Model(object):
         self.runner.schedule_stop(params['stop.at'])
         self.runner.schedule_end_event(self.at_end)
 
+        # the data input path should be defined by $CASMSOCIAL_DATA_PATH
+        # load $OMMUNITYSIM_DATA_PATH from .env
+        load_dotenv(find_dotenv())
+        data_input_path = os.environ.get("CASMSOCIAL_DATA_PATH")
+
+        if not data_input_path:
+            data_input_path = pathlib.Path.cwd()
+        else:
+            data_input_path = pathlib.Path(data_input_path)
+        
+        # load environment file
+        # heat_index_file_path = data_input_path / params['heat.index.file']
+        self.heat_map_places_file_path = \
+            data_input_path / \
+            "data" / \
+            "processed" / \
+            "wake_county" / \
+            "heat_map_places.parquet"
+        if self.heat_map_places_file_path.exists():
+            print(f"Loading heat map places from {self.heat_map_places_file_path}")
+        else:
+            print(f"Error: Heat map places file {self.heat_map_places_file_path} not found.")
+            exit(1)
+
         # create the context to hold the agents and manage cross process
         # synchronization
         self.context = ctx.SharedContext(comm)
 
         # create a bounding box equal to the size of the entire global world
+        
         # grid
         box = space.BoundingBox(
             0,
@@ -81,16 +114,6 @@ class Model(object):
         )
         self.context.add_projection(self.grid)
 
-        # the data input path should be defined by $CASMSOCIAL_DATA_PATH
-        # load $OMMUNITYSIM_DATA_PATH from .env
-        load_dotenv(find_dotenv())
-        data_input_path = os.environ.get("CASMSOCIAL_DATA_PATH")
-
-        if not data_input_path:
-            data_input_path = pathlib.Path.cwd()
-        else:
-            data_input_path = pathlib.Path(data_input_path)
-
         rank = comm.Get_rank()
         self.steps_per_day = int(params['steps.per.day'])
         self.cal = Calendar()
@@ -100,8 +123,8 @@ class Model(object):
         self.place_map, self.local_places = ModelSetup.initPlaces(
             rank,
             data_input_path / params['household.file'],
-            data_input_path / params['school.file'],
             data_input_path / params['work.file'],
+            data_input_path / params['school.file'],
             self.grid,
         )
 
@@ -232,18 +255,14 @@ class Model(object):
             f"minute {self.cal.minute_of_day}"
         )
 
-        # for person in self.context.agents():
-        #     print(
-        #         f"Agent {person.id} is at place {person.currentPlaceID} "
-        #         f"at tick {tick}."
-        #     )
-        #     person_data = person.save()
-        #     print(f"agent id = {person_data[0]}")
-        #     print(f"activities = {person_data[1]}")
-        #     print(f"places = {person_data[2]}")
-        #     print(f"pt = {person_data[3]}")
-        #     print(f"currentPlaceID = {person_data[4]}")
-        #     print(f"risk = {person_data[5]}")
+        heat_map_places = \
+            pd.read_parquet(
+                self.heat_map_places_file_path,
+                engine='pyarrow',
+                filters=[("time_hour", "=", self.cal.hour_of_day)]
+            ).loc[:, ['sp_id', 'heatIndex']]
+        
+        heatIndex_map = heat_map_places.set_index('sp_id')['heatIndex'].to_dict()
 
         tick = self.cal.minute_of_day
         countOfBadMoves = 0
@@ -253,20 +272,43 @@ class Model(object):
             if not result:
                 countOfBadMoves += 1
 
-        self.context.synchronize(Person.restore)
+        # self.context.synchronize(Person.restore)
 
         self.get_local_ids()
 
         self.add_people_to_places()
         self.make_contacts(tick)
+ 
+        countOfHeatIndexMatches = 0
+        for place in self.local_places:
+            # print(f"place id = {place.id}, place location = {place.location}")
+
+            place.step(self.cal, self.rng)
+            cnt = len(place.peopleAtPlace)
+            # print(
+            #     f"place type = {type(place)}, "
+            #     f"place type idx = {get_place_type_idx(type(place))}")
+            # if cnt > 0:
+            #     print(f"Place {place.id} has {cnt} people.")
+                
+            if place.id in heatIndex_map:
+                place.heatIndex = heatIndex_map[place.id]
+                # print(f"Place {place.id} has a heat index of {place.heatIndex}.")
+                countOfHeatIndexMatches+=1
+            else:
+                place.heatIndex = None
+
+            for person in place.peopleAtPlace:
+                # print(f"person {person.id} is at place {place.id}")
+                person.heatIndex = place.heatIndex
+
+        print(f"number of bad moves = {countOfBadMoves}")
+        print(f"number of heat index matches = {countOfHeatIndexMatches}")
 
         for person in self.context.agents():
             person.step(self.cal)
 
-        for place in self.local_places:
-            place.step(self.cal, self.rng)
-
-        print(f"number of bad moves = {countOfBadMoves}")
+        self.log_agents()
 
         # for person in self.context.agents():
         #     person.count_colocations(self.grid)
@@ -312,10 +354,11 @@ class Model(object):
             person.make_contacts(contacts)
 
     def log_agents(self) -> None:
-        tick = self.runner.schedule.tick
+        # tick = self.runner.schedule.tick
+        tick = self.cal.hour_of_day
         for person in self.context.agents():
-            self.agent_logger.log_row(tick, person.id, person.uid_rank)
-            # , person.meet_count)
+            self.agent_logger.log_row(tick, person.id, person.heatIndex)
+            # person.uid_rank, person.meet_count)
 
         self.agent_logger.write()
 

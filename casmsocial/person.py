@@ -59,6 +59,7 @@ class Person(core.Agent):
         self.places = places
         self.pt = starting_location
         self.currentPlaceID: str = self.places[0]
+        self.heatIndex = float('nan')
 
         #print(f"Person {self.id} is ready!")
 
