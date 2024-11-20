@@ -17,11 +17,12 @@ from casmsocial.activities import (
     Schedules
 )
 
+import math
 from typing import Dict, Tuple
 import pathlib
 import pyarrow.parquet as pq
 
-from repast4py.space import DiscretePoint as dpt
+# from repast4py.space import DiscretePoint as dpt
 
 
 def pointInBounds(point, bounds):
@@ -45,7 +46,7 @@ class ModelSetup:
         activitiesMap: Dict,
         thisRank: int,
         context,
-        grid,
+        cspace,
         rng
     ) -> dict[int, int]:
 
@@ -80,20 +81,19 @@ class ModelSetup:
                 schedules = Schedules(())
                 schedules.addActivities(activities)
 
-                startingRisk = rng.random()
+                # startingRisk = rng.random()
 
                 person = Person(
                     personID,
                     rank,
                     schedules,
                     places,
-                    startingLocation,
-                    startingRisk)
+                    startingLocation)
                 person_cache[person.uid] = person
                 agentIdMap[personID] = person.uid
                 context.add(person)
-                grid.move(person, startingLocation)
-                print(person.places)
+                cspace.move(person, startingLocation)
+                print(person.state.places)
 
         return agentIdMap
 
@@ -104,7 +104,7 @@ class ModelSetup:
         placeFile: pathlib.Path,
         placeMap: dict[int, Place],
         localPlaces,
-        grid
+        cspace
     ) -> Tuple[Dict[int, Place], list[int]]:
 
         table = pq.read_table(placeFile)
@@ -120,31 +120,27 @@ class ModelSetup:
 
                 placeId = p['sp_id']
 
-                # `location` is currently referenced required but not used
-                if 'x' not in p:
-                    p['x'] = 0
-                if 'y' not in p:
-                    p['y'] = 0
-                location = dpt(x=int(p['x']), y=int(p['y']), z=0)
-
                 place = None
                 match placeType:
                     case 'household':
+                        # place = Household(p, rank)
                         place = Household(p)
                     case 'work':
-                        place = Work(placeId, location)
+                        # place = Work(p, rank)
+                        place = Work(p)
                     case  'school':
-                        place = School(placeId, location)
+                        # place = School(p, rank)
+                        place = School(p)
                     case _:
                         print(
                             'Error: Bad placetype during place initialization:'
                             f' {placeType}')
-                        place = Place(placeId, location)
+                        place = Place(p)
 
                 placeMap[placeId] = place
 
-                localBounds = grid.get_local_bounds()
-                if pointInBounds(location, localBounds):
+                localBounds = cspace.get_local_bounds()
+                if pointInBounds(place.location, localBounds):
                     place.rank = rank
                     localPlaces.append(place)
 
@@ -156,11 +152,11 @@ class ModelSetup:
         householdFile: str,
         workFile: str,
         schoolFile: str,
-        grid
+        cspace
     ) -> Tuple[Dict[int, Place], list[int]]:
 
-        placeMap = {}
-        localPlaces = []
+        placeMap: map = {}
+        localPlaces: list = []
 
         placeMap, localPlaces = \
             ModelSetup.initPlacesFromFile(
@@ -169,7 +165,7 @@ class ModelSetup:
                 householdFile,
                 placeMap,
                 localPlaces,
-                grid
+                cspace
             )
         placeMap, localPlaces = \
             ModelSetup.initPlacesFromFile(
@@ -178,7 +174,7 @@ class ModelSetup:
                 workFile,
                 placeMap,
                 localPlaces,
-                grid
+                cspace
             )
         placeMap, localPlaces = \
             ModelSetup.initPlacesFromFile(
@@ -187,7 +183,7 @@ class ModelSetup:
                 schoolFile,
                 placeMap,
                 localPlaces,
-                grid
+                cspace
             )
 
         return placeMap, localPlaces

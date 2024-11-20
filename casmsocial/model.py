@@ -8,7 +8,6 @@ from repast4py import (
 )
 from repast4py import context as ctx
 import repast4py
-# from repast4py.space import DiscretePoint as dpt
 
 # import numpy as np
 from typing import Dict
@@ -76,17 +75,14 @@ class Model(object):
         
         # load environment file
         # heat_index_file_path = data_input_path / params['heat.index.file']
-        self.heat_map_places_file_path = \
-            data_input_path / \
-            "data" / \
-            "processed" / \
-            "wake_county" / \
-            "heat_map_places.parquet"
-        if self.heat_map_places_file_path.exists():
-            print(f"Loading heat map places from {self.heat_map_places_file_path}")
+        self.heatindex_by_hour_place_file_path = \
+            data_input_path / params['heatIndex.file']
+        if self.heatindex_by_hour_place_file_path.exists():
+            print(f"Loading heat map places from {self.heatindex_by_hour_place_file_path}")
         else:
-            print(f"Error: Heat map places file {self.heat_map_places_file_path} not found.")
+            print(f"Error: Heat map places file {self.heatindex_by_hour_place_file_path} not found.")
             exit(1)
+        self._heat_threshold = 90.0
 
         # create the context to hold the agents and manage cross process
         # synchronization
@@ -94,25 +90,25 @@ class Model(object):
 
         # create a bounding box equal to the size of the entire global world
         
-        # grid
+        # bounds for continuous space (bounds from 'hh_utm' bounding box)
         box = space.BoundingBox(
-            0,
-            params['world.width'],
-            0, params['world.height'],
-            0,
-            0
+            xmin=682382,  # remainder: .07291591
+            xextent=65291,  # remainder:  .067068616976, params['world.width']
+            ymin=3933088,  # remainder: .46059242
+            yextent=61693 # remainder: .09425332444, params['world.height']
         )
-        # create a SharedGrid of 'box' size with sticky borders that allows
-        # multiple agents in each grid location.
-        self.grid = space.SharedGrid(
-            name='grid',
+
+        # create a SharedContext with the given bounding box
+        self.cspace = space.SharedCSpace(
+            name='space',
             bounds=box,
             borders=space.BorderType.Sticky,
             occupancy=space.OccupancyType.Multiple,
-            buffer_size=2,
+            tree_threshold=100,
+            buffer_size=10,
             comm=comm
         )
-        self.context.add_projection(self.grid)
+        self.context.add_projection(self.cspace)
 
         rank = comm.Get_rank()
         self.steps_per_day = int(params['steps.per.day'])
@@ -125,8 +121,9 @@ class Model(object):
             data_input_path / params['household.file'],
             data_input_path / params['work.file'],
             data_input_path / params['school.file'],
-            self.grid,
+            self.cspace
         )
+        print(f"size of place_map = {len(self.place_map)}")
 
         # activitiesMap is a dict of personID->Schedule object
         activitiesMap = ModelSetup.initActivities(
@@ -152,30 +149,17 @@ class Model(object):
             activitiesMap,
             rank,
             self.context,
-            self.grid,
+            self.cspace,
             self.rng)
 
         print(F"rank {rank}: number of person agents={len(self.agent_id_map)}")
-
-        # for i in range(params['person.count']):
-        #     # get a random x,y location in the grid
-        #     pt = self.grid.get_random_local_pt(rng)
-        #     # create and add the walker to the context
-        #     personSchedule = Schedule(1, [0])
-        #     person = Person(i, rank, personSchedule, [0], pt)
-        #     self.context.add(person)
-        #     self.grid.move(person, pt)
-
-        # pt = self.grid.get_random_local_pt(rng)
-        # place = Place(rank, pt)
-        # self.place_map = { rank: place }
 
         # initialize the logging
         self.agent_logger = logging.TabularLogger(
             comm,
             params['agent_log_file'],
-            ['tick', 'agent_id', 'agent_uid_rank']
-        )  # , 'meet_count'])
+            ['tick', 'agent_id', 'x', 'y', 'heatIndex']  # , 'meet_count']
+        )
 
         # self.meet_log = MeetLog()
         # loggers = \
@@ -208,7 +192,7 @@ class Model(object):
 
         # count the initial colocations at time 0 and log
         # for person in self.context.agents():
-        #     person.count_colocations(self.grid, self.meet_log)
+        #     person.count_colocations(self.cspace, self.meet_log)
         # self.data_set.log(0)
         # self.meet_log.max_meets = \
         #     self.meet_log.min_meets = self.meet_log.total_meets = 0
@@ -234,6 +218,7 @@ class Model(object):
         #         f"{p}, schedules={p.schedules.data()}, places={p.places}, "
         #         f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
         #     )
+        self.hours_above_heat_threshold = 0
 
     def movePersons(self):
         """Move all persons"""
@@ -244,6 +229,7 @@ class Model(object):
             pass
 
     def step(self) -> None:
+        """Step the model forward one time step."""
         tick = self.runner.schedule.tick
 
         self.cal.increment()
@@ -255,63 +241,15 @@ class Model(object):
             f"minute {self.cal.minute_of_day}"
         )
 
-        heat_map_places = \
-            pd.read_parquet(
-                self.heat_map_places_file_path,
-                engine='pyarrow',
-                filters=[("time_hour", "=", self.cal.hour_of_day)]
-            ).loc[:, ['sp_id', 'heatIndex']]
-        
-        heatIndex_map = heat_map_places.set_index('sp_id')['heatIndex'].to_dict()
-
-        tick = self.cal.minute_of_day
-        countOfBadMoves = 0
-
-        for person in self.context.agents():
-            result = person.move(self.cal, self.grid, self.place_map)
-            if not result:
-                countOfBadMoves += 1
-
-        # self.context.synchronize(Person.restore)
-
-        self.get_local_ids()
-
-        self.add_people_to_places()
-        self.make_contacts(tick)
- 
-        countOfHeatIndexMatches = 0
-        for place in self.local_places:
-            # print(f"place id = {place.id}, place location = {place.location}")
-
-            place.step(self.cal, self.rng)
-            cnt = len(place.peopleAtPlace)
-            # print(
-            #     f"place type = {type(place)}, "
-            #     f"place type idx = {get_place_type_idx(type(place))}")
-            # if cnt > 0:
-            #     print(f"Place {place.id} has {cnt} people.")
-                
-            if place.id in heatIndex_map:
-                place.heatIndex = heatIndex_map[place.id]
-                # print(f"Place {place.id} has a heat index of {place.heatIndex}.")
-                countOfHeatIndexMatches+=1
-            else:
-                place.heatIndex = None
-
-            for person in place.peopleAtPlace:
-                # print(f"person {person.id} is at place {place.id}")
-                person.heatIndex = place.heatIndex
-
-        print(f"number of bad moves = {countOfBadMoves}")
-        print(f"number of heat index matches = {countOfHeatIndexMatches}")
+        self.update_environment()
 
         for person in self.context.agents():
             person.step(self.cal)
-
+ 
         self.log_agents()
 
         # for person in self.context.agents():
-        #     person.count_colocations(self.grid)
+        #     person.count_colocations(self.cspace)
 
         # self.data_set.log(tick)
         # clear the meet log counts for the next tick
@@ -329,7 +267,7 @@ class Model(object):
 
     def add_people_to_places(self) -> None:
         for person in self.context.agents():
-            self.place_map[person.currentPlaceID].addPerson(person)
+            self.place_map[person.state.currentPlaceID].addPerson(person)
 
     def make_contacts(self, tick) -> None:
 
@@ -339,7 +277,7 @@ class Model(object):
                 # print(f"Person {person.id} has no network.")
                 continue
 
-            contactIDs = personsContactMap.get(person.currentPlaceID)
+            contactIDs = personsContactMap.get(person.state.currentPlaceID)
             if not contactIDs:
                 # print(
                 #     f"Person {person.id} has no contacts at "
@@ -353,11 +291,95 @@ class Model(object):
                 )
             person.make_contacts(contacts)
 
+    def load_environment_parameters(self) -> None:
+        """Load the environment parameters."""
+        pass
+
+    def update_environment(self) -> None:
+        """Update the environment for the current time step."""
+        tick = self.cal.minute_of_day
+
+        countOfBadMoves = 0
+
+        for person in self.context.agents():
+            result = person.move(self.cal, self.cspace, self.place_map)
+            if not result:
+                countOfBadMoves += 1
+
+        # self.context.synchronize(Person.restore)
+
+        self.get_local_ids()
+
+        self.add_people_to_places()
+        self.make_contacts(tick)
+
+        heatindex_by_hour_place = \
+            pd.read_parquet(
+                self.heatindex_by_hour_place_file_path,
+                engine='pyarrow',
+                filters=[("time_hour", "=", self.cal.hour_of_day)]
+            ).loc[:, ['sp_id', 'heatIndex']].dropna()
+        
+        # print(f"size of heatindex_by_hour_place = {len(heatindex_by_hour_place)}")
+        minheatindex = heatindex_by_hour_place['heatIndex'].min()
+        maxheatindex = heatindex_by_hour_place['heatIndex'].max()
+        meanheatindex = heatindex_by_hour_place['heatIndex'].mean()        
+        print(
+            f"min heat index = {minheatindex}, "
+            f"max heat index = {maxheatindex}, "
+            f"mean heat index = {meanheatindex}")
+        if meanheatindex > self.get_heat_threshold():
+            self.hours_above_heat_threshold += 1
+        else:
+            self.hours_above_heat_threshold = 0
+        prob_heat_event = self.compute_prob_heat_event(
+            meanheatindex,
+            self.hours_above_heat_threshold
+        )
+        print(f"probability of heat event = {prob_heat_event}")
+
+        heatIndex_map = heatindex_by_hour_place.set_index('sp_id')['heatIndex'].to_dict()
+
+        countOfHeatIndexMatches = 0
+        for place in self.local_places:
+
+            place.step(self.cal, self.rng)
+                
+            if place.id in heatIndex_map:
+                place.heatIndex = heatIndex_map[place.id]
+                countOfHeatIndexMatches+=1
+            else:
+                place.heatIndex = meanheatindex
+
+            for person in place.peopleAtPlace:
+                person.state.heatIndex = place.heatIndex
+
+        print(f"number of bad moves = {countOfBadMoves}")
+        print(f"number of heat index matches = {countOfHeatIndexMatches}")
+
+    def get_heat_threshold(self) -> float:
+        return self._heat_threshold
+
+    def compute_prob_heat_event(
+        self,
+        heat_index: float,
+        hours_above_threshold: int
+    ) -> float:
+        """Compute the probability of a heat event."""
+        prob_heat_event = 1 - (1 - ((heat_index - 90)/80)** 2) ** (3*hours_above_threshold)
+        return prob_heat_event
+
     def log_agents(self) -> None:
         # tick = self.runner.schedule.tick
         tick = self.cal.hour_of_day
         for person in self.context.agents():
-            self.agent_logger.log_row(tick, person.id, person.heatIndex)
+            self.agent_logger.log_row(
+                tick,
+                person.id,
+                person.state.location.x,
+                person.state.location.y,
+                person.state.heatIndex
+            )
             # person.uid_rank, person.meet_count)
 
         self.agent_logger.write()

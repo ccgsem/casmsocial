@@ -1,7 +1,9 @@
 """ Generic Place Class """
 from repast4py.space import DiscretePoint as dpt
+from repast4py.space import ContinuousPoint as cpt
 
-from typing import Type
+from typing import Type, Dict
+import math
 
 from casmsocial.person import Person
 from casmsocial.calendar import Calendar
@@ -12,7 +14,23 @@ class Place(object):
 
     place_types = []
 
-    def __init__(self, placeId: int, location: dpt):
+    def __init__(
+            self,
+            initDict: Dict
+        ):
+        placeId = initDict['sp_id']
+
+        # `location` is currently referenced required but not used
+        if 'x' not in initDict:
+            initDict['x'] = 0
+        if 'y' not in initDict:
+            initDict['y'] = 0
+        if math.isinf(initDict['x']) or math.isinf(initDict['y']):
+            initDict['x'] = 0
+            initDict['y'] = 0
+
+        location = cpt(x=int(initDict['x']), y=int(initDict['y']), z=0)
+
         self.id = placeId
         self.location = location
         self.rank = -1
