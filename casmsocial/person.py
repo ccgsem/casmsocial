@@ -28,6 +28,7 @@ class PersonData():
     currentPlaceID: str
     heatIndex: float
     hrsAboveHeatThreshold: int = 0
+    probHeatEvent: float = 0.0
 
 
 # @dataclass(slots=True)
@@ -78,7 +79,8 @@ class Person(core.Agent):
             location=starting_location,
             currentPlaceID=places[0],
             heatIndex=float('nan'),
-            hrsAboveHeatThreshold=0
+            hrsAboveHeatThreshold=0,
+            probHeatEvent=0.0
         )
 
         #print(f"Person {self.id} is ready!")
@@ -96,7 +98,8 @@ class Person(core.Agent):
             tuple(e for e in self.state.location.coordinates),  # 3: location
             self.state.currentPlaceID,  # 4: currentPlaceID
             self.state.heatIndex,   # 5: heatIndex
-            self.state.hrsAboveHeatThreshold    # 6: hrsAboveHeatThreshold
+            self.state.hrsAboveHeatThreshold,    # 6: hrsAboveHeatThreshold
+            self.state.probHeatEvent  # 7: probHeatEvent
             )
 
     def move(self, cal: Calendar, cspace, place_map: Dict) -> bool:
@@ -189,6 +192,7 @@ class Person(core.Agent):
         person.state.currentPlaceID = currentPlaceID
         person.state.heatIndex = person_data[5]
         person.state.hrsAboveHeatThreshold = person_data[6]
+        person.state.probHeatEvent = person_data[7]
 
         return person
 

@@ -158,7 +158,15 @@ class Model(object):
         self.agent_logger = logging.TabularLogger(
             comm,
             params['agent_log_file'],
-            ['tick', 'agent_id', 'x', 'y', 'heatIndex']  # , 'meet_count']
+            [
+                'tick',
+                'agent_id',
+                'x',
+                'y',
+                'heatIndex',
+                'hrsAboveHeatThreshold',
+                'probHeatEvent'
+            ]  # , 'meet_count']
         )
 
         # self.meet_log = MeetLog()
@@ -218,15 +226,22 @@ class Model(object):
         #         f"{p}, schedules={p.schedules.data()}, places={p.places}, "
         #         f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
         #     )
+
+        # initialize the heat threshold
         self.hours_above_heat_threshold = 0
 
     def movePersons(self):
         """Move all persons"""
         # to_move = []
         # next_place = Place()
+        countOfBadMoves = 0
 
         for person in self.context.agents():
-            pass
+            result = person.move(self.cal, self.cspace, self.place_map)
+            if not result:
+                countOfBadMoves += 1
+
+        print(f"number of bad moves = {countOfBadMoves}")
 
     def step(self) -> None:
         """Step the model forward one time step."""
@@ -299,13 +314,7 @@ class Model(object):
         """Update the environment for the current time step."""
         tick = self.cal.minute_of_day
 
-        countOfBadMoves = 0
-
-        for person in self.context.agents():
-            result = person.move(self.cal, self.cspace, self.place_map)
-            if not result:
-                countOfBadMoves += 1
-
+        self.movePersons()
         # self.context.synchronize(Person.restore)
 
         self.get_local_ids()
@@ -353,8 +362,15 @@ class Model(object):
 
             for person in place.peopleAtPlace:
                 person.state.heatIndex = place.heatIndex
+                if person.state.heatIndex > self.get_heat_threshold():
+                    person.state.hrsAboveHeatThreshold += 1
+                else:
+                    person.state.hrsAboveHeatThreshold = 0
+                person.state.probHeatEvent = self.compute_prob_heat_event(
+                    person.state.heatIndex,
+                    person.state.hrsAboveHeatThreshold
+                )
 
-        print(f"number of bad moves = {countOfBadMoves}")
         print(f"number of heat index matches = {countOfHeatIndexMatches}")
 
     def get_heat_threshold(self) -> float:
@@ -378,7 +394,9 @@ class Model(object):
                 person.id,
                 person.state.location.x,
                 person.state.location.y,
-                person.state.heatIndex
+                person.state.heatIndex,
+                person.state.hrsAboveHeatThreshold,
+                person.state.probHeatEvent
             )
             # person.uid_rank, person.meet_count)
 
