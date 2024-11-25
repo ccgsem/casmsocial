@@ -37,7 +37,11 @@ class Place(object):
 
         self.peopleAtPlace = []
         self.personIdsAtPlace = []
-        self.headIndex = None
+        self.heatIndex = None
+
+        self.AIR = False
+        if 'AIR' in initDict:
+            self.AIR = bool(initDict['AIR'])
 
     def reset(self):
         self.peopleAtPlace.clear()
@@ -56,6 +60,10 @@ class Place(object):
 def register_place_type(place_type: type[Place]):
     """Register a place type with the Place class."""
     Place.place_types.append(place_type)
+
+def get_place_type(idx: int) -> Type[Place]:
+    """Get a place type from the place_types list."""
+    return Place.place_types[idx]
 
 def get_place_type_idx(place_type: Type[Place]) -> int:
     """Get the index of a place type in the place_types list."""

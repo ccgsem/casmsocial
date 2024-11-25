@@ -18,7 +18,7 @@ from casmsocial.activities import (
 )
 
 import math
-from typing import Dict, Tuple
+from typing import Type, Dict, Tuple
 import pathlib
 import pyarrow.parquet as pq
 
@@ -44,6 +44,7 @@ class ModelSetup:
         personFile: pathlib.Path,
         placeMap: Dict,
         activitiesMap: Dict,
+        person_places: list[str],
         thisRank: int,
         context,
         cspace,
@@ -61,19 +62,29 @@ class ModelSetup:
                 p = dict(zip(table.column_names, row))
 
                 personID = p['sp_id']
-                hhId = p['sp_hh_id']
+
+                # TODO: add tests for this
+                #  - places = [ p[x] for x in person_places ]
+                #  - all places should be in placeMap
+                #  - the first place is a household
+                #  - how to handle the case where the person is not on this rank?
+
+
+                places = [ p[x] for x in person_places ]
+                    # p['sp_hh_id'],
+                    # p['sp_work_id'],
+                    # p['sp_school_id']
+                #]
+                hhId = places[0]  # p['sp_hh_id']
+                if (hhId not in placeMap):
+                    print(f'Error: No place found for {p}')
+
                 rank = placeMap[hhId].rank
 
                 if rank != thisRank:
                     continue
 
                 startingLocation = placeMap[hhId].location
-
-                places = [
-                    p['sp_hh_id'],
-                    p['sp_work_id'],
-                    p['sp_school_id']
-                ]
 
                 schedule = activitiesMap[personID]
                 print(f'personID={personID}, schedule={schedule}')
@@ -83,12 +94,18 @@ class ModelSetup:
 
                 # startingRisk = rng.random()
 
+                # Person
+                #  - places: list[int]
+                #  - schedules: Schedules
+
                 person = Person(
                     personID,
                     rank,
                     schedules,
                     places,
-                    startingLocation)
+                    startingLocation,
+                    p  # initDict for additional data
+                )
                 person_cache[person.uid] = person
                 agentIdMap[personID] = person.uid
                 context.add(person)
@@ -100,7 +117,7 @@ class ModelSetup:
     @staticmethod
     def initPlacesFromFile(
         rank: int,
-        placeType: str,
+        placeType: Type[Place], #str,
         placeFile: pathlib.Path,
         placeMap: dict[int, Place],
         localPlaces,
@@ -120,22 +137,22 @@ class ModelSetup:
 
                 placeId = p['sp_id']
 
-                place = None
-                match placeType:
-                    case 'household':
-                        # place = Household(p, rank)
-                        place = Household(p)
-                    case 'work':
-                        # place = Work(p, rank)
-                        place = Work(p)
-                    case  'school':
-                        # place = School(p, rank)
-                        place = School(p)
-                    case _:
-                        print(
-                            'Error: Bad placetype during place initialization:'
-                            f' {placeType}')
-                        place = Place(p)
+                place = placeType(p)
+                # match placeType:
+                #     case 'household':
+                #         # place = Household(p, rank)
+                #         place = Household(p)
+                #     case 'work':
+                #         # place = Work(p, rank)
+                #         place = Work(p)
+                #     case  'school':
+                #         # place = School(p, rank)
+                #         place = School(p)
+                #     case _:
+                #         print(
+                #             'Error: Bad placetype during place initialization:'
+                #             f' {placeType}')
+                #         place = Place(p)
 
                 placeMap[placeId] = place
 
@@ -149,42 +166,54 @@ class ModelSetup:
     @staticmethod
     def initPlaces(
         rank: int,
-        householdFile: str,
-        workFile: str,
-        schoolFile: str,
+        place_files: list[pathlib.Path],
+        #householdFile: str,
+        #workFile: str,
+        #schoolFile: str,
         cspace
     ) -> Tuple[Dict[int, Place], list[int]]:
 
         placeMap: map = {}
         localPlaces: list = []
 
-        placeMap, localPlaces = \
-            ModelSetup.initPlacesFromFile(
-                rank,
-                'household',
-                householdFile,
-                placeMap,
-                localPlaces,
-                cspace
-            )
-        placeMap, localPlaces = \
-            ModelSetup.initPlacesFromFile(
-                rank,
-                'work',
-                workFile,
-                placeMap,
-                localPlaces,
-                cspace
-            )
-        placeMap, localPlaces = \
-            ModelSetup.initPlacesFromFile(
-                rank,
-                'school',
-                schoolFile,
-                placeMap,
-                localPlaces,
-                cspace
-            )
+        for index, placeFile in enumerate(place_files):
+            placeMap, localPlaces = \
+                ModelSetup.initPlacesFromFile(
+                    rank,
+                    Place.place_types[index],
+                    placeFile,
+                    placeMap,
+                    localPlaces,
+                    cspace
+                )
+
+        # placeMap, localPlaces = \
+        #     ModelSetup.initPlacesFromFile(
+        #         rank,
+        #         'household',
+        #         householdFile,
+        #         placeMap,
+        #         localPlaces,
+        #         cspace
+        #     )
+        # placeMap, localPlaces = \
+        #     ModelSetup.initPlacesFromFile(
+        #         rank,
+        #         'work',
+        #         workFile,
+        #         placeMap,
+        #         localPlaces,
+        #         cspace
+        #     )
+        # placeMap, localPlaces = \
+        #     ModelSetup.initPlacesFromFile(
+        #         rank,
+        #         'school',
+        #         schoolFile,
+        #         placeMap,
+        #         localPlaces,
+        #         cspace
+        #     )
 
         return placeMap, localPlaces
 

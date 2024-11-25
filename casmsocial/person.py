@@ -6,6 +6,7 @@ from repast4py.space import ContinuousPoint as cpt
 
 from dataclasses  import dataclass, field
 from typing import Dict, Optional, List, Tuple, OrderedDict
+from collections import deque
 
 from casmsocial.calendar import Calendar
 from casmsocial.activities import(
@@ -26,9 +27,9 @@ class PersonData():
     places: List[int]
     location: cpt
     currentPlaceID: str
-    heatIndex: float
-    hrsAboveHeatThreshold: int = 0
-    probHeatEvent: float = 0.0
+    outside_worker: bool
+    heatIndices: deque
+    probHeatEvent: float
 
 
 # @dataclass(slots=True)
@@ -46,7 +47,8 @@ class Person(core.Agent):
         rank: int,
         schedules: Schedules,
         places: list[int],
-        starting_location: cpt):
+        starting_location: cpt,
+        initDict: Dict):
         """Constructor for the Person class.
         
         Arguments:
@@ -67,19 +69,20 @@ class Person(core.Agent):
             starting_location: A ContinuousPoint for this Person's starting location 
                 on a cspace projection. Set to null and override the move() function 
                 if not using a cspace projection.
+            initDict: A dictionary of initial values for the person
         """
         super().__init__(
             id=local_id,
             type=Person.TYPE,
             rank=rank)
-        
+                
         self.state = PersonData(
             schedules=schedules,
             places=places,
             location=starting_location,
             currentPlaceID=places[0],
-            heatIndex=float('nan'),
-            hrsAboveHeatThreshold=0,
+            outside_worker=bool(initDict.get('outside_worker', False)),
+            heatIndices=deque([float('nan')]),
             probHeatEvent=0.0
         )
 
@@ -97,8 +100,8 @@ class Person(core.Agent):
             tuple(self.state.places),  # 2: convert list to tuple
             tuple(e for e in self.state.location.coordinates),  # 3: location
             self.state.currentPlaceID,  # 4: currentPlaceID
-            self.state.heatIndex,   # 5: heatIndex
-            self.state.hrsAboveHeatThreshold,    # 6: hrsAboveHeatThreshold
+            self.state.outside_worker,  # 5:  outside_worker
+            tuple(self.state.heatIndices),   # 6: heatIndex
             self.state.probHeatEvent  # 7: probHeatEvent
             )
 
@@ -186,12 +189,11 @@ class Person(core.Agent):
         pt = cpt(pt_array[0], pt_array[1], 0)
         currentPlaceID = person_data[4]
         
-
         schedules = Schedules.restore(person_data[1])
         person = Person(uid[0], uid[2], schedules, person_data[2], pt)
         person.state.currentPlaceID = currentPlaceID
-        person.state.heatIndex = person_data[5]
-        person.state.hrsAboveHeatThreshold = person_data[6]
+        person.state.outside_worker = person_data[5]
+        person.state.heatIndices = deque(person_data[6])
         person.state.probHeatEvent = person_data[7]
 
         return person

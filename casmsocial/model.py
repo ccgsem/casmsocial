@@ -10,7 +10,8 @@ from repast4py import context as ctx
 import repast4py
 
 # import numpy as np
-from typing import Dict
+from typing import Callable, Dict
+from collections import deque
 from mpi4py import MPI
 # from dataclasses import dataclass
 from dotenv import (
@@ -24,9 +25,12 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 
+from abc import ABC, abstractmethod
+
 from casmsocial.person import Person
 from casmsocial.place import (
     Place,
+    register_place_type,
     get_place_type_idx
 )
 
@@ -34,11 +38,15 @@ from casmsocial.calendar import Calendar
 
 from casmsocial.modelsetup import (
     ModelSetup
-    # initPersons, initPlaces, initActivities, initContacts
 )
 
+# place types
+from casmsocial.household import Household
+from casmsocial.work import Work
+from casmsocial.school import School
 
-class Model(object):
+
+class Model(ABC):
     """
     The Model class encapsulates the simulation, and is
     responsible for initialization (scheduling events, creating agents,
@@ -55,7 +63,137 @@ class Model(object):
         comm: MPI.Intracomm,
         params: Dict
     ):
+        pass
 
+    @abstractmethod
+    def start(self) -> None:
+        pass
+
+    @abstractmethod
+    def step(self) -> None:
+        """Step the model forward one time step."""
+        pass
+
+
+# model factory implementation
+__MODELS = {}
+
+
+def get_models(        
+) -> dict[str, Callable[[MPI.Intracomm, dict], Model]]:
+    """
+    Returns a dictionary of available models with their creators, must be
+    callable with the following signature:
+    model_creator(
+        comm: MPI.Intracomm,
+        params: dict) -> Model
+    """
+    return __MODELS
+
+
+def register_casmsocial_model(
+        model_type: str
+        ) -> Callable[[MPI.Intracomm, dict], Model]:
+    """
+    Registers a model creator, must be callable with the following signature:
+    model_creator(model_type: MPI.Intracomm, dict) -> Model
+
+    Args:
+    model_type - model type, must be a string
+
+    Returns:
+    decorator - a decorator to register the model creator
+    """
+    def decorator(fn):
+        __MODELS[model_type] = fn
+        return fn
+    return decorator
+
+
+# model creator
+def get_casmsocial_model(
+        model_type: str
+        ) -> Callable[[MPI.Intracomm, dict], Model]:
+    """
+    Returns an casmsocial model creator, must be callable with the following
+    signature:
+    model_creator(model_type: MPI.Intracomm, dict) -> Model
+
+    Args:
+    model_type - model type, must be a string
+    """
+
+    if model_type not in __MODELS:
+        #logger.info("Available models:")
+        print("Available models:")
+        for key in __MODELS.keys():
+            #logger.info(key)
+            print(key)
+        raise ValueError(f"Unsupported model type: {model_type}")
+    return __MODELS[model_type]
+
+
+class ModelNotFoundError(Exception):
+    """ exception if model not found """
+    pass
+
+
+# utility functions for heat-related computations
+def filter_heat_indices(
+    heat_indices: list[float],
+    threshold: float
+) -> list[float]:
+    """Filter out all heat indices above the threshold."""
+    exceeded = True
+    return \
+        [t for t in heat_indices if (exceeded := exceeded and  t > threshold)]
+
+
+def compute_prob_heat_event(
+    heat_indices: list[float],
+    threshold: float
+) -> float:
+    """Compute the probability of a heat event."""
+    # filter out all heat indices above the threshold
+    heat_index = heat_indices[0]
+    heat = filter_heat_indices(heat_indices, threshold)
+    hours_above_threshold = len(heat)
+
+    # note: length of heat is the number of hours above the threshold
+    # prob_heat_event = \
+    #     1 - (1 - ((heat_indices[0] - threshold/80.0) ** 2) ** (3 * len(heat)))
+    prob_heat_event = \
+        1 - (1 - ((heat_index - threshold)/80.0) ** 2) ** (3*hours_above_threshold)
+    return prob_heat_event
+
+
+# register the 'casmsocial' model
+@register_casmsocial_model('casmsocial_GeoModel')
+def create_casmsocial_GeoModel(
+    comm: MPI.Intracomm,
+    params: dict
+) -> Model:
+    print("Registering casmsocial model")
+    return GeoModel(comm, params)
+
+
+class GeoModel(Model):
+    """
+    The Model class encapsulates the simulation, and is
+    responsible for initialization (scheduling events, creating agents,
+    and the grid the agents inhabit), and the overall iterating
+    behavior of the model.
+
+    Args:
+        comm: the mpi communicator over which the model is distributed.
+        params: the simulation input parameters
+    """
+
+    def __init__(
+        self,
+        comm: MPI.Intracomm,
+        params: Dict
+    ):
         # create the schedule
         self.runner = schedule.init_schedule_runner(comm)
         self.runner.schedule_repeating_event(1, 1, self.step)
@@ -64,7 +202,7 @@ class Model(object):
         self.runner.schedule_end_event(self.at_end)
 
         # the data input path should be defined by $CASMSOCIAL_DATA_PATH
-        # load $OMMUNITYSIM_DATA_PATH from .env
+        # load $CASMSOCIAL_DATA_PATH from .env
         load_dotenv(find_dotenv())
         data_input_path = os.environ.get("CASMSOCIAL_DATA_PATH")
 
@@ -73,17 +211,6 @@ class Model(object):
         else:
             data_input_path = pathlib.Path(data_input_path)
         
-        # load environment file
-        # heat_index_file_path = data_input_path / params['heat.index.file']
-        self.heatindex_by_hour_place_file_path = \
-            data_input_path / params['heatIndex.file']
-        if self.heatindex_by_hour_place_file_path.exists():
-            print(f"Loading heat map places from {self.heatindex_by_hour_place_file_path}")
-        else:
-            print(f"Error: Heat map places file {self.heatindex_by_hour_place_file_path} not found.")
-            exit(1)
-        self._heat_threshold = 90.0
-
         # create the context to hold the agents and manage cross process
         # synchronization
         self.context = ctx.SharedContext(comm)
@@ -91,11 +218,13 @@ class Model(object):
         # create a bounding box equal to the size of the entire global world
         
         # bounds for continuous space (bounds from 'hh_utm' bounding box)
+        bb = params['world.bounding.box']
+        print(f"world bounding box = {bb}")
         box = space.BoundingBox(
-            xmin=682382,  # remainder: .07291591
-            xextent=65291,  # remainder:  .067068616976, params['world.width']
-            ymin=3933088,  # remainder: .46059242
-            yextent=61693 # remainder: .09425332444, params['world.height']
+            xmin=bb[0],
+            xextent=bb[1],
+            ymin=bb[2],
+            yextent=bb[3]
         )
 
         # create a SharedContext with the given bounding box
@@ -114,13 +243,22 @@ class Model(object):
         self.steps_per_day = int(params['steps.per.day'])
         self.cal = Calendar()
 
-        # place_map is a dict of placeID->place object
-        # local_places is a list of place objects "located" on this process
+        # register the place types
+        register_place_type(Household)
+        register_place_type(Work)
+        register_place_type(School)
+
+        person_places = ['sp_hh_id', 'sp_work_id', 'sp_school_id']
+
+        # initialize the places
+        #  - place_map is a dict of placeID->place object
+        #  - local_places is a list of place objects "located" on this process
+        place_filenames = [
+            data_input_path / filename for filename in params['place.files']
+        ] 
         self.place_map, self.local_places = ModelSetup.initPlaces(
             rank,
-            data_input_path / params['household.file'],
-            data_input_path / params['work.file'],
-            data_input_path / params['school.file'],
+            place_filenames,
             self.cspace
         )
         print(f"size of place_map = {len(self.place_map)}")
@@ -133,9 +271,15 @@ class Model(object):
         # contact_map is a dict of personID->{placeID->[personID]}
         # i.e. it is a map of personIDs to a list of contacted persons at each
         # place
-        self.contact_map = ModelSetup.initContacts(
-            data_input_path / params['contact.file']
-        )
+        self.contact_map = {}
+        if 'contact.file' in params:
+            print("Loading contact file...")
+
+            self.contact_map = ModelSetup.initContacts(
+                data_input_path / params['contact.file']
+            )
+        else:
+            print("Error: contact file not specified.")
 
         print(F"rank {rank}: contacts size={len(self.contact_map)}")
 
@@ -147,6 +291,7 @@ class Model(object):
             data_input_path / params['person.file'],
             self.place_map,
             activitiesMap,
+            person_places,
             rank,
             self.context,
             self.cspace,
@@ -154,57 +299,6 @@ class Model(object):
 
         print(F"rank {rank}: number of person agents={len(self.agent_id_map)}")
 
-        # initialize the logging
-        self.agent_logger = logging.TabularLogger(
-            comm,
-            params['agent_log_file'],
-            [
-                'tick',
-                'agent_id',
-                'x',
-                'y',
-                'heatIndex',
-                'hrsAboveHeatThreshold',
-                'probHeatEvent'
-            ]  # , 'meet_count']
-        )
-
-        # self.meet_log = MeetLog()
-        # loggers = \
-        #     logging.create_loggers(
-        #         self.meet_log,
-        #         op=MPI.SUM,
-        #         names={'total_meets': 'total'},
-        #         rank=rank
-        #     )
-        # loggers += \
-        #     logging.create_loggers(
-        #         self.meet_log,
-        #         op=MPI.MIN,
-        #         names={'min_meets': 'min'},
-        #         rank=rank
-        #     )
-        # loggers += \
-        #     logging.create_loggers(
-        #         self.meet_log,
-        #         op=MPI.MAX,
-        #         names={'max_meets': 'max'},
-        #         rank=rank
-        #     )
-        # self.data_set = \
-        #     logging.ReducingDataSet(
-        #         loggers,
-        #         MPI.COMM_WORLD,
-        #         params['meet_log_file']
-        #     )
-
-        # count the initial colocations at time 0 and log
-        # for person in self.context.agents():
-        #     person.count_colocations(self.cspace, self.meet_log)
-        # self.data_set.log(0)
-        # self.meet_log.max_meets = \
-        #     self.meet_log.min_meets = self.meet_log.total_meets = 0
-        self.log_agents()
 
         # saved = []
         # for p in self.context.agents():
@@ -227,8 +321,41 @@ class Model(object):
         #         f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
         #     )
 
+        # load environment file
+        # heat_index_file_path = data_input_path / params['heat.index.file']
+        self.heatindex_by_hour_place_file_path = \
+            data_input_path / params['heatIndex.file']
+        if self.heatindex_by_hour_place_file_path.exists():
+            print(f"Loading heat map places from {self.heatindex_by_hour_place_file_path}")
+        else:
+            print(f"Error: Heat map places file {self.heatindex_by_hour_place_file_path} not found.")
+            exit(1)
+
+        self._heat_threshold = 90.0
+        # self._heat_threshold = float(params['heat_threshold'])
+
         # initialize the heat threshold
-        self.hours_above_heat_threshold = 0
+        self.heat_indices = deque([float('nan')])
+
+        # initialize the logging
+        self.agent_logger = logging.TabularLogger(
+            comm,
+            params['agent_log_file'],
+            [
+                'tick',
+                'agent_id',
+                'x',
+                'y',
+                'heatIndex',
+                'hrsAboveHeatThreshold',
+                'probHeatEvent'
+            ]  # , 'meet_count']
+        )
+        self.log_agents()
+
+    @property
+    def heat_threshold(self) -> float:
+        return self._heat_threshold
 
     def movePersons(self):
         """Move all persons"""
@@ -282,6 +409,9 @@ class Model(object):
 
     def add_people_to_places(self) -> None:
         for person in self.context.agents():
+            if person.state.currentPlaceID not in self.place_map:
+                print(f"Person {person.id} has no place.")
+                return
             self.place_map[person.state.currentPlaceID].addPerson(person)
 
     def make_contacts(self, tick) -> None:
@@ -306,10 +436,6 @@ class Model(object):
                 )
             person.make_contacts(contacts)
 
-    def load_environment_parameters(self) -> None:
-        """Load the environment parameters."""
-        pass
-
     def update_environment(self) -> None:
         """Update the environment for the current time step."""
         tick = self.cal.minute_of_day
@@ -322,6 +448,7 @@ class Model(object):
         self.add_people_to_places()
         self.make_contacts(tick)
 
+        # update the heat indices
         heatindex_by_hour_place = \
             pd.read_parquet(
                 self.heatindex_by_hour_place_file_path,
@@ -337,17 +464,9 @@ class Model(object):
             f"min heat index = {minheatindex}, "
             f"max heat index = {maxheatindex}, "
             f"mean heat index = {meanheatindex}")
-        if meanheatindex > self.get_heat_threshold():
-            self.hours_above_heat_threshold += 1
-        else:
-            self.hours_above_heat_threshold = 0
-        prob_heat_event = self.compute_prob_heat_event(
-            meanheatindex,
-            self.hours_above_heat_threshold
-        )
-        print(f"probability of heat event = {prob_heat_event}")
 
-        heatIndex_map = heatindex_by_hour_place.set_index('sp_id')['heatIndex'].to_dict()
+        heatIndex_map = \
+            heatindex_by_hour_place.set_index('sp_id')['heatIndex'].to_dict()
 
         countOfHeatIndexMatches = 0
         for place in self.local_places:
@@ -360,42 +479,34 @@ class Model(object):
             else:
                 place.heatIndex = meanheatindex
 
+            if len(place.peopleAtPlace) > 0:
+                print(f"place {place.id} has {len(place.peopleAtPlace)} people")
+
             for person in place.peopleAtPlace:
-                person.state.heatIndex = place.heatIndex
-                if person.state.heatIndex > self.get_heat_threshold():
-                    person.state.hrsAboveHeatThreshold += 1
-                else:
-                    person.state.hrsAboveHeatThreshold = 0
-                person.state.probHeatEvent = self.compute_prob_heat_event(
-                    person.state.heatIndex,
-                    person.state.hrsAboveHeatThreshold
+                person.state.heatIndices.appendleft(place.heatIndex)
+
+                person.state.probHeatEvent = compute_prob_heat_event(
+                    person.state.heatIndices,
+                    self.heat_threshold
                 )
 
         print(f"number of heat index matches = {countOfHeatIndexMatches}")
 
-    def get_heat_threshold(self) -> float:
-        return self._heat_threshold
-
-    def compute_prob_heat_event(
-        self,
-        heat_index: float,
-        hours_above_threshold: int
-    ) -> float:
-        """Compute the probability of a heat event."""
-        prob_heat_event = 1 - (1 - ((heat_index - 90)/80)** 2) ** (3*hours_above_threshold)
-        return prob_heat_event
-
     def log_agents(self) -> None:
         # tick = self.runner.schedule.tick
         tick = self.cal.hour_of_day
+
         for person in self.context.agents():
+            heat = filter_heat_indices(
+                person.state.heatIndices,
+                self.heat_threshold)
             self.agent_logger.log_row(
                 tick,
                 person.id,
                 person.state.location.x,
                 person.state.location.y,
-                person.state.heatIndex,
-                person.state.hrsAboveHeatThreshold,
+                person.state.heatIndices[0],
+                len(heat),
                 person.state.probHeatEvent
             )
             # person.uid_rank, person.meet_count)
@@ -408,3 +519,4 @@ class Model(object):
 
     def start(self) -> None:
         self.runner.execute()
+        self.at_end()

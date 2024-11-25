@@ -3,11 +3,27 @@ from repast4py import parameters
 from mpi4py import MPI
 from typing import Dict
 
-from casmsocial.model import Model
+from casmsocial.model import (
+    Model,
+    get_casmsocial_model
+)
 
 
 def run(params: Dict):
-    model = Model(MPI.COMM_WORLD, params)
+    """Run the model."""
+    model_name = params['model.name']
+    
+    print(f"Retrieving model <{model_name}>...")
+
+    try:
+        ModelCreator = get_casmsocial_model(params['model.name'])
+    except ValueError as ve:        
+        print(f"Error: {ve}")
+        return
+
+    print(f"Running model <{model_name}>...")
+
+    model = ModelCreator(MPI.COMM_WORLD, params)
     model.start()
 
 

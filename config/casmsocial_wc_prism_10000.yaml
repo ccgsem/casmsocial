@@ -1,0 +1,17 @@
+model.name: 'casmsocial_GeoModel'
+random.seed: 42
+stop.at: 24
+world.width: 2
+world.height: 2
+steps.per.day: 24
+world.bounding.box: [682382, 65291, 3933088, 61693]
+place.files:
+  - data/processed/wake_county_test/hh.parquet
+  - data/processed/wake_county_test/hh.parquet
+  - data/processed/wake_county_test/work.parquet
+activity.file: 'data/processed/wake_county_test/activities.parquet'
+person.file: 'data/processed/wake_county_test/persons.parquet'
+heatIndex.file: 'data/processed/wake_county/heatIndex_by_hour_place.parquet'
+meet_log_file: 'output/meet_log.csv'
+heat_threshold: 90
+agent_log_file: 'output/agent_log.csv'
