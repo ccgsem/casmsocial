@@ -468,7 +468,12 @@ class GeoModel(Model):
         heatIndex_map = \
             heatindex_by_hour_place.set_index('sp_id')['heatIndex'].to_dict()
 
+        # metrics
         countOfHeatIndexMatches = 0
+        countOfHeatIncidents = 0
+        countOfAirConditionedPlaces = 0
+        countOfOutsideWorkers = 0
+
         for place in self.local_places:
 
             place.step(self.cal, self.rng)
@@ -479,18 +484,37 @@ class GeoModel(Model):
             else:
                 place.heatIndex = meanheatindex
 
-            if len(place.peopleAtPlace) > 0:
-                print(f"place {place.id} has {len(place.peopleAtPlace)} people")
+            # Take air conditioned places as 72 degrees    
+            if place.AIR:
+                countOfAirConditionedPlaces += 1
+                localHeatIndex = 72
+            else:
+                localHeatIndex = place.heatIndex
+
+            # if len(place.peopleAtPlace) > 0:
+            #     print(f"place {place.id} has {len(place.peopleAtPlace)} people")
 
             for person in place.peopleAtPlace:
-                person.state.heatIndices.appendleft(place.heatIndex)
+
+                # adjust the heat index for outside workers
+                personHeatIndex = localHeatIndex
+                if person.state.outside_worker:
+                    countOfOutsideWorkers += 1
+                    personHeatIndex = place.heatIndex
+
+                person.state.heatIndices.appendleft(personHeatIndex)
 
                 person.state.probHeatEvent = compute_prob_heat_event(
                     person.state.heatIndices,
                     self.heat_threshold
                 )
+                if person.state.probHeatEvent > 0.0001:
+                    countOfHeatIncidents += 1
 
         print(f"number of heat index matches = {countOfHeatIndexMatches}")
+        print(f"number of heat incidents = {countOfHeatIncidents}")
+        print(f"number of air conditioned places = {countOfAirConditionedPlaces}")
+        print(f"number of outside workers = {countOfOutsideWorkers}")
 
     def log_agents(self) -> None:
         # tick = self.runner.schedule.tick

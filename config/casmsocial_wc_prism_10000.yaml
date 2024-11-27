@@ -11,7 +11,7 @@ place.files:
   - data/processed/wake_county_test/work.parquet
 activity.file: 'data/processed/wake_county_test/activities.parquet'
 person.file: 'data/processed/wake_county_test/persons.parquet'
-heatIndex.file: 'data/processed/wake_county/heatIndex_by_hour_place.parquet'
+heatIndex.file: 'data/processed/wake_county_test/heatIndex_by_hour_place.parquet'
 meet_log_file: 'output/meet_log.csv'
 heat_threshold: 90
 agent_log_file: 'output/agent_log.csv'

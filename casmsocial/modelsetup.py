@@ -92,8 +92,6 @@ class ModelSetup:
                 schedules = Schedules(())
                 schedules.addActivities(activities)
 
-                # startingRisk = rng.random()
-
                 # Person
                 #  - places: list[int]
                 #  - schedules: Schedules
@@ -117,18 +115,19 @@ class ModelSetup:
     @staticmethod
     def initPlacesFromFile(
         rank: int,
-        placeType: Type[Place], #str,
+        placeTypeIndex: int,
         placeFile: pathlib.Path,
         placeMap: dict[int, Place],
         localPlaces,
         cspace
     ) -> Tuple[Dict[int, Place], list[int]]:
 
+        # get the place type
+        placeType = Place.place_types[placeTypeIndex]
+
+        # load the places from the file
         table = pq.read_table(placeFile)
 
-        # with open(placeFile, 'r', newline='') as f:
-        #     places = DictReader(f)
-        #     for p in places:
         for batch in table.to_batches():
             for row in zip(*batch.columns):
                 # convert arrow scalars to python
@@ -136,24 +135,7 @@ class ModelSetup:
                 p = dict(zip(table.column_names, row))
 
                 placeId = p['sp_id']
-
                 place = placeType(p)
-                # match placeType:
-                #     case 'household':
-                #         # place = Household(p, rank)
-                #         place = Household(p)
-                #     case 'work':
-                #         # place = Work(p, rank)
-                #         place = Work(p)
-                #     case  'school':
-                #         # place = School(p, rank)
-                #         place = School(p)
-                #     case _:
-                #         print(
-                #             'Error: Bad placetype during place initialization:'
-                #             f' {placeType}')
-                #         place = Place(p)
-
                 placeMap[placeId] = place
 
                 localBounds = cspace.get_local_bounds()
@@ -167,53 +149,22 @@ class ModelSetup:
     def initPlaces(
         rank: int,
         place_files: list[pathlib.Path],
-        #householdFile: str,
-        #workFile: str,
-        #schoolFile: str,
         cspace
     ) -> Tuple[Dict[int, Place], list[int]]:
 
         placeMap: map = {}
         localPlaces: list = []
 
-        for index, placeFile in enumerate(place_files):
+        for placeTypeIndex, placeFile in enumerate(place_files):
             placeMap, localPlaces = \
                 ModelSetup.initPlacesFromFile(
                     rank,
-                    Place.place_types[index],
+                    placeTypeIndex,
                     placeFile,
                     placeMap,
                     localPlaces,
                     cspace
                 )
-
-        # placeMap, localPlaces = \
-        #     ModelSetup.initPlacesFromFile(
-        #         rank,
-        #         'household',
-        #         householdFile,
-        #         placeMap,
-        #         localPlaces,
-        #         cspace
-        #     )
-        # placeMap, localPlaces = \
-        #     ModelSetup.initPlacesFromFile(
-        #         rank,
-        #         'work',
-        #         workFile,
-        #         placeMap,
-        #         localPlaces,
-        #         cspace
-        #     )
-        # placeMap, localPlaces = \
-        #     ModelSetup.initPlacesFromFile(
-        #         rank,
-        #         'school',
-        #         schoolFile,
-        #         placeMap,
-        #         localPlaces,
-        #         cspace
-        #     )
 
         return placeMap, localPlaces
 
