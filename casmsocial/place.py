@@ -2,22 +2,49 @@
 from repast4py.space import DiscretePoint as dpt
 from repast4py.space import ContinuousPoint as cpt
 
-from typing import Type, Dict
+from dataclasses  import dataclass, fields
+from typing import (
+    Type,
+    List,
+    Dict,
+    NamedTuple
+)
 import math
 
 from casmsocial.person import Person
 from casmsocial.calendar import Calendar
+from casmsocial.datautility import create_dataclass_record_from_dicts
+
+
+@dataclass
+class PlaceData:
+    """Data for a Place."""
+    place_type: str = "household"
+    place_name: str = ""
+    latitude: float = float('nan')
+    longitude: float = float('nan')
+    heatIndex: float = float('nan')
+    AIR: bool = False
+    # x: float
+    # y: float
+    # location: cpt
+    # rank: int
+    # peopleAtPlace: List[Person]
+    # personIdsAtPlace: List[int]
+    # heatIndex: Optional[float]
 
 
 class Place(object):
     """Generic Place Class"""
-
-    place_types = []
-
+    
     def __init__(
             self,
-            initDict: Dict
+            placeTypeName: str,
+            initDict: Dict,
+            placeDataType: Type[dataclass]
         ):
+        """Constructor for the Place class."""
+
         placeId = initDict['sp_id']
 
         # `location` is currently referenced required but not used
@@ -37,11 +64,14 @@ class Place(object):
 
         self.peopleAtPlace = []
         self.personIdsAtPlace = []
-        self.heatIndex = None
 
-        self.AIR = False
-        if 'AIR' in initDict:
-            self.AIR = bool(initDict['AIR'])
+        # create data from initDict
+        self.data = \
+            create_dataclass_record_from_dicts(
+                placeDataType,
+                initDict,
+                {'place_type': placeTypeName}                
+            )
 
     def reset(self):
         self.peopleAtPlace.clear()
@@ -56,15 +86,43 @@ class Place(object):
     def step(self, calendar, rng):
         pass
 
-# Register the Place subclass with the Place class
-def register_place_type(place_type: type[Place]):
-    """Register a place type with the Place class."""
-    Place.place_types.append(place_type)
 
-def get_place_type(idx: int) -> Type[Place]:
-    """Get a place type from the place_types list."""
-    return Place.place_types[idx]
+# NamedTuple for PlaceConfig
+PlaceConfig = NamedTuple(
+    'PlaceConfig',
+    [
+        ('name', str),
+        ('type', Type[Place]),
+        ('dataType', Type[dataclass])
+    ]
+)
 
-def get_place_type_idx(place_type: Type[Place]) -> int:
-    """Get the index of a place type in the place_types list."""
-    return Place.place_types.index(place_type)
+
+class Places:
+    """Configurations for places."""
+
+    # List of PlaceConfigs
+    __configs: List[PlaceConfig] = []
+
+    @classmethod
+    def register_place_config(cls, config: PlaceConfig):
+        """Add a PlaceConfig to the list of configs."""
+        cls.__configs.append(config)
+
+    @classmethod
+    def get_place_config(cls, idx: int) -> PlaceConfig:
+        """Get a PlaceConfig from the list of configs."""
+        return cls.__configs[idx]
+
+    @classmethod
+    def get_place_config_idx(cls, name: str) -> int:
+        """Get the index of a PlaceConfig in the list of configs."""
+        for idx, config in enumerate(cls.__configs):
+            if config.name == name:
+                return idx
+        return -1
+
+    @classmethod
+    def get_num_configs(cls) -> int:
+        """Get the number of PlaceConfigs in the list of configs."""
+        return len(cls.__configs)

@@ -23,10 +23,6 @@ rank = MPI.COMM_WORLD.Get_rank()
 @dataclass(slots=True)
 class PersonData():
     """Data for a Person."""
-    schedules: Schedules
-    places: List[int]
-    location: cpt
-    currentPlaceID: str
     outside_worker: bool
     heatIndices: deque
     probHeatEvent: float
@@ -75,12 +71,13 @@ class Person(core.Agent):
             id=local_id,
             type=Person.TYPE,
             rank=rank)
+        
+        self.schedules: Schedules = schedules
+        self.places: List[int] = places
+        self.location: cpt = starting_location
+        self.currentPlaceID: str = places[0]
                 
         self.state = PersonData(
-            schedules=schedules,
-            places=places,
-            location=starting_location,
-            currentPlaceID=places[0],
             outside_worker=bool(initDict.get('outside_worker', False)),
             heatIndices=deque([float('nan')]),
             probHeatEvent=0.0
@@ -96,10 +93,10 @@ class Person(core.Agent):
         """ 
         return (
             self.uid,   # 0: uid is a tuple
-            self.state.schedules.data(),    # 1: schedules is a Schedules object
-            tuple(self.state.places),  # 2: convert list to tuple
-            tuple(e for e in self.state.location.coordinates),  # 3: location
-            self.state.currentPlaceID,  # 4: currentPlaceID
+            self.schedules.data(),    # 1: schedules is a Schedules object
+            tuple(self.places),  # 2: convert list to tuple
+            tuple(e for e in self.location.coordinates),  # 3: location
+            self.currentPlaceID,  # 4: currentPlaceID
             self.state.outside_worker,  # 5:  outside_worker
             tuple(self.state.heatIndices),   # 6: heatIndex
             self.state.probHeatEvent  # 7: probHeatEvent
@@ -111,7 +108,7 @@ class Person(core.Agent):
         success = False
         # next_activity_id = int(self.selectNextPlace(cal))
         next_activity_id = self.selectNextPlace(cal)
-        next_place_id = self.state.places[next_activity_id]
+        next_place_id = self.places[next_activity_id]
 
         place = place_map.get(next_place_id)
         if place is None:
@@ -119,17 +116,17 @@ class Person(core.Agent):
 
         if place is not None:
             success = True
-            self.state.currentPlaceID = next_place_id
+            self.currentPlaceID = next_place_id
             # print(
             #    f"Rank {rank}: "
-            #    f"Agent {self.id} is moving to place {self.state.currentPlaceID}")
+            #    f"Agent {self.id} is moving to place {self.currentPlaceID}")
             placeLocation = place.location
-            self.state.location = cspace.move(self, placeLocation)
-            self.state.location = placeLocation
+            self.location = cspace.move(self, placeLocation)
+            self.location = placeLocation
         else:
             print(f"move for act {next_activity_id} to place {next_place_id} failed.")
-            print(f"places = {self.state.places}")
-            print(f"Remaining a currentPlaceID = {self.state.currentPlaceID}")
+            print(f"places = {self.places}")
+            print(f"Remaining a currentPlaceID = {self.currentPlaceID}")
 
         return success
     
@@ -137,7 +134,7 @@ class Person(core.Agent):
         """Select the activities for the time of day and day of week.
         """
         activities_idx = 0
-        if not cal.is_weekday() and len(self.state.schedules) > 1:
+        if not cal.is_weekday() and len(self.schedules) > 1:
             activities_idx = 1
         return activities_idx
     
@@ -150,11 +147,11 @@ class Person(core.Agent):
         time = cal.minute_of_day
 
         activities_idx = self.selectActivities(cal)
-        act = self.state.schedules[activities_idx].activityAt(time)
+        act = self.schedules[activities_idx].activityAt(time)
 
         next_activity_id = 0  # home is the default
         if act is not None:
-            if act.activity_id < len(self.state.places):
+            if act.activity_id < len(self.places):
                 next_activity_id = int(act.activity_id)
             # else:  if the activity is not in the list of places, go home
  
@@ -162,7 +159,7 @@ class Person(core.Agent):
 
     def count_colocations(self, cspace):
         # subtract self
-        num_here = cspace.get_num_agents(self.state.location) - 1
+        num_here = cspace.get_num_agents(self.location) - 1
         print(f"Agent {self.id} sees {num_here} other agents.")
         # meet_log.total_meets += num_here
         # if num_here < meet_log.min_meets:
@@ -191,7 +188,7 @@ class Person(core.Agent):
         
         schedules = Schedules.restore(person_data[1])
         person = Person(uid[0], uid[2], schedules, person_data[2], pt)
-        person.state.currentPlaceID = currentPlaceID
+        person.currentPlaceID = currentPlaceID
         person.state.outside_worker = person_data[5]
         person.state.heatIndices = deque(person_data[6])
         person.state.probHeatEvent = person_data[7]

@@ -1,28 +1,23 @@
-from casmsocial.person import Person, person_cache
-
+from casmsocial.person import (
+    Person,
+    person_cache
+)
 from casmsocial.place import (
     Place,
-    register_place_type
+    Places
 )
-from casmsocial.household import Household
-from casmsocial.work import Work
-from casmsocial.school import School
-register_place_type(Household)
-register_place_type(Work)
-register_place_type(School)
-
 from casmsocial.activities import (
     Act,
     Activities,
     Schedules
 )
 
-import math
-from typing import Type, Dict, Tuple
+from typing import (
+    Dict,
+    Tuple
+)
 import pathlib
 import pyarrow.parquet as pq
-
-# from repast4py.space import DiscretePoint as dpt
 
 
 def pointInBounds(point, bounds):
@@ -68,13 +63,9 @@ class ModelSetup:
                 #  - all places should be in placeMap
                 #  - the first place is a household
                 #  - how to handle the case where the person is not on this rank?
-
-
+                #  - how to handle the case where the person is not in the activitiesMap?
                 places = [ p[x] for x in person_places ]
-                    # p['sp_hh_id'],
-                    # p['sp_work_id'],
-                    # p['sp_school_id']
-                #]
+
                 hhId = places[0]  # p['sp_hh_id']
                 if (hhId not in placeMap):
                     print(f'Error: No place found for {p}')
@@ -87,7 +78,7 @@ class ModelSetup:
                 startingLocation = placeMap[hhId].location
 
                 schedule = activitiesMap[personID]
-                print(f'personID={personID}, schedule={schedule}')
+                # print(f'personID={personID}, schedule={schedule}')
                 activities = Activities(personID, tuple(schedule))
                 schedules = Schedules(())
                 schedules.addActivities(activities)
@@ -108,7 +99,7 @@ class ModelSetup:
                 agentIdMap[personID] = person.uid
                 context.add(person)
                 cspace.move(person, startingLocation)
-                print(person.state.places)
+                # print(person.places)
 
         return agentIdMap
 
@@ -123,7 +114,9 @@ class ModelSetup:
     ) -> Tuple[Dict[int, Place], list[int]]:
 
         # get the place type
-        placeType = Place.place_types[placeTypeIndex]
+        placeConfig = Places.get_place_config(placeTypeIndex)
+        placeType = placeConfig.type
+        placeDataType = placeConfig.dataType
 
         # load the places from the file
         table = pq.read_table(placeFile)
@@ -132,10 +125,10 @@ class ModelSetup:
             for row in zip(*batch.columns):
                 # convert arrow scalars to python
                 row = [x.as_py() for x in row]
-                p = dict(zip(table.column_names, row))
+                place_record = dict(zip(table.column_names, row))
 
-                placeId = p['sp_id']
-                place = placeType(p)
+                placeId = place_record['sp_id']
+                place = placeType(place_record, placeDataType)
                 placeMap[placeId] = place
 
                 localBounds = cspace.get_local_bounds()

@@ -1,19 +1,18 @@
 from repast4py import (
-    # core,
-    # random,
     space,
     schedule,
     logging
-    # parameters
 )
 from repast4py import context as ctx
 import repast4py
 
 # import numpy as np
-from typing import Callable, Dict
+from typing import (
+    Callable,
+    Dict
+)
 from collections import deque
 from mpi4py import MPI
-# from dataclasses import dataclass
 from dotenv import (
     find_dotenv,
     load_dotenv
@@ -29,9 +28,9 @@ from abc import ABC, abstractmethod
 
 from casmsocial.person import Person
 from casmsocial.place import (
-    Place,
-    register_place_type,
-    get_place_type_idx
+    PlaceData,
+    PlaceConfig,
+    Places
 )
 
 from casmsocial.calendar import Calendar
@@ -63,10 +62,12 @@ class Model(ABC):
         comm: MPI.Intracomm,
         params: Dict
     ):
+        """Constructor for the Model class."""
         pass
 
     @abstractmethod
     def start(self) -> None:
+        """Start the model."""
         pass
 
     @abstractmethod
@@ -244,9 +245,27 @@ class GeoModel(Model):
         self.cal = Calendar()
 
         # register the place types
-        register_place_type(Household)
-        register_place_type(Work)
-        register_place_type(School)
+        Places.register_place_config(
+            PlaceConfig(
+                name='Household',
+                type=Household,
+                dataType=PlaceData
+            )
+        )
+        Places.register_place_config(
+            PlaceConfig(
+                name='Work',
+                type=Work,
+                dataType=PlaceData
+            )
+        )
+        Places.register_place_config(
+            PlaceConfig(
+                name='School',
+                type=School,
+                dataType=PlaceData
+            )
+        )
 
         person_places = ['sp_hh_id', 'sp_work_id', 'sp_school_id']
 
@@ -255,7 +274,8 @@ class GeoModel(Model):
         #  - local_places is a list of place objects "located" on this process
         place_filenames = [
             data_input_path / filename for filename in params['place.files']
-        ] 
+        ]
+        
         self.place_map, self.local_places = ModelSetup.initPlaces(
             rank,
             place_filenames,
@@ -409,10 +429,10 @@ class GeoModel(Model):
 
     def add_people_to_places(self) -> None:
         for person in self.context.agents():
-            if person.state.currentPlaceID not in self.place_map:
+            if person.currentPlaceID not in self.place_map:
                 print(f"Person {person.id} has no place.")
                 return
-            self.place_map[person.state.currentPlaceID].addPerson(person)
+            self.place_map[person.currentPlaceID].addPerson(person)
 
     def make_contacts(self, tick) -> None:
 
@@ -422,7 +442,7 @@ class GeoModel(Model):
                 # print(f"Person {person.id} has no network.")
                 continue
 
-            contactIDs = personsContactMap.get(person.state.currentPlaceID)
+            contactIDs = personsContactMap.get(person.currentPlaceID)
             if not contactIDs:
                 # print(
                 #     f"Person {person.id} has no contacts at "
@@ -479,17 +499,17 @@ class GeoModel(Model):
             place.step(self.cal, self.rng)
                 
             if place.id in heatIndex_map:
-                place.heatIndex = heatIndex_map[place.id]
+                place.data.heatIndex= heatIndex_map[place.id]
                 countOfHeatIndexMatches+=1
             else:
-                place.heatIndex = meanheatindex
+                place.data.heatIndex= meanheatindex
 
             # Take air conditioned places as 72 degrees    
-            if place.AIR:
+            if place.data.AIR:
                 countOfAirConditionedPlaces += 1
                 localHeatIndex = 72
             else:
-                localHeatIndex = place.heatIndex
+                localHeatIndex = place.data.heatIndex
 
             # if len(place.peopleAtPlace) > 0:
             #     print(f"place {place.id} has {len(place.peopleAtPlace)} people")
@@ -500,7 +520,7 @@ class GeoModel(Model):
                 personHeatIndex = localHeatIndex
                 if person.state.outside_worker:
                     countOfOutsideWorkers += 1
-                    personHeatIndex = place.heatIndex
+                    personHeatIndex = place.data.heatIndex
 
                 person.state.heatIndices.appendleft(personHeatIndex)
 
@@ -527,8 +547,8 @@ class GeoModel(Model):
             self.agent_logger.log_row(
                 tick,
                 person.id,
-                person.state.location.x,
-                person.state.location.y,
+                person.location.x,
+                person.location.y,
                 person.state.heatIndices[0],
                 len(heat),
                 person.state.probHeatEvent

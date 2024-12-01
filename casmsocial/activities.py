@@ -4,6 +4,7 @@ import pyarrow.parquet as pq
 
 #from .Place import Place
 
+
 #class Act(BaseModel):
 class Act(object):
     """Act Class
@@ -23,12 +24,12 @@ class Act(object):
             activity_sequence: int,
             starttime_min: int,
             endtime_min: int) -> None:
-    #     super().__init__(
-    #         person_id=person_id,
-    #         activity_id=activity_id,
-    #         activity_sequence=activity_sequence,
-    #         starttime_min=starttime_min,
-    #         endtime_min=endtime_min)
+        #     super().__init__(
+        #         person_id=person_id,
+        #         activity_id=activity_id,
+        #         activity_sequence=activity_sequence,
+        #         starttime_min=starttime_min,
+        #         endtime_min=endtime_min)
         self.person_id = person_id
         self.activity_id = activity_id
         self.activity_sequence = activity_sequence
@@ -130,6 +131,7 @@ class Activities(object):
             tuple([Act.restore(act) for act in list(data[1])])
         )
     
+
 class Schedules(object):
     """Schedules Class
     
