@@ -39,7 +39,6 @@ class ModelSetup:
         personFile: pathlib.Path,
         placeMap: Dict,
         activitiesMap: Dict,
-        person_places: list[str],
         thisRank: int,
         context,
         cspace,
@@ -47,6 +46,10 @@ class ModelSetup:
     ) -> dict[int, int]:
 
         agentIdMap = {}
+
+        person_places = \
+            [placeConfig.personPlaceField
+                for placeConfig in Places.get_place_configs()]
 
         table = pq.read_table(personFile)
 
@@ -58,7 +61,7 @@ class ModelSetup:
 
                 personID = p['sp_id']
 
-                # TODO: add tests for this
+                 # TODO: add tests for this
                 #  - places = [ p[x] for x in person_places ]
                 #  - all places should be in placeMap
                 #  - the first place is a household

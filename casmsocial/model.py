@@ -6,7 +6,6 @@ from repast4py import (
 from repast4py import context as ctx
 import repast4py
 
-# import numpy as np
 from typing import (
     Callable,
     Dict
@@ -20,9 +19,7 @@ from dotenv import (
 import os
 import pathlib
 
-import numpy as np
 import pandas as pd
-import geopandas as gpd
 
 from abc import ABC, abstractmethod
 
@@ -249,25 +246,26 @@ class GeoModel(Model):
             PlaceConfig(
                 name='Household',
                 type=Household,
-                dataType=PlaceData
+                dataType=PlaceData,
+                personPlaceField='sp_hh_id'
             )
         )
         Places.register_place_config(
             PlaceConfig(
                 name='Work',
                 type=Work,
-                dataType=PlaceData
+                dataType=PlaceData,
+                personPlaceField='sp_work_id'
             )
         )
         Places.register_place_config(
             PlaceConfig(
                 name='School',
                 type=School,
-                dataType=PlaceData
+                dataType=PlaceData,
+                personPlaceField='sp_school_id'
             )
         )
-
-        person_places = ['sp_hh_id', 'sp_work_id', 'sp_school_id']
 
         # initialize the places
         #  - place_map is a dict of placeID->place object
@@ -311,7 +309,6 @@ class GeoModel(Model):
             data_input_path / params['person.file'],
             self.place_map,
             activitiesMap,
-            person_places,
             rank,
             self.context,
             self.cspace,

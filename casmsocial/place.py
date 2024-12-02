@@ -2,7 +2,7 @@
 from repast4py.space import DiscretePoint as dpt
 from repast4py.space import ContinuousPoint as cpt
 
-from dataclasses  import dataclass, fields
+from dataclasses  import dataclass
 from typing import (
     Type,
     List,
@@ -93,7 +93,8 @@ PlaceConfig = NamedTuple(
     [
         ('name', str),
         ('type', Type[Place]),
-        ('dataType', Type[dataclass])
+        ('dataType', Type[dataclass]),
+        ('personPlaceField', str)
     ]
 )
 
@@ -108,6 +109,11 @@ class Places:
     def register_place_config(cls, config: PlaceConfig):
         """Add a PlaceConfig to the list of configs."""
         cls.__configs.append(config)
+    
+    @classmethod
+    def get_place_configs(cls) -> List[PlaceConfig]:
+        """Get the list of PlaceConfigs."""
+        return cls.__configs
 
     @classmethod
     def get_place_config(cls, idx: int) -> PlaceConfig:
