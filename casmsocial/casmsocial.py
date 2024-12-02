@@ -3,9 +3,9 @@ from repast4py import parameters
 from mpi4py import MPI
 from typing import Dict
 
-from casmsocial.model import (
-    Model,
-    get_casmsocial_model
+from casmsocial.modelfactory import (
+    get_casmsocial_model,
+    load_models_from_dotenv
 )
 
 
@@ -14,6 +14,8 @@ def run(params: Dict):
     model_name = params['model.name']
     
     print(f"Retrieving model <{model_name}>...")
+
+    load_models_from_dotenv()
 
     try:
         ModelCreator = get_casmsocial_model(params['model.name'])
