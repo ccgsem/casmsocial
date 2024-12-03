@@ -86,10 +86,20 @@ def create_casmsocial_GeoModel(
 
 class GeoModel(Model):
     """
-    The Model class encapsulates the simulation, and is
+    The GeoModel class encapsulates the simulation, and is
     responsible for initialization (scheduling events, creating agents,
     and the grid the agents inhabit), and the overall iterating
     behavior of the model.
+
+    The GeoModel class is a subclass of the Model class, which is an abstract
+    base class that defines the interface for all models in the casmsocial.
+    The GeoModel class implements the start and step methods, which are called
+    by the run function in the casmsocial module to start and run the model.
+
+    The GeoModel class adds the following functionality to the Model class:
+
+    - The GeoModel class initializes geographic places and agents.
+    - The GeoModel class updates the  environment for the current time step.
 
     Args:
         comm: the mpi communicator over which the model is distributed.
@@ -150,32 +160,6 @@ class GeoModel(Model):
         self.steps_per_day = int(params['steps.per.day'])
         self.cal = Calendar()
 
-        # register the place types
-        Places.register_place_config(
-            PlaceConfig(
-                name='Household',
-                type=Household,
-                dataType=PlaceData,
-                personPlaceField='sp_hh_id'
-            )
-        )
-        Places.register_place_config(
-            PlaceConfig(
-                name='Work',
-                type=Work,
-                dataType=PlaceData,
-                personPlaceField='sp_work_id'
-            )
-        )
-        Places.register_place_config(
-            PlaceConfig(
-                name='School',
-                type=School,
-                dataType=PlaceData,
-                personPlaceField='sp_school_id'
-            )
-        )
-
         # initialize the places
         #  - place_map is a dict of placeID->place object
         #  - local_places is a list of place objects "located" on this process
@@ -225,6 +209,7 @@ class GeoModel(Model):
 
         print(F"rank {rank}: number of person agents={len(self.agent_id_map)}")
 
+        self.data_input_path = data_input_path
 
         # saved = []
         # for p in self.context.agents():
@@ -246,42 +231,6 @@ class GeoModel(Model):
         #         f"{p}, schedules={p.schedules.data()}, places={p.places}, "
         #         f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
         #     )
-
-        # load environment file
-        # heat_index_file_path = data_input_path / params['heat.index.file']
-        self.heatindex_by_hour_place_file_path = \
-            data_input_path / params['heatIndex.file']
-        if self.heatindex_by_hour_place_file_path.exists():
-            print(f"Loading heat map places from {self.heatindex_by_hour_place_file_path}")
-        else:
-            print(f"Error: Heat map places file {self.heatindex_by_hour_place_file_path} not found.")
-            exit(1)
-
-        self._heat_threshold = 90.0
-        # self._heat_threshold = float(params['heat_threshold'])
-
-        # initialize the heat threshold
-        self.heat_indices = deque([float('nan')])
-
-        # initialize the logging
-        self.agent_logger = logging.TabularLogger(
-            comm,
-            params['agent_log_file'],
-            [
-                'tick',
-                'agent_id',
-                'x',
-                'y',
-                'heatIndex',
-                'hrsAboveHeatThreshold',
-                'probHeatEvent'
-            ]  # , 'meet_count']
-        )
-        self.log_agents()
-
-    @property
-    def heat_threshold(self) -> float:
-        return self._heat_threshold
 
     def movePersons(self):
         """Move all persons"""
@@ -308,6 +257,14 @@ class GeoModel(Model):
             f"hour {self.cal.hour_of_day}, "
             f"minute {self.cal.minute_of_day}"
         )
+
+        self.movePersons()
+        # self.context.synchronize(Person.restore)
+
+        self.get_local_ids()
+
+        self.add_people_to_places()
+        self.make_contacts(tick)
 
         self.update_environment()
 
@@ -364,17 +321,109 @@ class GeoModel(Model):
 
     def update_environment(self) -> None:
         """Update the environment for the current time step."""
-        tick = self.cal.minute_of_day
+        pass
 
-        self.movePersons()
-        # self.context.synchronize(Person.restore)
+    def log_agents(self) -> None:
+        """Log the agents at the current time step."""
+        pass
 
-        self.get_local_ids()
+    def at_end(self) -> None:
+        """Actions to take at the end of the simulation."""
+        pass
 
-        self.add_people_to_places()
-        self.make_contacts(tick)
+    def start(self) -> None:
+        self.runner.execute()
+        self.at_end()
 
-        # update the heat indices
+
+# register the 'casmsocial' model
+@register_casmsocial_model('casmsocial_HeatRiskModel')
+def create_casmsocial_GeoModel(
+    comm: MPI.Intracomm,
+    params: dict
+) -> Model:
+    print("Registering casmsocial model")
+    return HeatRiskModel(comm, params)
+
+
+class HeatRiskModel(GeoModel):
+    """ HeatRiskModel class """
+    
+    def __init__(
+        self,
+        comm: MPI.Intracomm,
+        params: Dict
+    ):
+        """ Constructor for the HeatRiskModel class """
+        # register the place types
+        Places.register_place_config(
+            PlaceConfig(
+                name='Household',
+                type=Household,
+                dataType=PlaceData,
+                personPlaceField='sp_hh_id'
+            )
+        )
+        Places.register_place_config(
+            PlaceConfig(
+                name='Work',
+                type=Work,
+                dataType=PlaceData,
+                personPlaceField='sp_work_id'
+            )
+        )
+        Places.register_place_config(
+            PlaceConfig(
+                name='School',
+                type=School,
+                dataType=PlaceData,
+                personPlaceField='sp_school_id'
+            )
+        )
+
+        super().__init__(comm, params)
+
+        # load environment file
+        # heat_index_file_path = data_input_path / params['heat.index.file']
+        self.heatindex_by_hour_place_file_path = \
+            self.data_input_path / params['heatIndex.file']
+        if self.heatindex_by_hour_place_file_path.exists():
+            print(f"Loading heat map places from {self.heatindex_by_hour_place_file_path}")
+        else:
+            print(f"Error: Heat map places file {self.heatindex_by_hour_place_file_path} not found.")
+            exit(1)
+
+        self._heat_threshold = 90.0
+        # self._heat_threshold = float(params['heat_threshold'])
+
+        # initialize the heat threshold
+        self.heat_indices = deque([float('nan')])
+
+        # initialize the logging
+        self.agent_logger = logging.TabularLogger(
+            comm,
+            params['agent_log_file'],
+            [
+                'tick',
+                'agent_id',
+                'x',
+                'y',
+                'heatIndex',
+                'hrsAboveHeatThreshold',
+                'probHeatEvent'
+            ]  # , 'meet_count']
+        )
+        self.log_agents()
+
+    @property
+    def heat_threshold(self) -> float:
+        return self._heat_threshold
+
+    def update_environment(self) -> None:
+        """Update the environment for the current time step."""
+        super().update_environment()
+
+         # update the heat indices
         heatindex_by_hour_place = \
             pd.read_parquet(
                 self.heatindex_by_hour_place_file_path,
@@ -466,12 +515,3 @@ class GeoModel(Model):
     def at_end(self) -> None:
         # self.data_set.close()
         self.agent_logger.close()
-
-    def start(self) -> None:
-        self.runner.execute()
-        self.at_end()
-
-
-class PrismHeatModel(GeoModel):
-    """ PrismHeatModel class """
-    pass

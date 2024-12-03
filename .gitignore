@@ -108,3 +108,6 @@ ENV/
 output/
 
 data
+
+# MacOS Finder metadata
+.DS_Store
