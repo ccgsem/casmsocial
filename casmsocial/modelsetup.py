@@ -32,7 +32,14 @@ def pointInBounds(point, bounds):
 
 
 class ModelSetup:
-    """This class is responsible for setting up the model. It reads in the"""
+    """    
+    This class is responsible for setting up the model. It reads the data from
+
+     - places.files: list of files containing the places
+     - person.file: file containing the person data
+     - activities.file: file containing activities data for each person
+     - contacts.file: file containing contacts for each person
+    """
 
     @staticmethod
     def initPersons(
@@ -47,6 +54,8 @@ class ModelSetup:
 
         agentIdMap = {}
 
+        # get the person places, which are the fields in the person file that
+        # contain the place ids
         person_places = \
             [placeConfig.personPlaceField
                 for placeConfig in Places.get_place_configs()]
@@ -61,7 +70,7 @@ class ModelSetup:
 
                 personID = p['sp_id']
 
-                 # TODO: add tests for this
+                # TODO: add tests for this
                 #  - places = [ p[x] for x in person_places ]
                 #  - all places should be in placeMap
                 #  - the first place is a household

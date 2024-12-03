@@ -7,7 +7,7 @@ steps.per.day: 24
 world.bounding.box: [682382, 65291, 3933088, 61693]
 place.files:
   - data/processed/wake_county_test/hh.parquet
-  - data/processed/wake_county_test/hh.parquet
+  - data/processed/wake_county_test/schools.parquet
   - data/processed/wake_county_test/work.parquet
 activity.file: 'data/processed/wake_county_test/activities.parquet'
 person.file: 'data/processed/wake_county_test/persons.parquet'

@@ -6,11 +6,11 @@ world.height: 2
 steps.per.day: 24
 world.bounding.box: [682382, 65291, 3933088, 61693]
 place.files:
-  - data/processed/wake_county_prism/hh.parquet
-  - data/processed/wake_county_prism/schools.parquet
-  - data/processed/wake_county_prism/work.parquet
-activity.file: 'data/processed/wake_county_prism/activities.parquet'
-person.file: 'data/processed/wake_county_prism/persons.parquet'
+  - data/processed/wake_county_prism_fulltest/hh.parquet
+  - data/processed/wake_county_prism_fulltest/schools.parquet
+  - data/processed/wake_county_prism_fulltest/work.parquet
+activity.file: 'data/processed/wake_county_prism_fulltest/activities.parquet'
+person.file: 'data/processed/wake_county_prism_fulltest/persons.parquet'
 heatIndex.file: 'data/processed/wake_county_test/heatIndex_by_hour_place.parquet'
 meet_log_file: 'output/meet_log.csv'
 heat_threshold: 90

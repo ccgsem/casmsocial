@@ -93,18 +93,18 @@ class HeatRiskModel(GeoModel):
         )
         Places.register_place_config(
             PlaceConfig(
-                name='Work',
-                type=Work,
-                dataType=PlaceData,
-                personPlaceField='sp_work_id'
-            )
-        )
-        Places.register_place_config(
-            PlaceConfig(
                 name='School',
                 type=School,
                 dataType=PlaceData,
                 personPlaceField='sp_school_id'
+            )
+        )
+        Places.register_place_config(
+            PlaceConfig(
+                name='Work',
+                type=Work,
+                dataType=PlaceData,
+                personPlaceField='sp_work_id'
             )
         )
 
