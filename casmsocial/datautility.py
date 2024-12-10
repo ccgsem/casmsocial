@@ -1,6 +1,10 @@
 """ data utility functions for casmsocial """
 from dataclasses  import dataclass, fields
-from typing import Type, List, Dict, NamedTuple
+from typing import (
+    Dict,
+    List,
+    Type
+)
 
 
 # extract_dataclass_fields

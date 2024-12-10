@@ -5,43 +5,42 @@ Created: 02 Dec 2024
 
 Defining the GeoModel
 """
+from mpi4py import MPI
 from repast4py import (
     space,
-    schedule,
-    logging
+    schedule
 )
 from repast4py import context as ctx
 import repast4py
+import random
 
 from casmsocial.model import Model
-from casmsocial.person import Person
-from casmsocial.place import (
-    PlaceData,
-    PlaceConfig,
-    Places
+from casmsocial.person import (
+    Person,
+    person_cache
 )
 from casmsocial.calendar import Calendar
 from casmsocial.modelsetup import (
     ModelSetup
 )
-# place types
-from casmsocial.household import Household
-from casmsocial.work import Work
-from casmsocial.school import School
+# note: place types are set by derived Model classes
+
 from casmsocial.modelfactory import (
     register_casmsocial_model
 )
+from casmsocial.message import Message
 
-from typing import Dict
+from typing import (
+    Dict,
+    List
+)
 from collections import deque
-from mpi4py import MPI
 from dotenv import (
     find_dotenv,
     load_dotenv
 )
 import os
 import pathlib
-
 import pandas as pd
 import time
 
@@ -83,9 +82,11 @@ class GeoModel(Model):
         comm: MPI.Intracomm,
         params: Dict
     ):
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
+        self.size = self.comm.Get_size()
+
         # start timer
-        # self.timer = repast4py.Timer()
-        # self.timer.start()
         self.start_time = time.time()
 
         # create the schedule
@@ -145,11 +146,28 @@ class GeoModel(Model):
         ]
         
         self.place_map, self.local_places = ModelSetup.initPlaces(
-            rank,
+            self.rank,
             place_filenames,
             self.cspace
         )
         print(f"size of place_map = {len(self.place_map)}")
+
+        # Send rank of local places to other ranks
+        send_buffers = [[] for _ in range(self.size)]
+        for place in self.local_places:
+            for rank in range(self.size):
+                msg = {
+                    'place_id': place.id,
+                    'rank': place.rank
+                }
+                if rank != self.rank:
+                    send_buffers[rank].append(msg)
+
+        received_buffers = self.comm.alltoall(send_buffers)
+        all_messages = [msg for buffer in received_buffers for msg in buffer]
+        for msg in all_messages:
+            place = self.place_map[msg['place_id']]
+            place.rank = msg['rank']
 
         # activitiesMap is a dict of personID->Schedule object
         activitiesMap = ModelSetup.initActivities(
@@ -174,8 +192,8 @@ class GeoModel(Model):
         self.rng = repast4py.random.default_rng
 
         # agent_id_map is a map of personID->repast4py.Agent.uid
-        self.agent_id_map = {}
-        self.agent_id_map = ModelSetup.initPersons(
+        self.person_id_map = {}
+        self.person_id_map = ModelSetup.initPersons(
             data_input_path / params['person.file'],
             self.place_map,
             activitiesMap,
@@ -184,7 +202,7 @@ class GeoModel(Model):
             self.cspace,
             self.rng)
 
-        print(F"rank {rank}: number of person agents={len(self.agent_id_map)}")
+        print(F"rank {rank}: number of person agents={len(self.person_id_map)}")
 
         self.data_input_path = data_input_path
 
@@ -236,7 +254,7 @@ class GeoModel(Model):
         )
 
         self.movePersons()
-        # self.context.synchronize(Person.restore)
+        self.context.synchronize(Person.restore)
 
         self.get_local_ids()
 
@@ -244,6 +262,10 @@ class GeoModel(Model):
         self.make_contacts(tick)
 
         self.update_environment()
+
+        self.send_messages_between_agents()
+
+        return
 
         for person in self.context.agents():
             person.step(self.cal)
@@ -264,15 +286,15 @@ class GeoModel(Model):
 
     def get_local_ids(self) -> None:
         for person in self.context.agents():
-            if person.id not in self.agent_id_map:
-                self.agent_id_map[person.id] = person.uid
+            if person.id not in self.person_id_map:
+                self.person_id_map[person.id] = person.uid
 
     def add_people_to_places(self) -> None:
         for person in self.context.agents():
-            if person.currentPlaceID not in self.place_map:
+            if person.state.place_id not in self.place_map:
                 print(f"Person {person.id} has no place.")
                 return
-            self.place_map[person.currentPlaceID].addPerson(person)
+            self.place_map[person.state.place_id].addPerson(person)
 
     def make_contacts(self, tick) -> None:
 
@@ -282,19 +304,149 @@ class GeoModel(Model):
                 # print(f"Person {person.id} has no network.")
                 continue
 
-            contactIDs = personsContactMap.get(person.currentPlaceID)
+            contactIDs = personsContactMap.get(person.state.place_id)
             if not contactIDs:
                 # print(
                 #     f"Person {person.id} has no contacts at "
-                #     f"place {person.currentPlaceID}.")
+                #     f"place {person.state.place_id}.")
                 continue
 
             contacts = []
             for contactID in contactIDs:
                 contacts.append(
-                    self.context.agent(self.agent_id_map[contactID])
+                    self.context.agent(self.person_id_map[contactID])
                 )
             person.make_contacts(contacts)
+
+    def send_messages_between_agents(self) -> None:
+        """Send messages between agents."""
+        messages_to_send: List[Message] = []
+        remote_person_ids = []
+
+        # send the first round of messages
+        # Step 1: Send and receive messages
+        agents = self.context.agents(shuffle=True)
+    
+        for person in agents:
+
+            recipient = random.choice(agents)
+
+            if person.id != recipient.id:  # Avoid sending to self
+                message = person.create_message(
+                    recipient= recipient.id,
+                    message=f"Hello from {person.uid}",
+                    timestamp=(
+                        "Step on "
+                        f"day {self.cal.day_of_year}, "
+                        f"hour {self.cal.hour_of_day}, "
+                        f"minute {self.cal.minute_of_day}"
+                    )
+                )
+
+            messages = person.send_messages()
+            if len(messages) > 0:
+                print(f"Person {person} has messages.")
+
+                for message in messages:
+                    recipient = message.recipient
+                    if recipient in self.person_id_map:  # message to local person
+                        recipient_uid = self.person_id_map[recipient]
+                        print(f"Message from {message.sender} to {person_cache[recipient_uid].state}:")
+                        person_cache[recipient_uid].receive_message(message)
+                    else:   # message to remote person
+                        print(f"Message from {message.sender} to {recipient}:")
+
+                        # get remote person ID
+                        remote_person_ids.append(recipient)
+
+                        # create message to send to other rank
+                        message_to_send = message
+                        message_to_send.recipients = [recipient]
+                        messages_to_send.append(message_to_send)
+                        
+            else:
+                print(f"Person {person.id} has no messages.")
+                continue
+
+        # Exchange messages between processors
+        all_messages = \
+            self.exchange_messages(
+                remote_person_ids,
+                messages_to_send
+            )
+
+        # Step 2: Deliver messages from remote processors
+        for message in all_messages:
+            recipient = message.recipient
+            if recipient in self.person_id_map:
+                recipient_uid = self.person_id_map[recipient]
+                print(
+                    f"Remote message from {message.sender} to "
+                    f"{person_cache[recipient_uid].state}:"
+                )
+                person_cache[recipient_uid].receive_message(message)
+            else:
+                print(f"Remote message from {message.sender} to {recipient} not delivered")
+        
+        # Step 3: Process messages
+        for person in agents:
+            person.process_messages()
+    
+    def get_remote_person_id_map(
+            self,
+            remote_person_ids: List[int]) -> Dict[int, int]:
+        """Get the remote person ID map."""
+        remote_person_id_map = {}
+
+        # 1. Send request for remote person IDs to other ranks
+        send_buffers = [[] for _ in range(self.size)]
+        for person_id in remote_person_ids:
+            for rank in range(self.size):
+                if rank != self.rank:
+                    send_buffers[rank].append(person_id)
+
+        # 2. Receive remote person IDs from other ranks and map and send UIDs      
+        received_buffers = self.comm.alltoall(send_buffers)
+        send_buffers = [[] for _ in range(self.size)]  # reset send_buffers
+
+        all_messages = [msg for buffer in received_buffers for msg in buffer]
+        for person_id in all_messages:
+            if person_id in self.person_id_map:
+                for rank in range(self.size):
+                    if rank != self.rank:
+                        person_uid = self.person_id_map[person_id]
+                        msg = {'id': person_id, 'uid': person_uid}
+                        send_buffers[rank].append(msg)
+
+        # 3. Send remote person ID->UID map to other ranks
+        received_buffers = self.comm.alltoall(send_buffers)
+        all_messages = [msg for buffer in received_buffers for msg in buffer]
+        for msg in all_messages:
+            remote_person_id_map[msg['id']] = msg['uid']
+
+        return remote_person_id_map
+
+    def exchange_messages(
+            self,
+            remote_person_ids: List[int],
+            messages_to_send: list[Message]
+        ) -> List[Message]:
+        """Exchange messages between processors using MPI."""
+        remote_person_id_map = self.get_remote_person_id_map(remote_person_ids)
+
+        # Step 1: Send messages with recipients mapped to other ranks
+        send_buffers = [[] for _ in range(self.size)]
+        for msg in messages_to_send:
+            recipient_id = msg.recipient
+            if recipient_id in remote_person_id_map:
+                recipient_uid = remote_person_id_map[recipient_id]
+                recipient_rank = recipient_uid.rank
+            send_buffers[recipient_rank].append(msg)
+
+        # Step 2: Receive messages from other ranks
+        received_buffers = self.comm.alltoall(send_buffers)
+        all_messages = [msg for buffer in received_buffers for msg in buffer]
+        return all_messages
 
     def update_environment(self) -> None:
         """Update the environment for the current time step."""

@@ -23,8 +23,6 @@ class PlaceData:
     place_name: str = ""
     latitude: float = float('nan')
     longitude: float = float('nan')
-    heatIndex: float = float('nan')
-    AIR: bool = False
     # x: float
     # y: float
     # location: cpt

@@ -6,6 +6,7 @@ Created: 02 Dec 2024
 Defining the heat risk model for the CASMSOCIAL/PRSIM project
 """
 
+from mpi4py import MPI
 from repast4py import (
     logging
 )
@@ -23,14 +24,19 @@ from casmsocial.household import Household
 from casmsocial.work import Work
 from casmsocial.school import School
 
+from casmsocial.person import (
+    Person,
+    PersonData
+)
+
 # model factory
 from casmsocial.modelfactory import (
     register_casmsocial_model
 )
 
+from dataclasses  import dataclass
 from typing import Dict
 from collections import deque
-from mpi4py import MPI
 import pandas as pd
 
 
@@ -63,6 +69,21 @@ def compute_prob_heat_event(
     return prob_heat_event
 
 
+@dataclass
+class PlaceDataWithClimate(PlaceData):
+    """Place with heat index data."""
+    heatIndex: float = float('nan')
+    AIR: bool = False
+
+
+@dataclass
+class PersonDataWithHeatRisk(PersonData):
+    """Data for a Person."""
+    outside_worker: bool
+    heatIndices: deque
+    probHeatEvent: float
+
+
 # register the 'casmsocial' model
 @register_casmsocial_model('casmsocial_heatrisk_HeatRiskModel')
 def create_casmsocial_GeoModel(
@@ -87,7 +108,7 @@ class HeatRiskModel(GeoModel):
             PlaceConfig(
                 name='Household',
                 type=Household,
-                dataType=PlaceData,
+                dataType=PlaceDataWithClimate,
                 personPlaceField='sp_hh_id'
             )
         )
@@ -95,7 +116,7 @@ class HeatRiskModel(GeoModel):
             PlaceConfig(
                 name='School',
                 type=School,
-                dataType=PlaceData,
+                dataType=PlaceDataWithClimate,
                 personPlaceField='sp_school_id'
             )
         )
@@ -103,10 +124,12 @@ class HeatRiskModel(GeoModel):
             PlaceConfig(
                 name='Work',
                 type=Work,
-                dataType=PlaceData,
+                dataType=PlaceDataWithClimate,
                 personPlaceField='sp_work_id'
             )
         )
+
+        Person.person_data_type = PersonDataWithHeatRisk
 
         super().__init__(comm, params)
 
@@ -229,8 +252,8 @@ class HeatRiskModel(GeoModel):
             self.agent_logger.log_row(
                 tick,
                 person.id,
-                person.location.x,
-                person.location.y,
+                person.state.location.x,
+                person.state.location.y,
                 person.state.heatIndices[0],
                 len(heat),
                 person.state.probHeatEvent

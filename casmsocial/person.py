@@ -5,7 +5,13 @@ from repast4py.space import DiscretePoint as dpt
 from repast4py.space import ContinuousPoint as cpt
 
 from dataclasses  import dataclass, field
-from typing import Dict, Optional, List, Tuple, OrderedDict
+from typing import (
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Type
+)
 from collections import deque
 
 from casmsocial.calendar import Calendar
@@ -13,6 +19,7 @@ from casmsocial.activities import(
     Activities,
     Schedules
 )
+from casmsocial.message import Message
 
 import numpy as np
 
@@ -23,6 +30,11 @@ rank = MPI.COMM_WORLD.Get_rank()
 @dataclass(slots=True)
 class PersonData():
     """Data for a Person."""
+    person_id: int
+    place_id: int
+    activity_id: int
+    location: cpt
+    places: List[int]
     outside_worker: bool
     heatIndices: deque
     probHeatEvent: float
@@ -31,6 +43,7 @@ class PersonData():
 # @dataclass(slots=True)
 class Person(core.Agent):
     TYPE = 0  # class variable
+    personDataType = Type[dataclass]  # class variable
 
     # schedules: Optional[Schedules] = \
     #     field(default=tuple[Activities(0, tuple[0, 0, 0])])
@@ -73,15 +86,21 @@ class Person(core.Agent):
             rank=rank)
         
         self.schedules: Schedules = schedules
-        self.places: List[int] = places
-        self.location: cpt = starting_location
-        self.currentPlaceID: str = places[0]
                 
         self.state = PersonData(
+            person_id=local_id,
+            place_id = places[0],
+            activity_id=0,
+            location=starting_location,
+            places=places,
             outside_worker=bool(initDict.get('outside_worker', False)),
             heatIndices=deque([float('nan')]),
             probHeatEvent=0.0
         )
+
+        self.messages_outgoing: List[Message] = []
+        self.messages_sent: List[Message] = []
+        self.messages_incoming: List[Message] = []
 
         #print(f"Person {self.id} is ready!")
 
@@ -94,12 +113,14 @@ class Person(core.Agent):
         return (
             self.uid,   # 0: uid is a tuple
             self.schedules.data(),    # 1: schedules is a Schedules object
-            tuple(self.places),  # 2: convert list to tuple
-            tuple(e for e in self.location.coordinates),  # 3: location
-            self.currentPlaceID,  # 4: currentPlaceID
-            self.state.outside_worker,  # 5:  outside_worker
-            tuple(self.state.heatIndices),   # 6: heatIndex
-            self.state.probHeatEvent  # 7: probHeatEvent
+            self.state.person_id,   # 2: person_id
+            self.state.place_id,  # 3: place_id
+            self.state.activity_id,  # 4: activity_id
+            tuple(e for e in self.state.location.coordinates),  # 5: location
+            tuple(self.state.places),  # 6: convert list to tuple
+            self.state.outside_worker,  # 7:  outside_worker
+            tuple(self.state.heatIndices),   # 8: heatIndex
+            self.state.probHeatEvent  # 9: probHeatEvent
             )
 
     def move(self, cal: Calendar, cspace, place_map: Dict) -> bool:
@@ -108,7 +129,7 @@ class Person(core.Agent):
         success = False
         # next_activity_id = int(self.selectNextPlace(cal))
         next_activity_id = self.selectNextPlace(cal)
-        next_place_id = self.places[next_activity_id]
+        next_place_id = self.state.places[next_activity_id]
 
         place = place_map.get(next_place_id)
         if place is None:
@@ -116,17 +137,17 @@ class Person(core.Agent):
 
         if place is not None:
             success = True
-            self.currentPlaceID = next_place_id
+            self.state.place_id = next_place_id
             # print(
             #    f"Rank {rank}: "
-            #    f"Agent {self.id} is moving to place {self.currentPlaceID}")
+            #    f"Agent {self.id} is moving to place {self.state.place_id}")
             placeLocation = place.location
-            self.location = cspace.move(self, placeLocation)
-            self.location = placeLocation
+            self.state.location = cspace.move(self, placeLocation)
+            self.state.location = placeLocation
         else:
             print(f"move for act {next_activity_id} to place {next_place_id} failed.")
-            print(f"places = {self.places}")
-            print(f"Remaining a currentPlaceID = {self.currentPlaceID}")
+            print(f"places = {self.state.places}")
+            print(f"Remaining a currentPlaceID = {self.state.place_id}")
 
         return success
     
@@ -151,7 +172,7 @@ class Person(core.Agent):
 
         next_activity_id = 0  # home is the default
         if act is not None:
-            if act.activity_id < len(self.places):
+            if act.activity_id < len(self.state.places):
                 next_activity_id = int(act.activity_id)
             # else:  if the activity is not in the list of places, go home
  
@@ -159,7 +180,7 @@ class Person(core.Agent):
 
     def count_colocations(self, cspace):
         # subtract self
-        num_here = cspace.get_num_agents(self.location) - 1
+        num_here = cspace.get_num_agents(self.state.location) - 1
         print(f"Agent {self.id} sees {num_here} other agents.")
         # meet_log.total_meets += num_here
         # if num_here < meet_log.min_meets:
@@ -170,6 +191,50 @@ class Person(core.Agent):
 
     def make_contacts(self, contacts):
         pass
+    
+    def create_message(
+            self,
+            recipient: int,
+            message: str,
+            timestamp: str,
+            metadata: Dict = {},
+            attachments: Dict = {})->Message:
+        """Create a message to send to other agents."""
+        msg = Message(
+            sender=self.uid,
+            recipient=recipient,
+            message=message,
+            timestamp=timestamp,
+            metadata=metadata,
+            attachments=attachments
+        )
+
+        self.messages_outgoing.append(msg)
+
+        return(msg)
+    
+    def send_messages(self)->List[Message]:
+        """Send messages to other agents."""
+        outgoing_messages = self.messages_outgoing
+        self.messages_sent.extend(outgoing_messages)
+        self.messages_outgoing = []
+
+        return outgoing_messages
+
+    def receive_message(self, message: Message)->bool:
+        """Process received messages."""
+        self.messages_incoming.append(message)
+
+        return True
+
+    def process_messages(self)->None:
+        """modify the state of the person based on the messages received."""
+        for msg in self.messages_incoming:
+            # process the message
+            print(f"Agent {self.id} received message: {msg.message}")
+        
+        self.messages_incoming = []
+        self.messages_outgoing = []
     
     def step(self, calendar: Calendar):
         pass
@@ -182,18 +247,26 @@ class Person(core.Agent):
             person_data: tuple containing the data returned by Person.save(). 
         """ 
         uid = person_data[0]
-        pt_array = list(person_data[3])
+
+        pt_array = list(person_data[5])
         pt = cpt(pt_array[0], pt_array[1], 0)
-        currentPlaceID = person_data[4]
         
         schedules = Schedules.restore(person_data[1])
-        person = Person(uid[0], uid[2], schedules, person_data[2], pt)
-        person.currentPlaceID = currentPlaceID
-        person.state.outside_worker = person_data[5]
-        person.state.heatIndices = deque(person_data[6])
-        person.state.probHeatEvent = person_data[7]
+        person = Person(uid[0], uid[2], schedules, person_data[6], pt)
+
+        # person.state = PersonData(*person_data[2:])
+        person.state.person_id = person_data[2]
+        person.state.place_id = person_data[3]
+        person.state.activity_id = person_data[4]
+        # person.state.location = pt  # person_data[5]
+        # person.places = person_data[6]
+
+        person.state.outside_worker = person_data[7]
+        person.state.heatIndices = deque(person_data[8])
+        person.state.probHeatEvent = person_data[9]
 
         return person
 
 
 person_cache = {}
+person_id_map = {}
