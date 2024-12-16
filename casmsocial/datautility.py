@@ -20,12 +20,11 @@ def extract_dataclass_attribute_names(
 
 
 # extract_dataclass_fields
-def create_dataclass_record_from_dicts(
+def create_dataclass_record_from_dict(
         dataclass: Type[dataclass],
-        initDict: Dict,
-        inputDict: Dict,
+        initDict: Dict
         ) -> dataclass:
-    """Create a dataclass record from dictionaries.
+    """Create a dataclass record from a dictionarie.
 
     Steps:
 
@@ -50,6 +49,6 @@ def create_dataclass_record_from_dicts(
     for unwanted_key in unwanted_keys:
         del initDict[unwanted_key]
     
-    parameters = inputDict | initDict
+    parameters = initDict
     
     return dataclass(**parameters)

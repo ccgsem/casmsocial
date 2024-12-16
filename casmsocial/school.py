@@ -11,10 +11,10 @@ class School(Place):
     def __init__(
             self,
             initDict: Dict,
-            placeDataType: Type[dataclass]
+            placeDataClass: Type[dataclass]
         ):
+        initDict["place_type"] = "School"
         super().__init__(
-             "school",
              initDict,
-             placeDataType
+             placeDataClass
         )

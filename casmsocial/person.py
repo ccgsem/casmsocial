@@ -19,6 +19,7 @@ from casmsocial.activities import(
     Activities,
     Schedules
 )
+from casmsocial.datautility import create_dataclass_record_from_dict
 from casmsocial.message import Message
 
 import numpy as np
@@ -28,22 +29,39 @@ rank = MPI.COMM_WORLD.Get_rank()
 
 
 @dataclass(slots=True)
-class PersonData():
+class PersonData:
     """Data for a Person."""
     person_id: int
     place_id: int
     activity_id: int
     location: cpt
     places: List[int]
-    outside_worker: bool
-    heatIndices: deque
-    probHeatEvent: float
+    # outside_worker: bool
+    # heatIndices: deque
+    # probHeatEvent: float
+
+
+@dataclass
+class ChiSimPersonData:
+    person_id: int
+    act_type: int
+    place_id: int
+    places: List[int]
 
 
 # @dataclass(slots=True)
 class Person(core.Agent):
     TYPE = 0  # class variable
-    personDataType = Type[dataclass]  # class variable
+    __personDataClass = Type[dataclass]  # class variable
+
+    @classmethod
+    def registerPersonDataClass(cls, persondataclass: Type[dataclass]) -> None:
+        """Register Person dataclass."""
+        cls.__personDataClass = persondataclass
+    @classmethod
+    def getPersonDataClass(cls) -> Type[dataclass]:
+        """Returns Person dataclass."""
+        return cls.__personDataClass
 
     # schedules: Optional[Schedules] = \
     #     field(default=tuple[Activities(0, tuple[0, 0, 0])])
@@ -87,22 +105,37 @@ class Person(core.Agent):
         
         self.schedules: Schedules = schedules
                 
-        self.state = PersonData(
-            person_id=local_id,
-            place_id = places[0],
-            activity_id=0,
-            location=starting_location,
-            places=places,
-            outside_worker=bool(initDict.get('outside_worker', False)),
-            heatIndices=deque([float('nan')]),
-            probHeatEvent=0.0
-        )
+        # map input parameters to dict
+        initDict['person_id'] = local_id
+        initDict['place_id'] = places[0]
+        initDict['activity_id'] = 0
+        initDict['location'] = starting_location
+        initDict['places'] = places
+
+        self.state = \
+            create_dataclass_record_from_dict(
+                Person.getPersonDataClass(),
+                initDict          
+            )
 
         self.messages_outgoing: List[Message] = []
         self.messages_sent: List[Message] = []
         self.messages_incoming: List[Message] = []
 
         #print(f"Person {self.id} is ready!")
+
+    @property
+    def pt(self) -> cpt:
+        """"""
+        return self.state.location
+    
+    @property
+    def currentPlaceID(self) -> cpt:
+        return self.state.place_id
+    
+    @property
+    def places(self) -> list[int]:
+        return self.state.places
 
     def save(self) -> Tuple:
         """Saves the state of this Person as a Tuple.
@@ -127,7 +160,6 @@ class Person(core.Agent):
         """Move to the place indicated by the schedule for this tick.
         """
         success = False
-        # next_activity_id = int(self.selectNextPlace(cal))
         next_activity_id = self.selectNextPlace(cal)
         next_place_id = self.state.places[next_activity_id]
 
@@ -252,7 +284,7 @@ class Person(core.Agent):
         pt = cpt(pt_array[0], pt_array[1], 0)
         
         schedules = Schedules.restore(person_data[1])
-        person = Person(uid[0], uid[2], schedules, person_data[6], pt)
+        person = Person(uid[0], uid[2], schedules, person_data[6], pt, {})
 
         # person.state = PersonData(*person_data[2:])
         person.state.person_id = person_data[2]

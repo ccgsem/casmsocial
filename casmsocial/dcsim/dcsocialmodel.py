@@ -13,15 +13,15 @@ from repast4py import (
 
 from casmsocial.model import Model
 from casmsocial.geomodel import GeoModel
-from casmsocial.place import (
-    PlaceData,
-    PlaceConfig,
+from casmsocial.place import PlaceData
+from casmsocial.places import (
+    PlacesConfig,
     Places
 )
 
 # place types
 from casmsocial.household import Household
-from casmsocial.work import Work
+from casmsocial.workplace import Workplace
 from casmsocial.school import School
 
 # model factory
@@ -56,7 +56,7 @@ class ArtSocModel(GeoModel):
         """ Constructor for the HeatRiskModel class """
         # register the place types
         Places.register_place_config(
-            PlaceConfig(
+            PlacesConfig(
                 name='Household',
                 type=Household,
                 dataType=PlaceData,
@@ -64,7 +64,7 @@ class ArtSocModel(GeoModel):
             )
         )
         Places.register_place_config(
-            PlaceConfig(
+            PlacesConfig(
                 name='School',
                 type=School,
                 dataType=PlaceData,
@@ -72,9 +72,9 @@ class ArtSocModel(GeoModel):
             )
         )
         Places.register_place_config(
-            PlaceConfig(
+            PlacesConfig(
                 name='Work',
-                type=Work,
+                type=Workplace,
                 dataType=PlaceData,
                 personPlaceField='sp_work_id'
             )

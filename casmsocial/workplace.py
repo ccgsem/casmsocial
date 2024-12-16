@@ -6,15 +6,15 @@ from typing import (
 )
 from dataclasses  import dataclass
 
-class Work(Place):
+class Workplace(Place):
     """Work class"""
     def __init__(
             self,
             initDict: Dict,
-            placeDataType: Type[dataclass]
+            placeDataClass: Type[dataclass]
         ):
+        initDict["place_type"] = "Workplace"
         super().__init__(
-             "work",
              initDict,
-             placeDataType
+             placeDataClass
         )

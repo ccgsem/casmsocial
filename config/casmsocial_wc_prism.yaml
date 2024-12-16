@@ -5,7 +5,7 @@ world.width: 2
 world.height: 2
 steps.per.day: 24
 world.bounding.box: [682382, 65291, 3933088, 61693]
-place.files:
+places.files:
   - data/processed/wake_county_prism/hh.parquet
   - data/processed/wake_county_prism/schools.parquet
   - data/processed/wake_county_prism/work.parquet

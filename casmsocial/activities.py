@@ -1,91 +1,32 @@
 from __future__ import annotations
-from pydantic import BaseModel
-import pyarrow.parquet as pq
-
-#from .Place import Place
+from dataclasses  import dataclass, astuple, field
 
 
-#class Act(BaseModel):
+@dataclass
 class Act(object):
     """Act Class
     
     Names a place that a person will go to a particular time
     """
-    # person_id: int
-    # activity_id: int
-    # activity_sequence: int
-    # starttime_min: int
-    # endtime_min: int
-
-    def __init__(
-            self,
-            person_id: int,
-            activity_id: int,
-            activity_sequence: int,
-            starttime_min: int,
-            endtime_min: int) -> None:
-        #     super().__init__(
-        #         person_id=person_id,
-        #         activity_id=activity_id,
-        #         activity_sequence=activity_sequence,
-        #         starttime_min=starttime_min,
-        #         endtime_min=endtime_min)
-        self.person_id = person_id
-        self.activity_id = activity_id
-        self.activity_sequence = activity_sequence
-        self.starttime_min = starttime_min
-        self.endtime_min = endtime_min
+    person_id: int
+    activity_id: int
+    activity_sequence: int
+    starttime_min: int
+    endtime_min: int
         
     def contains(self, time: float) -> bool:
         """Return True if the time is within the start and end times of the activity."""
         return self.starttime_min <= time and time <= self.endtime_min
-    
-    def data(self) -> tuple:
-        """Get the data for an activity in a tuple.
-
-        Returns:
-            The activity data as a tuple. 
-        """
-        return (
-            self.person_id,
-            self.activity_id,
-            self.activity_sequence,
-            self.starttime_min,
-            self.endtime_min
-            )
-    
-    @classmethod
-    def restore(cls, data: tuple[int]) -> Act:
-        """Create an  object from the data created in the data() function.
-
-        Returns:
-            A new Act object.
-        """
-        #return cls(*list(data))
-        return cls(
-            person_id=data[0],
-            activity_id=data[1],
-            activity_sequence=data[2],
-            starttime_min=data[3],
-            endtime_min=data[-1]
-            )
 
 
-class Activities(object):
+@dataclass
+class Activities:
     """Activities Class
 
     A collection of activities for a person.
     """
-    # __id: int
-    # __acts: tuple[Act]
-
-    def __init__(
-            self,
-            id: int,
-            acts: tuple[Act] = ()
-            ) -> None:
-        self.__id = id
-        self.__acts = list(acts)
+    __id: int
+    __acts: list[Act]
 
     def addAct(self, act: Act) -> None:
         self.__acts.append(act)
@@ -116,7 +57,7 @@ class Activities(object):
         """
         return (
             self.__id,
-            tuple([a.data() for a in self.__acts])
+            tuple([astuple(a) for a in self.__acts])
         )
    
     @classmethod
@@ -128,18 +69,20 @@ class Activities(object):
         """
         return cls(
             data[0],
-            tuple([Act.restore(act) for act in list(data[1])])
+            tuple([Act(*act) for act in list(data[1])])
         )
     
 
+@dataclass
 class Schedules(object):
     """Schedules Class
     
     A collection of schedules for a person.
     """
+    __schedules: list[Activities] = field(default_factory=lambda: [])
 
-    def __init__(self, schedules: tuple[Activities]) -> None:
-        self.__schedules = list(schedules)
+    # def __init__(self, schedules: tuple[Activities]) -> None:
+    #    self.__schedules = list(schedules)
 
     def __len__(self) -> int:
         return len(self.__schedules)

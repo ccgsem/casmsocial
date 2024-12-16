@@ -13,15 +13,15 @@ from repast4py import (
 
 from casmsocial.model import Model
 from casmsocial.geomodel import GeoModel
-from casmsocial.place import (
-    PlaceData,
-    PlaceConfig,
+from casmsocial.place import PlaceData
+from casmsocial.places import (
+    PlacesConfig,
     Places
 )
 
 # place types
 from casmsocial.household import Household
-from casmsocial.work import Work
+from casmsocial.workplace import Workplace
 from casmsocial.school import School
 
 from casmsocial.person import (
@@ -34,7 +34,7 @@ from casmsocial.modelfactory import (
     register_casmsocial_model
 )
 
-from dataclasses  import dataclass
+from dataclasses  import dataclass, field
 from typing import Dict
 from collections import deque
 import pandas as pd
@@ -79,9 +79,9 @@ class PlaceDataWithClimate(PlaceData):
 @dataclass
 class PersonDataWithHeatRisk(PersonData):
     """Data for a Person."""
-    outside_worker: bool
-    heatIndices: deque
-    probHeatEvent: float
+    outside_worker: bool = False
+    heatIndices: deque = field(default_factory=lambda: deque([float('nan')]))
+    probHeatEvent: float = 0.0
 
 
 # register the 'casmsocial' model
@@ -105,7 +105,7 @@ class HeatRiskModel(GeoModel):
         """ Constructor for the HeatRiskModel class """
         # register the place types
         Places.register_place_config(
-            PlaceConfig(
+            PlacesConfig(
                 name='Household',
                 type=Household,
                 dataType=PlaceDataWithClimate,
@@ -113,7 +113,7 @@ class HeatRiskModel(GeoModel):
             )
         )
         Places.register_place_config(
-            PlaceConfig(
+            PlacesConfig(
                 name='School',
                 type=School,
                 dataType=PlaceDataWithClimate,
@@ -121,15 +121,15 @@ class HeatRiskModel(GeoModel):
             )
         )
         Places.register_place_config(
-            PlaceConfig(
-                name='Work',
-                type=Work,
+            PlacesConfig(
+                name='Workplace',
+                type=Workplace,
                 dataType=PlaceDataWithClimate,
                 personPlaceField='sp_work_id'
             )
         )
 
-        Person.person_data_type = PersonDataWithHeatRisk
+        Person.registerPersonDataClass(PersonDataWithHeatRisk)
 
         super().__init__(comm, params)
 

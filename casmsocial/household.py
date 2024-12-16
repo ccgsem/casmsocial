@@ -13,10 +13,10 @@ class Household(Place):
     def __init__(
             self,
             initDict: Dict,
-            placeDataType: Type[dataclass]
+            placeDataClass: Type[dataclass]
         ):
+        initDict["place_type"] = "Household"
         super().__init__(
-             "household",
              initDict,
-             placeDataType
+             placeDataClass
         )

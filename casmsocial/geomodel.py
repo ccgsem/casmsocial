@@ -142,10 +142,10 @@ class GeoModel(Model):
         #  - place_map is a dict of placeID->place object
         #  - local_places is a list of place objects "located" on this process
         place_filenames = [
-            data_input_path / filename for filename in params['place.files']
+            data_input_path / filename for filename in params['places.files']
         ]
         
-        self.place_map, self.local_places = ModelSetup.initPlaces(
+        self.place_map, self.local_places = ModelSetup.createPlaces(
             self.rank,
             place_filenames,
             self.cspace
@@ -170,8 +170,8 @@ class GeoModel(Model):
             place.rank = msg['rank']
 
         # activitiesMap is a dict of personID->Schedule object
-        activitiesMap = ModelSetup.initActivities(
-            data_input_path / params['activity.file']
+        activitiesMap = ModelSetup.createActivities(
+            data_input_path / params['activities.file']
         )
 
         # contact_map is a dict of personID->{placeID->[personID]}
@@ -181,7 +181,7 @@ class GeoModel(Model):
         if 'contact.file' in params:
             print("Loading contact file...")
 
-            self.contact_map = ModelSetup.initContacts(
+            self.contact_map = ModelSetup.createContacts(
                 data_input_path / params['contact.file']
             )
         else:
@@ -193,8 +193,8 @@ class GeoModel(Model):
 
         # agent_id_map is a map of personID->repast4py.Agent.uid
         self.person_id_map = {}
-        self.person_id_map = ModelSetup.initPersons(
-            data_input_path / params['person.file'],
+        self.person_id_map = ModelSetup.createPersons(
+            data_input_path / params['persons.file'],
             self.place_map,
             activitiesMap,
             rank,
@@ -206,26 +206,28 @@ class GeoModel(Model):
 
         self.data_input_path = data_input_path
 
-        # saved = []
-        # for p in self.context.agents():
-        #     print(
-        #         f"{p}, schedules={p.schedules.data()}, places={p.places}, "
-        #         f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
-        #     )
-        #     result = p.save()
-        #     print(result)
-        #     saved.append(result)
-        #     if len(saved) > 0:
-        #         break
+        saved = []
+        for p in self.context.agents():
+            print(
+                f"{p}, schedules={p.schedules}, places={p.places}, "
+                f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
+                f"state={p.state}"
+            )
+            result = p.save()
+            print(result)
+            saved.append(result)
+            if len(saved) > 0:
+                break
 
-        # restored = []
-        # for i in saved:
-        #     p = Person.restore(i)
-        #     restored.append(p)
-        #     print(
-        #         f"{p}, schedules={p.schedules.data()}, places={p.places}, "
-        #         f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
-        #     )
+        restored = []
+        for i in saved:
+            p = Person.restore(i)
+            restored.append(p)
+            print(
+                f"{p}, schedules={p.schedules}, places={p.places}, "
+                f"pt={p.pt}, currentPlaceID={p.currentPlaceID}"
+                f"state={p.state}"
+            )
 
     def movePersons(self):
         """Move all persons"""
@@ -264,8 +266,6 @@ class GeoModel(Model):
         self.update_environment()
 
         self.send_messages_between_agents()
-
-        return
 
         for person in self.context.agents():
             person.step(self.cal)

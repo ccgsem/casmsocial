@@ -2,10 +2,8 @@ from casmsocial.person import (
     Person,
     person_cache
 )
-from casmsocial.place import (
-    Place,
-    Places
-)
+from casmsocial.place import Place
+from casmsocial.places import Places
 from casmsocial.activities import (
     Act,
     Activities,
@@ -42,8 +40,8 @@ class ModelSetup:
     """
 
     @staticmethod
-    def initPersons(
-        personFile: pathlib.Path,
+    def createPersons(
+        personsFile: pathlib.Path,
         placeMap: Dict,
         activitiesMap: Dict,
         thisRank: int,
@@ -60,7 +58,9 @@ class ModelSetup:
             [placeConfig.personPlaceField
                 for placeConfig in Places.get_place_configs()]
 
-        table = pq.read_table(personFile)
+        table = pq.read_table(personsFile)
+
+        print(f"person data type = {Person.getPersonDataClass()}")
 
         for batch in table.to_batches():
             for row in zip(*batch.columns):
@@ -92,7 +92,7 @@ class ModelSetup:
                 schedule = activitiesMap[personID]
                 # print(f'personID={personID}, schedule={schedule}')
                 activities = Activities(personID, tuple(schedule))
-                schedules = Schedules(())
+                schedules = Schedules()
                 schedules.addActivities(activities)
 
                 # Person
@@ -116,10 +116,10 @@ class ModelSetup:
         return agentIdMap
 
     @staticmethod
-    def initPlacesFromFile(
+    def createPlacesFromFile(
         rank: int,
         placeTypeIndex: int,
-        placeFile: pathlib.Path,
+        placesFile: pathlib.Path,
         placeMap: dict[int, Place],
         localPlaces,
         cspace
@@ -131,7 +131,7 @@ class ModelSetup:
         placeDataType = placeConfig.dataType
 
         # load the places from the file
-        table = pq.read_table(placeFile)
+        table = pq.read_table(placesFile)
 
         for batch in table.to_batches():
             for row in zip(*batch.columns):
@@ -151,21 +151,21 @@ class ModelSetup:
         return placeMap, localPlaces
 
     @staticmethod
-    def initPlaces(
+    def createPlaces(
         rank: int,
-        place_files: list[pathlib.Path],
+        places_files: list[pathlib.Path],
         cspace
     ) -> Tuple[Dict[int, Place], list[int]]:
 
         placeMap: map = {}
         localPlaces: list = []
 
-        for placeTypeIndex, placeFile in enumerate(place_files):
+        for placeTypeIndex, placesFile in enumerate(places_files):
             placeMap, localPlaces = \
-                ModelSetup.initPlacesFromFile(
+                ModelSetup.createPlacesFromFile(
                     rank,
                     placeTypeIndex,
-                    placeFile,
+                    placesFile,
                     placeMap,
                     localPlaces,
                     cspace
@@ -174,7 +174,7 @@ class ModelSetup:
         return placeMap, localPlaces
 
     @staticmethod
-    def initActivities(
+    def createActivities(
             activitiesFile: pathlib.Path
     ) -> dict[int, list[int]]:
         # activitiesMap looks like:
@@ -222,7 +222,7 @@ class ModelSetup:
         return act_map
 
     @staticmethod
-    def initContacts(
+    def createContacts(
         contactFile: pathlib.Path
     ) -> dict[int, dict[int, int]]:
 
