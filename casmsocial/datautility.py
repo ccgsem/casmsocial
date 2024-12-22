@@ -3,7 +3,9 @@ from dataclasses  import dataclass, fields
 from typing import (
     Dict,
     List,
-    Type
+    Optional,
+    Type,
+    Union
 )
 
 
@@ -52,3 +54,18 @@ def create_dataclass_record_from_dict(
     parameters = initDict
     
     return dataclass(**parameters)
+
+def convert_to_int(x: Union[int, str, None]) -> Optional[int]:
+    """ Convert a string to an integer if possible.
+    
+    Arguments:
+        x: Optional[int, str]: The value to convert.
+    Returns:
+        int: The integer value of the string if possible, otherwise None
+    """
+    if not x:
+        return None
+    try:
+        return int(x)
+    except ValueError:
+        return None

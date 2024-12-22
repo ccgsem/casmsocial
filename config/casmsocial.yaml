@@ -4,10 +4,11 @@ stop.at: 24
 world.width: 2
 world.height: 2
 steps.per.day: 24
-activity.file: 'casmsocial/data/dcsim_dmv_100_population/activities_100.parquet'
-household.file: 'casmsocial/data/dcsim_dmv_100_population/hh_100.parquet'
-school.file: 'casmsocial/data/dcsim_dmv_100_population/schools_100.parquet'
-work.file: 'casmsocial/data/dcsim_dmv_100_population/work_100.parquet'
-contact.file: 'casmsocial/data/dcsim_dmv_100_population/cn_100.parquet'
-person.file: 'casmsocial/data/dcsim_dmv_100_population/persons_100.parquet'
+places.files:
+  - 'casmsocial/data/dcsim_dmv_100_population/hh_100.parquet'
+  - 'casmsocial/data/dcsim_dmv_100_population/schools_100.parquet'
+  - 'casmsocial/data/dcsim_dmv_100_population/work_100.parquet'
+activities.file: 'casmsocial/data/dcsim_dmv_100_population/activities_100.parquet'
+contacts.file: 'casmsocial/data/dcsim_dmv_100_population/cn_100.parquet'
+persons.file: 'casmsocial/data/dcsim_dmv_100_population/persons_100.parquet'
 agent_log_file: 'output/agent_log.csv'

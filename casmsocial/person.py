@@ -1,44 +1,44 @@
 """ Person Agent Base Class """
 from __future__ import annotations
 from repast4py import core
-from repast4py.space import DiscretePoint as dpt
 from repast4py.space import ContinuousPoint as cpt
 
-from dataclasses  import dataclass, field
+from casmsocial.place import PlacesProjection
+from casmsocial.calendar import Calendar
+from casmsocial.activities import Schedules
+from casmsocial.datautility import create_dataclass_record_from_dict
+from casmsocial.message import Message
+
+from dataclasses  import (
+    astuple,
+    dataclass,
+    field
+)
 from typing import (
     Dict,
     List,
+    NamedTuple,
     Optional,
     Tuple,
     Type
 )
 from collections import deque
 
-from casmsocial.calendar import Calendar
-from casmsocial.activities import(
-    Activities,
-    Schedules
-)
-from casmsocial.datautility import create_dataclass_record_from_dict
-from casmsocial.message import Message
-
 import numpy as np
+import math
 
 from mpi4py import MPI
 rank = MPI.COMM_WORLD.Get_rank()
 
 
+# 1. Define a PersonData Class
 @dataclass(slots=True)
 class PersonData:
     """Data for a Person."""
     person_id: int
     place_id: int
     activity_id: int
-    location: cpt
     places: List[int]
-    # outside_worker: bool
-    # heatIndices: deque
-    # probHeatEvent: float
 
 
 @dataclass
@@ -49,6 +49,7 @@ class ChiSimPersonData:
     places: List[int]
 
 
+# 2. Define a Person Class
 # @dataclass(slots=True)
 class Person(core.Agent):
     TYPE = 0  # class variable
@@ -74,7 +75,6 @@ class Person(core.Agent):
         rank: int,
         schedules: Schedules,
         places: list[int],
-        starting_location: cpt,
         initDict: Dict):
         """Constructor for the Person class.
         
@@ -93,15 +93,23 @@ class Person(core.Agent):
             places: A list of place_id's that correspond to values coming out of 
                 the schedule. e.g. if the schedule returns "0", this Person will 
                 try to go to the place with the ID of places[0]
-            starting_location: A ContinuousPoint for this Person's starting location 
-                on a cspace projection. Set to null and override the move() function 
-                if not using a cspace projection.
             initDict: A dictionary of initial values for the person
         """
         super().__init__(
             id=local_id,
             type=Person.TYPE,
             rank=rank)
+
+        # `location` is currently referenced required but not used
+        if 'x' not in initDict:
+            initDict['x'] = 0
+        if 'y' not in initDict:
+            initDict['y'] = 0
+        if math.isinf(initDict['x']) or math.isinf(initDict['y']):
+            initDict['x'] = 0
+            initDict['y'] = 0
+
+        self.location = cpt(x=int(initDict['x']), y=int(initDict['y']), z=0)
         
         self.schedules: Schedules = schedules
                 
@@ -109,7 +117,7 @@ class Person(core.Agent):
         initDict['person_id'] = local_id
         initDict['place_id'] = places[0]
         initDict['activity_id'] = 0
-        initDict['location'] = starting_location
+        # initDict['location'] = starting_location
         initDict['places'] = places
 
         self.state = \
@@ -127,10 +135,10 @@ class Person(core.Agent):
     @property
     def pt(self) -> cpt:
         """"""
-        return self.state.location
+        return self.location
     
     @property
-    def currentPlaceID(self) -> cpt:
+    def currentPlaceID(self) -> int:
         return self.state.place_id
     
     @property
@@ -146,39 +154,49 @@ class Person(core.Agent):
         return (
             self.uid,   # 0: uid is a tuple
             self.schedules.data(),    # 1: schedules is a Schedules object
-            self.state.person_id,   # 2: person_id
-            self.state.place_id,  # 3: place_id
-            self.state.activity_id,  # 4: activity_id
-            tuple(e for e in self.state.location.coordinates),  # 5: location
-            tuple(self.state.places),  # 6: convert list to tuple
-            self.state.outside_worker,  # 7:  outside_worker
-            tuple(self.state.heatIndices),   # 8: heatIndex
-            self.state.probHeatEvent  # 9: probHeatEvent
+            tuple(e for e in self.location.coordinates),  # 2: location
+            astuple(self.state)  # 3: state is a PersonData object
             )
 
-    def move(self, cal: Calendar, cspace, place_map: Dict) -> bool:
+    def move(
+            self,
+            cal: Calendar,
+            places_proj: PlaceProjection
+        ) -> bool:
         """Move to the place indicated by the schedule for this tick.
         """
         success = False
         next_activity_id = self.selectNextPlace(cal)
-        next_place_id = self.state.places[next_activity_id]
+        next_place_id = self.places[next_activity_id]
 
-        place = place_map.get(next_place_id)
-        if place is None:
+        if next_place_id == self.currentPlaceID:
+            # already at the place
+            # print(
+            #     f"Agent {self.id} is already at place {self.currentPlaceID}")
+            return True
+        
+        if not next_place_id:
+            print(f"Agent {self.id} has no place to go - going remote.")
+            print(f"places = {self.places}")
+            print(f"schedule = {self.schedules}")
             next_place_id = 0  # reset to home
+
+        place = places_proj.lookup_place(next_place_id) # place_map.get(next_place_id)
+        if place is None:
+            print(f"Place {next_place_id} not found.")
+            print(f"places = {self.places}")
+            return False
 
         if place is not None:
             success = True
             self.state.place_id = next_place_id
-            # print(
-            #    f"Rank {rank}: "
-            #    f"Agent {self.id} is moving to place {self.state.place_id}")
-            placeLocation = place.location
-            self.state.location = cspace.move(self, placeLocation)
-            self.state.location = placeLocation
+            print(
+               f"Rank {rank}: "
+               f"Agent {self.id} is moving to place {self.state.place_id}")
+            places_proj.move_agent_to_place(self, place)
         else:
             print(f"move for act {next_activity_id} to place {next_place_id} failed.")
-            print(f"places = {self.state.places}")
+            print(f"places = {self.places}")
             print(f"Remaining a currentPlaceID = {self.state.place_id}")
 
         return success
@@ -204,7 +222,7 @@ class Person(core.Agent):
 
         next_activity_id = 0  # home is the default
         if act is not None:
-            if act.activity_id < len(self.state.places):
+            if act.activity_id < len(self.places):
                 next_activity_id = int(act.activity_id)
             # else:  if the activity is not in the list of places, go home
  
@@ -277,27 +295,97 @@ class Person(core.Agent):
 
         Args:
             person_data: tuple containing the data returned by Person.save(). 
-        """ 
+        """
+        # person_data: Tuple = (
+        #     self.uid,
+        #     self.schedules.data(),
+        #     tuple(e for e in self.location.coordinates),
+        #     astuple(self.state)
+
+        # 0: uid is a tuple
         uid = person_data[0]
-
-        pt_array = list(person_data[5])
-        pt = cpt(pt_array[0], pt_array[1], 0)
-        
+       
         schedules = Schedules.restore(person_data[1])
-        person = Person(uid[0], uid[2], schedules, person_data[6], pt, {})
 
-        # person.state = PersonData(*person_data[2:])
-        person.state.person_id = person_data[2]
-        person.state.place_id = person_data[3]
-        person.state.activity_id = person_data[4]
-        # person.state.location = pt  # person_data[5]
-        # person.places = person_data[6]
+        pt_array = list(person_data[2])
+        pt = cpt(pt_array[0], pt_array[1], 0)
 
-        person.state.outside_worker = person_data[7]
-        person.state.heatIndices = deque(person_data[8])
-        person.state.probHeatEvent = person_data[9]
+        # person_data[3] is a PersonData object as tuple
+        # the third element of the tuple is the places list
+        places = person_data[3][3]
+
+        person = Person(uid[0], uid[2], schedules, places, {})
+
+        # restore the state
+        person.state = Person.getPersonDataClass()(*person_data[3])
 
         return person
+    
+    def __str__(self):
+        return (
+            "Person: "
+            f"id={self.id}, "
+            f"pt={self.pt}, "
+            f"currentPlaceID={self.currentPlaceID}, "
+            f"schedules={self.schedules}, "
+            f"state={self.state}"
+        )
+
+
+# 3. Define a PersonConfig NamedTuple
+PersonConfig = NamedTuple(
+    'PersonConfig',
+    [
+        ('name', str),
+        ('type', Type[Person]),
+        ('dataType', Type[PersonData])
+    ]
+)
+
+
+# 4. test code
+def test_person():
+    """Test the Person class."""
+    person_data = {
+        'person_id': 1,
+        'place_id': 0,
+        'activity_id': 0,
+        'places': [0, 1, 2]
+    }
+
+    person_data_class = dataclass(
+        PersonData,
+        frozen=True
+    )
+
+    Person.registerPersonDataClass(person_data_class)
+
+    person = Person(
+        local_id=1,
+        rank=0,
+        schedules=Schedules(),
+        places=[0, 1, 2],
+        starting_location=cpt(0, 0, 0),
+        initDict=person_data
+    )
+
+    print(person)
+
+    person_data = person.save()
+    print(person_data)
+
+    restored_person = Person.restore(person_data)
+    print(restored_person)
+
+    print("Person test passed.")
+
+def test_activities(person: Person):
+    schedules = person.schedules
+    for act in schedules[0].acts:
+        print(act)
+
+if __name__ == "__main__":
+    test_person()
 
 
 person_cache = {}

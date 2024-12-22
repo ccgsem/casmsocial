@@ -1,38 +1,35 @@
 """ Geo Utility functions """
-from osgeo import ogr
-from osgeo import osr
-from osgeo import gdal, gdal_array
+from repast4py.space import ContinuousPoint as cpt
+from repast4py.space import BoundingBox as bb
 
-import numpy as np
+from shapely.geometry import Point
+import pyproj
 
-def LatLonToUTM(
-    latitude: float, 
-    longitude: float, 
-    inEPSG: int=4326, 
-    outEPSG: int=26910):
-    inSR = osr.SpatialReference()
-    inSR.ImportFromEPSG(inEPSG)
-    outSR = osr.SpatialReference()
-    outSR.ImportFromEPSG(outEPSG)
+# Create a transformer object for the desired UTM zone
+def latlon_to_utm(latitude, longitude) -> tuple:
+    """Convert latitude and longitude to UTM coordinates.
+    
+    Arguments:
+        latitude: Latitude in decimal degrees.
+        longitude: Longitude in decimal degrees.
+    Returns:
+        A tuple of UTM coordinates.
+    """
+    utm_zone = int((longitude + 180) / 6) + 1
+    proj_string = f"+proj=utm +zone={utm_zone} +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+    transformer = pyproj.Transformer.from_crs("EPSG:4326", proj_string)
 
-    point = ogr.Geometry(ogr.wkbPoint)
-    point.AddPoint(latitude, longitude)
-    point.AssignSpatialReference(inSR)
-    point.TransformTo(outSR)
+    # Convert latitude and longitude to UTM coordinates
+    easting, northing = transformer.transform(latitude, longitude)
+    return easting, northing
 
-    return point.GetX(), point.GetY()
+def pointInBounds(point: cpt, bounds: bb) -> bool:
+    """Check if a point is within the bounds."""
+    xInBounds = point.x >= bounds.xmin and \
+        point.x < (bounds.xmin + bounds.xextent)
+    yInBounds = point.y >= bounds.ymin and \
+        point.y < (bounds.ymin + bounds.yextent)
+    zInBounds = point.z == 0 or \
+        (point.z >= bounds.zmin and point.z < (bounds.zmin + bounds.zextent))
 
-def UTMArrayToGrid(inputArray, width: int, height: int):
-    dataset = gdal_array.OpenArray(inputArray)
-    gridOptions = gdal.GridOptions(width=width, height=height)
-    gridOutput = gdal.Grid('gridOutput', dataset, options=gridOptions)
-
-    return gridOutput
-
-coords = np.array([[0,1],[0.5,1],[1.25,1]])
-
-width = 3
-height = 3
-
-gridOutput = UTMArrayToGrid(coords, width, height)
-print(gridOutput)
+    return xInBounds and yInBounds and zInBounds

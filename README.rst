@@ -40,7 +40,7 @@ After cloning the GitHub repository https://github.com/ccgsem/casmsocial:
 Next:
 
 ```
-export CC=mpicxx
+export CC=mpicxx; export CXX=mpicxx
 cd casmsocial
 poetry env use 3.12
 poetry shell

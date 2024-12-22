@@ -1,0 +1,14 @@
+model.name: 'casmsocial_dcsim_ArtSocModel'
+random.seed: 42
+stop.at: 24
+world.width: 2
+world.height: 2
+steps.per.day: 24
+places.files:
+  - 'data/processed/dc_population/hh_sample_5000.parquet'
+  - 'data/processed/dc_population/schools_sample_5000.parquet'
+  - 'data/processed/dc_population/work_sample_5000.parquet'
+activities.file: 'data/processed/dc_population/activities_sample_5000.parquet'
+contacts.file: 'data/processed/dc_population/cn_sample_5000.parquet'
+persons.file: 'data/processed/dc_population/persons_sample_5000.parquet'
+agent_log_file: 'output/agent_log.csv'

@@ -9,8 +9,8 @@ places.files:
   - data/processed/wake_county_prism/hh.parquet
   - data/processed/wake_county_prism/schools.parquet
   - data/processed/wake_county_prism/work.parquet
-activity.file: 'data/processed/wake_county_prism/activities.parquet'
-person.file: 'data/processed/wake_county_prism/persons.parquet'
+activities.file: 'data/processed/wake_county_prism/activities.parquet'
+persons.file: 'data/processed/wake_county_prism/persons.parquet'
 heatIndex.file: 'data/processed/wake_county_test/heatIndex_by_hour_place.parquet'
 meet_log_file: 'output/meet_log.csv'
 heat_threshold: 90

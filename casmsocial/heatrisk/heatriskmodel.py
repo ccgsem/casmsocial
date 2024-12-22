@@ -10,13 +10,15 @@ from mpi4py import MPI
 from repast4py import (
     logging
 )
+from repast4py.space import ContinuousPoint as cpt  # noqa: F401
 
 from casmsocial.model import Model
-from casmsocial.geomodel import GeoModel
-from casmsocial.place import PlaceData
-from casmsocial.places import (
-    PlacesConfig,
-    Places
+from casmsocial.socialmodel import SIModel
+from casmsocial.place import (
+    # Place,
+    PlaceConfig,
+    PlaceData,
+    RemotePlace
 )
 
 # place types
@@ -26,7 +28,8 @@ from casmsocial.school import School
 
 from casmsocial.person import (
     Person,
-    PersonData
+    PersonData,
+    PersonConfig
 )
 
 # model factory
@@ -35,12 +38,16 @@ from casmsocial.modelfactory import (
 )
 
 from dataclasses  import dataclass, field
-from typing import Dict
+from typing import (
+    Type,
+    Dict
+)
 from collections import deque
 import pandas as pd
+import math
 
 
-# utility functions for heat-related computations
+# 1. utility functions for heat-related computations
 def filter_heat_indices(
     heat_indices: list[float],
     threshold: float
@@ -69,6 +76,7 @@ def compute_prob_heat_event(
     return prob_heat_event
 
 
+# 2. Define a PlaceData Class
 @dataclass
 class PlaceDataWithClimate(PlaceData):
     """Place with heat index data."""
@@ -76,6 +84,7 @@ class PlaceDataWithClimate(PlaceData):
     AIR: bool = False
 
 
+# 3. Define a PersonData Class with heat risk data
 @dataclass
 class PersonDataWithHeatRisk(PersonData):
     """Data for a Person."""
@@ -84,17 +93,17 @@ class PersonDataWithHeatRisk(PersonData):
     probHeatEvent: float = 0.0
 
 
-# register the 'casmsocial' model
+# 4. register the 'casmsocial' model
 @register_casmsocial_model('casmsocial_heatrisk_HeatRiskModel')
-def create_casmsocial_GeoModel(
+def create_casmsocial_HeatRiskModel(
     comm: MPI.Intracomm,
     params: dict
 ) -> Model:
     print("Registering casmsocial_heatrisk_HeatRiskModel model")
     return HeatRiskModel(comm, params)
 
-
-class HeatRiskModel(GeoModel):
+# 5. Define the HeatRiskModel class
+class HeatRiskModel(SIModel):
     """ HeatRiskModel class """
     
     def __init__(
@@ -103,56 +112,83 @@ class HeatRiskModel(GeoModel):
         params: Dict
     ):
         """ Constructor for the HeatRiskModel class """
-        # register the place types
-        Places.register_place_config(
-            PlacesConfig(
-                name='Household',
-                type=Household,
-                dataType=PlaceDataWithClimate,
-                personPlaceField='sp_hh_id'
-            )
-        )
-        Places.register_place_config(
-            PlacesConfig(
-                name='School',
-                type=School,
-                dataType=PlaceDataWithClimate,
-                personPlaceField='sp_school_id'
-            )
-        )
-        Places.register_place_config(
-            PlacesConfig(
-                name='Workplace',
-                type=Workplace,
-                dataType=PlaceDataWithClimate,
-                personPlaceField='sp_work_id'
-            )
-        )
-
-        Person.registerPersonDataClass(PersonDataWithHeatRisk)
-
         super().__init__(comm, params)
 
         # load environment file
-        # heat_index_file_path = data_input_path / params['heat.index.file']
+        # heat_index_file_path = data_input_path / self.params['heat.index.file']
         self.heatindex_by_hour_place_file_path = \
-            self.data_input_path / params['heatIndex.file']
+            self.data_input_path / self.params['heatIndex.file']
         if self.heatindex_by_hour_place_file_path.exists():
             print(f"Loading heat map places from {self.heatindex_by_hour_place_file_path}")
         else:
             print(f"Error: Heat map places file {self.heatindex_by_hour_place_file_path} not found.")
             exit(1)
 
+    @property
+    def heat_threshold(self) -> float:
+        return self._heat_threshold
+    
+    def initializePopulation(self) -> None:
+        """Initialize population"""
+
+        # register the place types
+        SIModel.register_place_config(
+            PlaceConfig(
+                name='Household',
+                type=Household,
+                dataType=PlaceDataWithClimate,
+                personPlaceField='sp_hh_id'
+            )
+        )
+        SIModel.register_place_config(
+            PlaceConfig(
+                name='Workplace',
+                type=Workplace,
+                dataType=PlaceDataWithClimate,
+                personPlaceField='sp_work_id'
+            )
+        )
+        SIModel.register_place_config(
+            PlaceConfig(
+                name='School',
+                type=School,
+                dataType=PlaceDataWithClimate,
+                personPlaceField='sp_school_id'
+            )
+        )
+
+        # register the remote place type
+        SIModel.register_remote_place_config(
+            PlaceConfig(
+                name='RemotePlace',
+                type=RemotePlace,
+                dataType=PlaceData,
+                personPlaceField=''
+            )
+        )
+
+        # register the person type
+        SIModel.register_person_config(
+            PersonConfig(
+                name='Person',
+                type=Person,
+                dataType=PersonDataWithHeatRisk
+            )
+        )
+
+        print("Now running initialize population for SIModel...")
+        super().initializePopulation()
+
         self._heat_threshold = 90.0
-        # self._heat_threshold = float(params['heat_threshold'])
+        # self._heat_threshold = float(self.params['heat_threshold'])
 
         # initialize the heat threshold
         self.heat_indices = deque([float('nan')])
 
         # initialize the logging
         self.agent_logger = logging.TabularLogger(
-            comm,
-            params['agent_log_file'],
+            self.comm,
+            self.params['agent_log_file'],
             [
                 'tick',
                 'agent_id',
@@ -164,10 +200,6 @@ class HeatRiskModel(GeoModel):
             ]  # , 'meet_count']
         )
         self.log_agents()
-
-    @property
-    def heat_threshold(self) -> float:
-        return self._heat_threshold
 
     def update_environment(self) -> None:
         """Update the environment for the current time step."""
@@ -252,8 +284,8 @@ class HeatRiskModel(GeoModel):
             self.agent_logger.log_row(
                 tick,
                 person.id,
-                person.state.location.x,
-                person.state.location.y,
+                person.pt.x,
+                person.pt.y,
                 person.state.heatIndices[0],
                 len(heat),
                 person.state.probHeatEvent
