@@ -20,8 +20,12 @@ def extract_dataclass_attribute_names(
     attribute_names = [field.name for field in field_objects]
     return attribute_names
 
+def get_attribute_names_from_data(
+        data: dataclass) -> List[str]:
+    """Get a list of attribute names from a dataclass instance."""
+    return [f.name for f in fields(data)]
 
-# extract_dataclass_fields
+# create_dataclass_record_from_dict
 def create_dataclass_record_from_dict(
         dataclass: Type[dataclass],
         initDict: Dict

@@ -14,6 +14,8 @@ from repast4py.space import ContinuousPoint as cpt  # noqa: F401
 
 from casmsocial.model import Model
 from casmsocial.socialmodel import SIModel
+from casmsocial.calendar import Calendar
+from casmsocial.activities import Schedules
 from casmsocial.place import (
     # Place,
     PlaceConfig,
@@ -31,6 +33,7 @@ from casmsocial.person import (
     PersonData,
     PersonConfig
 )
+from casmsocial.datautility import get_attribute_names_from_data
 
 # model factory
 from casmsocial.modelfactory import (
@@ -39,13 +42,10 @@ from casmsocial.modelfactory import (
 
 from dataclasses  import dataclass, field
 from typing import (
-    Type,
     Dict
 )
 from collections import deque
 import pandas as pd
-import math
-
 
 # 1. utility functions for heat-related computations
 def filter_heat_indices(
@@ -82,6 +82,7 @@ class PlaceDataWithClimate(PlaceData):
     """Place with heat index data."""
     heatIndex: float = float('nan')
     AIR: bool = False
+    cooling_center: float = 0.0 #bool = False
 
 
 # 3. Define a PersonData Class with heat risk data
@@ -93,7 +94,38 @@ class PersonDataWithHeatRisk(PersonData):
     probHeatEvent: float = 0.0
 
 
-# 4. register the 'casmsocial' model
+# 4. Define a PersonWithHeatRisk Class
+class PersonWithHeatRisk(Person):
+    """Person with heat risk data."""
+    def __init__(
+        self,
+        local_id: int,
+        rank: int,
+        schedules: Schedules,
+        places: list[int],
+        initDict: Dict
+    ):
+        """Constructor for the PersonWithHeatRisk class."""
+        super().__init__(
+            local_id,
+            rank,
+            schedules,
+            places,
+            initDict)
+
+    def step(self, calendar: Calendar):
+        """Step the person forward one time step."""
+        super().step(calendar)
+
+        # print(f"=====>Person {self.id} stepping with heat index {self.state.heatIndices[0]}")
+
+        # TODO (2025-02-26 jcline): update the heat index for the person
+        #   - This is where the person responds to the heat index
+        #   - The heat index and probability of heat event has already been
+        #     updated by the place
+
+
+# 5. register the 'casmsocial_heatrisk_HeatRiskModel' model
 @register_casmsocial_model('casmsocial_heatrisk_HeatRiskModel')
 def create_casmsocial_HeatRiskModel(
     comm: MPI.Intracomm,
@@ -102,7 +134,8 @@ def create_casmsocial_HeatRiskModel(
     print("Registering casmsocial_heatrisk_HeatRiskModel model")
     return HeatRiskModel(comm, params)
 
-# 5. Define the HeatRiskModel class
+
+# 6. Define the HeatRiskModel class
 class HeatRiskModel(SIModel):
     """ HeatRiskModel class """
     
@@ -171,7 +204,7 @@ class HeatRiskModel(SIModel):
         SIModel.register_person_config(
             PersonConfig(
                 name='Person',
-                type=Person,
+                type=PersonWithHeatRisk,
                 dataType=PersonDataWithHeatRisk
             )
         )
@@ -231,8 +264,15 @@ class HeatRiskModel(SIModel):
         countOfAirConditionedPlaces = 0
         countOfOutsideWorkers = 0
 
-        for place in self.local_places:
+        #for place in self.local_places:
+        local_places = self.places_proj.get_local_places()
+        for place in local_places:
 
+            if "cooling_center" in get_attribute_names_from_data(place.data):
+                if place.data.cooling_center > 0.0:
+                    print(f"place {place.id} is a cooling center")
+
+            # update the heat index for the place
             place.step(self.cal, self.rng)
                 
             if place.id in heatIndex_map:
@@ -241,17 +281,18 @@ class HeatRiskModel(SIModel):
             else:
                 place.data.heatIndex= meanheatindex
 
-            # Take air conditioned places as 72 degrees    
-            if place.data.AIR:
+            # Take air conditioned places as 72 degrees and non-air conditioned
+            #  places as the heat index
+            if 'AIR' in get_attribute_names_from_data(place.data) and place.data.AIR:
                 countOfAirConditionedPlaces += 1
-                localHeatIndex = 72
-            else:
-                localHeatIndex = place.data.heatIndex
+                place.data.heatIndex = 72
 
-            # if len(place.peopleAtPlace) > 0:
-            #     print(f"place {place.id} has {len(place.peopleAtPlace)} people")
+            localHeatIndex = place.data.heatIndex
 
-            for person in place.peopleAtPlace:
+            peopleAtPlace = self.places_proj.get_agents_at_place(place)
+            # if len(peopleAtPlace) > 0:
+            #     print(f"place {place.id} has {len(peopleAtPlace)} people")
+            for person in peopleAtPlace:
 
                 # adjust the heat index for outside workers
                 personHeatIndex = localHeatIndex

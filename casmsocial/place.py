@@ -2,10 +2,8 @@
 from repast4py.space import ContinuousPoint as cpt
 import repast4py.core as core
 from repast4py.core import SharedProjection
-import repast4py.schedule as schedule
-from repast4py.context import SharedContext
-from mpi4py import MPI
-import random
+# import repast4py.schedule as schedule
+# from repast4py.context import SharedContext
 
 from dataclasses  import dataclass
 from typing import (

@@ -161,7 +161,7 @@ class Person(core.Agent):
     def move(
             self,
             cal: Calendar,
-            places_proj: PlaceProjection
+            places_proj: PlacesProjection
         ) -> bool:
         """Move to the place indicated by the schedule for this tick.
         """

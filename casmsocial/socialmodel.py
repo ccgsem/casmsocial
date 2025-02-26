@@ -7,7 +7,6 @@ Defining the SIModel
 """
 from mpi4py import MPI
 from repast4py import (
-    space,
     schedule
 )
 from repast4py import context as ctx
@@ -16,7 +15,6 @@ import random
 
 from casmsocial.model import Model
 from casmsocial.place import (
-    Place,
     PlaceConfig,
     PlacesProjection
 )
@@ -42,10 +40,8 @@ from casmsocial.datautility import convert_to_int
 
 from typing import (
     Dict,
-    List,
-    Tuple
+    List
 )
-from collections import deque
 from dotenv import (
     find_dotenv,
     load_dotenv
@@ -53,7 +49,6 @@ from dotenv import (
 import os
 import pathlib
 import pyarrow.parquet as pq
-import pandas as pd
 import time
 
 
@@ -523,18 +518,19 @@ class SIModel(Model):
 
         self.movePersons()
 
-        return
-
         self.context.synchronize(Person.restore)
 
-        self.get_local_ids()
+        # 2025-02-26 jcline: this is a hack to get the person_id_map
+        # self.get_local_ids()
 
-        self.add_people_to_places()
-        self.make_contacts(tick)
+        # 2025-02-26 jcline: this is no longer needed due to places_projection?
+        # self.add_people_to_places()
+    
+        # self.make_contacts(tick)
 
         self.update_environment()
 
-        self.send_messages_between_agents()
+        # self.send_messages_between_agents()
 
         for person in self.context.agents():
             person.step(self.cal)
@@ -560,10 +556,11 @@ class SIModel(Model):
 
     def add_people_to_places(self) -> None:
         for person in self.context.agents():
-            if person.state.place_id not in self.place_map:
-                print(f"Person {person.id} has no place.")
-                return
-            self.place_map[person.state.place_id].addPerson(person)
+            print(f"Adding person {person.id} to place {person.state.place_id}")
+            # if person.state.place_id not in self.place_map:
+            #     print(f"Person {person.id} has no place.")
+            #     return
+            # self.place_map[person.state.place_id].addPerson(person)
 
     def make_contacts(self, tick) -> None:
 
