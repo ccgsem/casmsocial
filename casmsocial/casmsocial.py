@@ -4,8 +4,7 @@ from mpi4py import MPI
 from typing import Dict
 
 from casmsocial.modelfactory import (
-    get_casmsocial_model,
-    load_models_from_dotenv
+    get_casmsocial_model
 )
 
 
@@ -14,8 +13,6 @@ def run(params: Dict):
     model_name = params['model.name']
     
     print(f"Retrieving model <{model_name}>...")
-
-    load_models_from_dotenv()
 
     try:
         ModelCreator = get_casmsocial_model(params['model.name'])
