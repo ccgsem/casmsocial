@@ -157,6 +157,8 @@ class SIModel(Model):
             comm: the mpi communicator over which the model is distributed.
             params: the simulation input parameters
         """
+        Model.set_model(self)
+
         print("Creating SIModel...")
         self.comm = comm
         self.rank = self.comm.Get_rank()
@@ -533,7 +535,7 @@ class SIModel(Model):
         # self.send_messages_between_agents()
 
         for person in self.context.agents():
-            person.step(self.cal)
+            person.step()
  
         self.log_agents()
 

@@ -58,29 +58,12 @@ def filter_heat_indices(
         [t for t in heat_indices if (exceeded := exceeded and  t > threshold)]
 
 
-def compute_prob_heat_event(
-    heat_indices: list[float],
-    threshold: float
-) -> float:
-    """Compute the probability of a heat event."""
-    # filter out all heat indices above the threshold
-    heat_index = heat_indices[0]
-    heat = filter_heat_indices(heat_indices, threshold)
-    hours_above_threshold = len(heat)
-
-    # note: length of heat is the number of hours above the threshold
-    # prob_heat_event = \
-    #     1 - (1 - ((heat_indices[0] - threshold/80.0) ** 2) ** (3 * len(heat)))
-    prob_heat_event = \
-        1 - (1 - ((heat_index - threshold)/80.0) ** 2) ** (3*hours_above_threshold)
-    return prob_heat_event
-
-
 # 2. Define a PlaceData Class
 @dataclass
 class PlaceDataWithClimate(PlaceData):
     """Place with heat index data."""
     heatIndex: float = float('nan')
+    heatIndexIndoors: float = float('nan')
     AIR: bool = False
     cooling_center: float = 0.0 #bool = False
 
@@ -113,17 +96,76 @@ class PersonWithHeatRisk(Person):
             places,
             initDict)
 
-    def step(self, calendar: Calendar):
+    def compute_prob_heat_event(
+        self,
+        threshold: float
+    ) -> float:
+        """Compute the probability of a heat event."""
+        heat_indices = self.state.heatIndices
+
+        # filter out all heat indices above the threshold
+        heat_index = heat_indices[0]
+        heat = filter_heat_indices(heat_indices, threshold)
+        hours_above_threshold = len(heat)
+
+        # note: length of heat is the number of hours above the threshold
+        # prob_heat_event = \
+        #     1 - (1 - ((heat_indices[0] - threshold/80.0) ** 2) ** (3 * len(heat)))
+        prob_heat_event = \
+            1 - (1 - ((heat_index - threshold)/80.0) ** 2) ** (3*hours_above_threshold)
+        return prob_heat_event
+
+    def consider_to_seek_cooling(self) -> bool:
+        """Decide to seek cooling."""
+        # TODO (2025-02-26 jcline): implement this method
+        #   - This is where the person decides to seek cooling
+        #   - This could be based on the heat index, probability of a heat event,
+        #     or other factors
+        #   - Also looking at the place data for cooling centers and
+        #     air conditioning - looking for the three closest places
+        #   - For now, we will return False
+        return False
+
+    def decide_to_seek_cooling(self) -> bool:
+        """Decide to seek cooling."""
+        # TODO (2025-02-26 jcline): implement this method
+        return False
+
+    def step(self) -> None:
         """Step the person forward one time step."""
-        super().step(calendar)
+        super().step()
 
-        # print(f"=====>Person {self.id} stepping with heat index {self.state.heatIndices[0]}")
+        model = Model.get_model()
+        if model is not None:
+            place = model.places_proj.get_place_for_agent(self)
+        else:
+            print("model is unavailable!")
+            return
+        
+        if not place:
+            print(f"=====>Person {self.id} is without a place!")
+            return
 
-        # TODO (2025-02-26 jcline): update the heat index for the person
-        #   - This is where the person responds to the heat index
-        #   - The heat index and probability of heat event has already been
-        #     updated by the place
+        # update the heat index for the person
+        localHeatIndex = place.data.heatIndexIndoors       
+        if self.state.outside_worker:
+            print(f"Person {self.id} is an outside worker")
+            localHeatIndex = place.data.heatIndex
 
+        self.state.heatIndices.appendleft(localHeatIndex)
+
+        # update the probability of a heat event
+        self.state.probHeatEvent = \
+            self.compute_prob_heat_event(
+                model.heat_threshold
+            )
+
+        if self.state.probHeatEvent > 0.0001:
+            print(f"Person {self.id} is experiencing a heat event probability of {self.state.probHeatEvent}")
+            if self.consider_to_seek_cooling():
+                print(f"Person {self.id} is seeking cooling")
+                if self.decide_to_seek_cooling():
+                    pass
 
 # 5. register the 'casmsocial_heatrisk_HeatRiskModel' model
 @register_casmsocial_model('casmsocial_heatrisk_HeatRiskModel')
@@ -260,20 +302,20 @@ class HeatRiskModel(SIModel):
 
         # metrics
         countOfHeatIndexMatches = 0
-        countOfHeatIncidents = 0
+        # countOfHeatIncidents = 0
         countOfAirConditionedPlaces = 0
-        countOfOutsideWorkers = 0
+        # countOfOutsideWorkers = 0
 
         #for place in self.local_places:
         local_places = self.places_proj.get_local_places()
         for place in local_places:
 
-            if "cooling_center" in get_attribute_names_from_data(place.data):
-                if place.data.cooling_center > 0.0:
-                    print(f"place {place.id} is a cooling center")
+            # if "cooling_center" in get_attribute_names_from_data(place.data):
+            #     if place.data.cooling_center > 0.0:
+            #         print(f"place {place.id} is a cooling center")
 
             # update the heat index for the place
-            place.step(self.cal, self.rng)
+            place.step()
                 
             if place.id in heatIndex_map:
                 place.data.heatIndex= heatIndex_map[place.id]
@@ -285,34 +327,36 @@ class HeatRiskModel(SIModel):
             #  places as the heat index
             if 'AIR' in get_attribute_names_from_data(place.data) and place.data.AIR:
                 countOfAirConditionedPlaces += 1
-                place.data.heatIndex = 72
+                place.data.heatIndexIndoors = 72
+            else:
+                place.data.heatIndexIndoors = place.data.heatIndex
 
-            localHeatIndex = place.data.heatIndex
+        #     localHeatIndex = place.data.heatIndex
 
-            peopleAtPlace = self.places_proj.get_agents_at_place(place)
-            # if len(peopleAtPlace) > 0:
-            #     print(f"place {place.id} has {len(peopleAtPlace)} people")
-            for person in peopleAtPlace:
+        #     peopleAtPlace = self.places_proj.get_agents_at_place(place)
+        #     # if len(peopleAtPlace) > 0:
+        #     #     print(f"place {place.id} has {len(peopleAtPlace)} people")
+        #     for person in peopleAtPlace:
 
-                # adjust the heat index for outside workers
-                personHeatIndex = localHeatIndex
-                if person.state.outside_worker:
-                    countOfOutsideWorkers += 1
-                    personHeatIndex = place.data.heatIndex
+        #         # adjust the heat index for outside workers
+        #         personHeatIndex = localHeatIndex
+        #         if person.state.outside_worker:
+        #             countOfOutsideWorkers += 1
+        #             personHeatIndex = place.data.heatIndex
 
-                person.state.heatIndices.appendleft(personHeatIndex)
+        #         person.state.heatIndices.appendleft(personHeatIndex)
 
-                person.state.probHeatEvent = compute_prob_heat_event(
-                    person.state.heatIndices,
-                    self.heat_threshold
-                )
-                if person.state.probHeatEvent > 0.0001:
-                    countOfHeatIncidents += 1
+        #         person.state.probHeatEvent = compute_prob_heat_event(
+        #             person.state.heatIndices,
+        #             self.heat_threshold
+        #         )
+        #         if person.state.probHeatEvent > 0.0001:
+        #             countOfHeatIncidents += 1
 
-        print(f"number of heat index matches = {countOfHeatIndexMatches}")
-        print(f"number of heat incidents = {countOfHeatIncidents}")
-        print(f"number of air conditioned places = {countOfAirConditionedPlaces}")
-        print(f"number of outside workers = {countOfOutsideWorkers}")
+        # print(f"number of heat index matches = {countOfHeatIndexMatches}")
+        # print(f"number of heat incidents = {countOfHeatIncidents}")
+        # print(f"number of air conditioned places = {countOfAirConditionedPlaces}")
+        # print(f"number of outside workers = {countOfOutsideWorkers}")
 
     def log_agents(self) -> None:
         # tick = self.runner.schedule.tick

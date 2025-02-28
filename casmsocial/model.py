@@ -26,6 +26,15 @@ class Model(ABC):
         params: the simulation input parameters
     """
 
+    theModel: 'Model' = None
+
+    def get_model() -> 'Model':
+        """Get the model."""
+        return Model.theModel
+    def set_model(new_model):
+        """Set the model."""
+        Model.theModel = new_model
+
     def __init__(
         self,
         comm: MPI.Intracomm,

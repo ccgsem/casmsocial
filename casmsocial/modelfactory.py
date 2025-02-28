@@ -6,8 +6,7 @@ Created: 02 Dec 2024
 Defining modelfactory interface
 """
 from typing import (
-    Callable,
-    Dict
+    Callable
 )
 
 from casmsocial.model import Model

@@ -11,20 +11,16 @@ from casmsocial.message import Message
 
 from dataclasses  import (
     astuple,
-    dataclass,
-    field
+    dataclass
 )
 from typing import (
     Dict,
     List,
     NamedTuple,
-    Optional,
     Tuple,
     Type
 )
-from collections import deque
 
-import numpy as np
 import math
 
 from mpi4py import MPI
@@ -39,6 +35,7 @@ class PersonData:
     place_id: int
     activity_id: int
     places: List[int]
+    alternative_place_id: int = -1
 
 
 @dataclass
@@ -286,7 +283,7 @@ class Person(core.Agent):
         self.messages_incoming = []
         self.messages_outgoing = []
     
-    def step(self, calendar: Calendar):
+    def step(self):
         pass
 
     @classmethod

@@ -67,7 +67,7 @@ class Place:
     def pt(self) -> cpt:
         return self.location
 
-    def step(self, calendar, rng):
+    def step(self):
         pass
 
 
