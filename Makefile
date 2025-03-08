@@ -1,89 +1,44 @@
-.PHONY: clean clean-build clean-pyc clean-test coverage dist docs help install lint lint/flake8 lint/black
-.DEFAULT_GOAL := help
+.PHONY: install
+install: ## Install the virtual environment and install the pre-commit hooks
+	@echo "🚀 Creating virtual environment using uv"
+	@uv sync
+	@uv run pre-commit install
 
-define BROWSER_PYSCRIPT
-import os, webbrowser, sys
+.PHONY: check
+check: ## Run code quality tools.
+	@echo "🚀 Checking lock file consistency with 'pyproject.toml'"
+	@uv lock --locked
+	@echo "🚀 Linting code: Running pre-commit"
+	@uv run pre-commit run -a
+	@echo "🚀 Static type checking: Running mypy"
+	@uv run mypy
 
-from urllib.request import pathname2url
+.PHONY: test
+test: ## Test the code with pytest
+	@echo "🚀 Testing code: Running pytest"
+	@uv run python -m pytest --doctest-modules
 
-webbrowser.open("file://" + pathname2url(os.path.abspath(sys.argv[1])))
-endef
-export BROWSER_PYSCRIPT
+.PHONY: build
+build: clean-build ## Build wheel file
+	@echo "🚀 Creating wheel file"
+	@uvx --from build pyproject-build --installer uv
 
-define PRINT_HELP_PYSCRIPT
-import re, sys
+.PHONY: clean-build
+clean-build: ## Clean build artifacts
+	@echo "🚀 Removing build artifacts"
+	@uv run python -c "import shutil; import os; shutil.rmtree('dist') if os.path.exists('dist') else None"
 
-for line in sys.stdin:
-	match = re.match(r'^([a-zA-Z_-]+):.*?## (.*)$$', line)
-	if match:
-		target, help = match.groups()
-		print("%-20s %s" % (target, help))
-endef
-export PRINT_HELP_PYSCRIPT
+.PHONY: docs-test
+docs-test: ## Test if documentation can be built without warnings or errors
+	@uv run mkdocs build -s
 
-BROWSER := python -c "$$BROWSER_PYSCRIPT"
+.PHONY: docs
+docs: ## Build and serve the documentation
+	@uv run mkdocs serve
 
+.PHONY: help
 help:
-	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
+	@uv run python -c "import re; \
+	[[print(f'\033[36m{m[0]:<20}\033[0m {m[1]}') for m in re.findall(r'^([a-zA-Z_-]+):.*?## (.*)$$', open(makefile).read(), re.M)] for makefile in ('$(MAKEFILE_LIST)').strip().split()]"
 
-clean: clean-build clean-pyc clean-test ## remove all build, test, coverage and Python artifacts
-
-clean-build: ## remove build artifacts
-	rm -fr build/
-	rm -fr dist/
-	rm -fr .eggs/
-	find . -name '*.egg-info' -exec rm -fr {} +
-	find . -name '*.egg' -exec rm -f {} +
-
-clean-pyc: ## remove Python file artifacts
-	find . -name '*.pyc' -exec rm -f {} +
-	find . -name '*.pyo' -exec rm -f {} +
-	find . -name '*~' -exec rm -f {} +
-	find . -name '__pycache__' -exec rm -fr {} +
-
-clean-test: ## remove test and coverage artifacts
-	rm -fr .tox/
-	rm -f .coverage
-	rm -fr htmlcov/
-	rm -fr .pytest_cache
-
-lint/flake8: ## check style with flake8
-	flake8 casmsocial tests
-lint/black: ## check style with black
-	black --check casmsocial tests
-
-lint: lint/flake8 lint/black ## check style
-
-test: ## run tests quickly with the default Python
-	pytest
-
-test-all: ## run tests on every Python version with tox
-	tox
-
-coverage: ## check code coverage quickly with the default Python
-	coverage run --source casmsocial -m pytest
-	coverage report -m
-	coverage html
-	$(BROWSER) htmlcov/index.html
-
-docs: ## generate Sphinx HTML documentation, including API docs
-	rm -f docs/casmsocial.rst
-	rm -f docs/modules.rst
-	sphinx-apidoc -o docs/ casmsocial
-	$(MAKE) -C docs clean
-	$(MAKE) -C docs html
-	$(BROWSER) docs/_build/html/index.html
-
-servedocs: docs ## compile the docs watching for changes
-	watchmedo shell-command -p '*.rst' -c '$(MAKE) -C docs html' -R -D .
-
-release: dist ## package and upload a release
-	twine upload dist/*
-
-dist: clean ## builds source and wheel package
-	python setup.py sdist
-	python setup.py bdist_wheel
-	ls -l dist
-
-install: clean ## install the package to the active Python's site-packages
-	python setup.py install
+.DEFAULT_GOAL := help

@@ -1,18 +1,14 @@
 """ Generic Place Class """
-from repast4py.space import ContinuousPoint as cpt
-import repast4py.core as core
-from repast4py.core import SharedProjection
+import math
+
 # import repast4py.schedule as schedule
 # from repast4py.context import SharedContext
+from dataclasses import dataclass
+from typing import NamedTuple
 
-from dataclasses  import dataclass
-from typing import (
-    Type,
-    Dict,
-    List,
-    NamedTuple
-)
-import math
+import repast4py.core as core
+from repast4py.core import SharedProjection
+from repast4py.space import ContinuousPoint as cpt
 
 # from casmsocial.person import Person
 from casmsocial.datautility import create_dataclass_record_from_dict
@@ -33,11 +29,11 @@ class PlaceData:
 # 2. Define a Place Class
 class Place:
     """Generic Place Class"""
-    
+
     def __init__(
             self,
-            initDict: Dict,
-            placeDataClass: Type[dataclass]
+            initDict: dict,
+            placeDataClass: type[dataclass]
         ):
         """Constructor for the Place class."""
 
@@ -61,7 +57,7 @@ class Place:
         self.data = \
             create_dataclass_record_from_dict(
                 placeDataClass,
-                initDict          
+                initDict
             )
     @property
     def pt(self) -> cpt:
@@ -72,15 +68,11 @@ class Place:
 
 
 # 3. Define a PlaceConfig NamedTuple
-PlaceConfig = NamedTuple(
-    'PlacesConfig',
-    [
-        ('name', str),
-        ('type', Type[Place]),
-        ('dataType', Type[dataclass]),
-        ('personPlaceField', str)
-    ]
-)
+class PlaceConfig(NamedTuple):
+    name: str
+    type: type[Place]
+    dataType: PlaceData
+    personPlaceField: str
 
 
 # 4. Define a Custom Projection for Agent-Place Association
@@ -120,13 +112,13 @@ class PlacesProjection(SharedProjection):
             Place: The place object.
         """
         return self.place_map.get(place_id)
-    
-    def get_local_places(self) -> List[Place]:
+
+    def get_local_places(self) -> list[Place]:
         """Get the list of local places.
         Returns:
             List[Place]: The list of local places.
         """
-        return [place for place in self.place_map.values() if place.rank == self.rank]  
+        return [place for place in self.place_map.values() if place.rank == self.rank]
 
     def assign_agent_to_place(self, agent, place):
         """Assign an agent to a specific Place."""
@@ -141,7 +133,7 @@ class PlacesProjection(SharedProjection):
             new_place (Place): The new Place object to assign to the agent.
         """
         if agent.id not in self.agent_place_map:
-            raise ValueError(f"Agent with ID {agent.id} is not in the projection.")
+            raise AgentNotInProjectionError(agent.id)
         print(f"Moving Agent {agent.id} from {self.agent_place_map[agent.id]} to {new_place}")
         self.assign_agent_to_place(agent, new_place)
 
@@ -171,7 +163,7 @@ class PlacesProjection(SharedProjection):
         if agent.id in self.agent_place_map:
             del self.agent_place_map[agent.id]
 
-    def get_agents_at_place(self, place) -> List[core.Agent]:
+    def get_agents_at_place(self, place) -> list[core.Agent]:
         """
         Retrieve all agents currently assigned to a given Place.
         Args:
@@ -180,18 +172,23 @@ class PlacesProjection(SharedProjection):
             List[Agent]: List of agents at the specified place.
         """
         return self.place_agent_map.get(place.id, [])
-    
+
     def get_agent_by_id(self, agent_id) -> core.Agent:
         if agent_id in self.agent_place_map:
             return next((agent for agent in self.place_agent_map.get(self.agent_place_map[agent_id].id, [])
                         if agent.id == agent_id), None)
         return None
-    
+
     def __repr__(self):
         return f"PlaceProjection(agent_place_map={self.agent_place_map})"
 
 
-# 5. Define a Remote Place Class
+# 5. Define a custom exception for agent not in projection
+class AgentNotInProjectionError(ValueError):
+    def __init__(self, agent_id):
+        super().__init__(f"Agent with ID {agent_id} is not in the projection.")
+
+# 6. Define a Remote Place Class
 class RemotePlace(Place):
     """ Remote Place class
 
@@ -199,8 +196,8 @@ class RemotePlace(Place):
     """
     def __init__(
             self,
-            initDict: Dict,
-            placeDataClass: Type[dataclass]
+            initDict: dict,
+            placeDataClass: type[dataclass]
         ):
         """Constructor for the RemotePlace class."""
         initDict["place_type"] = "RemotePlace"

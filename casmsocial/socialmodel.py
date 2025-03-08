@@ -1,65 +1,31 @@
-# -*- coding: utf-8 -*-
 """
 Author: Jon Cline
 Created: 02 Dec 2024
 
 Defining the SIModel
 """
-from mpi4py import MPI
-from repast4py import (
-    schedule
-)
-from repast4py import context as ctx
-import repast4py
-import random
-
-from casmsocial.model import Model
-from casmsocial.place import (
-    PlaceConfig,
-    PlacesProjection
-)
-from casmsocial.activities import (
-    Act,
-    Activities,
-    Schedules
-)
-from casmsocial.person import (
-    Person,
-    PersonConfig,
-    test_activities,
-    person_cache
-)
-from casmsocial.calendar import Calendar
-# note: place types are set by derived Model classes
-
-from casmsocial.modelfactory import (
-    register_casmsocial_model
-)
-from casmsocial.message import Message
-from casmsocial.datautility import convert_to_int
-
-from typing import (
-    Dict,
-    List
-)
-from dotenv import (
-    find_dotenv,
-    load_dotenv
-)
 import os
 import pathlib
-import pyarrow.parquet as pq
 import time
+from typing import ClassVar
 
+import pyarrow.parquet as pq
+import repast4py
+from dotenv import find_dotenv, load_dotenv
+from mpi4py import MPI
+from repast4py import context as ctx
+from repast4py import schedule
 
-# register the 'casmsocial' model
-@register_casmsocial_model('casmsocial_SIModel')
-def create_casmsocial_SIModel(
-    comm: MPI.Intracomm,
-    params: dict
-) -> Model:
-    print("Registering casmsocial model")
-    return SIModel(comm, params)
+from casmsocial.activities import Act, Activities, Schedules
+from casmsocial.calendar import Calendar
+from casmsocial.datautility import convert_to_int
+
+# note: place types are set by derived Model classes
+from casmsocial.factory import Models
+from casmsocial.message import Message
+from casmsocial.model import Model
+from casmsocial.person import Person, PersonConfig, person_cache, test_activities
+from casmsocial.place import PlaceConfig, PlacesProjection
 
 
 class SIModel(Model):
@@ -87,7 +53,7 @@ class SIModel(Model):
     # class variables
 
     # list of places configurations
-    __placeConfigs: List[PlaceConfig] = []
+    __placeConfigs: ClassVar[list[PlaceConfig]] = []
 
     # remote place configuration
     __remote_place_config: PlaceConfig = None
@@ -102,10 +68,10 @@ class SIModel(Model):
         cls.__placeConfigs.append(config)
 
     @classmethod
-    def get_place_configs(cls) -> List[PlaceConfig]:
+    def get_place_configs(cls) -> list[PlaceConfig]:
         """Get the list of place configurations."""
         return cls.__placeConfigs
-    
+
     @classmethod
     def get_place_config(cls, idx: int) -> PlaceConfig:
         """Get a PlacesConfig from the list of configs."""
@@ -123,7 +89,7 @@ class SIModel(Model):
     def get_place_config_name(cls, idx: int) -> str:
         """Get the name of a PlacesConfig in the list of configs."""
         return cls.__placeConfigs[idx].name
-    
+
     @classmethod
     def register_remote_place_config(cls, config: PlaceConfig) -> None:
         """Register a remote place configuration."""
@@ -133,7 +99,7 @@ class SIModel(Model):
     def get_remote_place_config(cls) -> PlaceConfig:
         """Get the remote place configuration."""
         return cls.__remote_place_config
-    
+
     @classmethod
     def register_person_config(cls, config: PersonConfig) -> None:
         """Register a person configuration."""
@@ -149,10 +115,10 @@ class SIModel(Model):
     def __init__(
         self,
         comm: MPI.Intracomm,
-        params: Dict
+        params: dict
     ):
         """ Constructor for the SIModel class
-        
+
         Args:
             comm: the mpi communicator over which the model is distributed.
             params: the simulation input parameters
@@ -188,20 +154,17 @@ class SIModel(Model):
         load_dotenv(find_dotenv())
         data_input_path = os.environ.get("CASMSOCIAL_DATA_PATH")
 
-        if not data_input_path:
-            data_input_path = pathlib.Path.cwd()
-        else:
-            data_input_path = pathlib.Path(data_input_path)
+        data_input_path = pathlib.Path.cwd() if not data_input_path else pathlib.Path(data_input_path)
 
         self.data_input_path = data_input_path
 
     def initializePopulation(self) -> None:
         """
         Initialize population
-        
+
         This method initializes the population by creating the places and agents
         from the input data files.
-        
+
         The method performs the following steps:"""
         # register the place types (derived classes should set place types)
 
@@ -212,7 +175,7 @@ class SIModel(Model):
         place_filenames = [
             self.data_input_path / filename for filename in self.params['places.files']
         ]
-        
+
         # self.place_map, self.local_places = self.createPlaces(
         self.createPlaces(
             place_filenames
@@ -251,7 +214,7 @@ class SIModel(Model):
             self.rng)
 
         # print(F"rank {self.rank}: number of person agents={len(self.context.agents())}")
-        agent_list = [a for a in self.context.agents()]
+        agent_list = list(self.context.agents())
         print(F"rank {self.rank}: number of person agents={len(agent_list)}")
 
         saved = []
@@ -279,11 +242,11 @@ class SIModel(Model):
         self,
         personsFile: pathlib.Path,
         # placeMap: Dict,
-        activitiesMap: Dict,
+        activitiesMap: dict,
         rng
     ) -> None:
         """ Create persons from the given file.
-        
+
         Args:
             personsFile (pathlib.Path): The persons file.
             activitiesMap (dict): The activities map.
@@ -320,7 +283,7 @@ class SIModel(Model):
                         return
 
                 hhId = places[0]  # p['sp_hh_id']
-                
+
                 household = self.places_proj.lookup_place(hhId)
                 if not household:
                     print(f"Error: No household found for {p}")
@@ -507,7 +470,7 @@ class SIModel(Model):
 
     def step(self) -> None:
         """Step the model forward one time step."""
-        tick = self.runner.schedule.tick
+        # tick = self.runner.schedule.tick
 
         self.cal.increment()
 
@@ -527,7 +490,7 @@ class SIModel(Model):
 
         # 2025-02-26 jcline: this is no longer needed due to places_projection?
         # self.add_people_to_places()
-    
+
         # self.make_contacts(tick)
 
         self.update_environment()
@@ -536,7 +499,7 @@ class SIModel(Model):
 
         for person in self.context.agents():
             person.step()
- 
+
         self.log_agents()
 
         # for person in self.context.agents():
@@ -588,16 +551,17 @@ class SIModel(Model):
 
     def send_messages_between_agents(self) -> None:
         """Send messages between agents."""
-        messages_to_send: List[Message] = []
+        messages_to_send: list[Message] = []
         remote_person_ids = []
 
         # send the first round of messages
         # Step 1: Send and receive messages
         agents = self.context.agents(shuffle=True)
-    
+
         for person in agents:
 
-            recipient = random.choice(agents)
+            import secrets
+            recipient = secrets.choice(agents)
 
             if person.id != recipient.id:  # Avoid sending to self
                 message = person.create_message(
@@ -617,7 +581,7 @@ class SIModel(Model):
 
                 for message in messages:
                     recipient = message.recipient
-                    recipient_person = self.context.agent(self.person_id_map[recipient])
+                    # recipient_person = self.context.agent(self.person_id_map[recipient])
                     if recipient in self.person_id_map:  # message to local person
                         recipient_uid = self.person_id_map[recipient]
                         print(f"Message from {message.sender} to {person_cache[recipient_uid].state}:")
@@ -632,7 +596,7 @@ class SIModel(Model):
                         message_to_send = message
                         message_to_send.recipients = [recipient]
                         messages_to_send.append(message_to_send)
-                        
+
             else:
                 print(f"Person {person.id} has no messages.")
                 continue
@@ -656,14 +620,14 @@ class SIModel(Model):
                 person_cache[recipient_uid].receive_message(message)
             else:
                 print(f"Remote message from {message.sender} to {recipient} not delivered")
-        
+
         # Step 3: Process messages
         for person in agents:
             person.process_messages()
-    
+
     def get_remote_person_id_map(
             self,
-            remote_person_ids: List[int]) -> Dict[int, int]:
+            remote_person_ids: list[int]) -> dict[int, int]:
         """Get the remote person ID map."""
         remote_person_id_map = {}
 
@@ -674,7 +638,7 @@ class SIModel(Model):
                 if rank != self.rank:
                     send_buffers[rank].append(person_id)
 
-        # 2. Receive remote person IDs from other ranks and map and send UIDs      
+        # 2. Receive remote person IDs from other ranks and map and send UIDs
         received_buffers = self.comm.alltoall(send_buffers)
         send_buffers = [[] for _ in range(self.size)]  # reset send_buffers
 
@@ -697,9 +661,9 @@ class SIModel(Model):
 
     def exchange_messages(
             self,
-            remote_person_ids: List[int],
+            remote_person_ids: list[int],
             messages_to_send: list[Message]
-        ) -> List[Message]:
+        ) -> list[Message]:
         """Exchange messages between processors using MPI."""
         remote_person_id_map = self.get_remote_person_id_map(remote_person_ids)
 
@@ -735,3 +699,9 @@ class SIModel(Model):
         end_time = time.time()
 
         print(f"Simulation took {end_time - self.start_time} seconds.")
+
+
+# Register SIModel
+Models.add_model(
+    SIModel.__module__ + '.' + SIModel.__name__,
+    SIModel)

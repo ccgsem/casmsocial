@@ -1,4 +1,4 @@
-model.name: 'casmsocial_dcsim_ArtSocModel'
+model.name: 'casmsocial.dcsim.dcsocialmodel.ArtSocModel'
 random.seed: 42
 stop.at: 24
 world.width: 2

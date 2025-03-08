@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Author: Jon Cline
 Created: 02 Dec 2024
@@ -6,46 +5,34 @@ Created: 02 Dec 2024
 Defining the heat risk model for the CASMSOCIAL/PRSIM project
 """
 
+from collections import deque
+from dataclasses import dataclass, field
+
+import pandas as pd
 from mpi4py import MPI
-from repast4py import (
-    logging
-)
+from repast4py import logging
 from repast4py.space import ContinuousPoint as cpt  # noqa: F401
 
-from casmsocial.model import Model
-from casmsocial.socialmodel import SIModel
-from casmsocial.calendar import Calendar
 from casmsocial.activities import Schedules
+from casmsocial.datautility import get_attribute_names_from_data
+
+# model factory
+from casmsocial.factory import Models
+
+# place types
+from casmsocial.household import Household
+from casmsocial.model import Model
+from casmsocial.person import Person, PersonConfig, PersonData
 from casmsocial.place import (
     # Place,
     PlaceConfig,
     PlaceData,
-    RemotePlace
+    RemotePlace,
 )
-
-# place types
-from casmsocial.household import Household
-from casmsocial.workplace import Workplace
 from casmsocial.school import School
+from casmsocial.socialmodel import SIModel
+from casmsocial.workplace import Workplace
 
-from casmsocial.person import (
-    Person,
-    PersonData,
-    PersonConfig
-)
-from casmsocial.datautility import get_attribute_names_from_data
-
-# model factory
-from casmsocial.modelfactory import (
-    register_casmsocial_model
-)
-
-from dataclasses  import dataclass, field
-from typing import (
-    Dict
-)
-from collections import deque
-import pandas as pd
 
 # 1. utility functions for heat-related computations
 def filter_heat_indices(
@@ -86,7 +73,7 @@ class PersonWithHeatRisk(Person):
         rank: int,
         schedules: Schedules,
         places: list[int],
-        initDict: Dict
+        initDict: dict
     ):
         """Constructor for the PersonWithHeatRisk class."""
         super().__init__(
@@ -141,15 +128,14 @@ class PersonWithHeatRisk(Person):
         else:
             print("model is unavailable!")
             return
-        
+
         if not place:
             print(f"=====>Person {self.id} is without a place!")
             return
 
         # update the heat index for the person
-        localHeatIndex = place.data.heatIndexIndoors       
+        localHeatIndex = place.data.heatIndexIndoors
         if self.state.outside_worker:
-            print(f"Person {self.id} is an outside worker")
             localHeatIndex = place.data.heatIndex
 
         self.state.heatIndices.appendleft(localHeatIndex)
@@ -167,24 +153,15 @@ class PersonWithHeatRisk(Person):
                 if self.decide_to_seek_cooling():
                     pass
 
-# 5. register the 'casmsocial_heatrisk_HeatRiskModel' model
-@register_casmsocial_model('casmsocial_heatrisk_HeatRiskModel')
-def create_casmsocial_HeatRiskModel(
-    comm: MPI.Intracomm,
-    params: dict
-) -> Model:
-    print("Registering casmsocial_heatrisk_HeatRiskModel model")
-    return HeatRiskModel(comm, params)
-
 
 # 6. Define the HeatRiskModel class
 class HeatRiskModel(SIModel):
     """ HeatRiskModel class """
-    
+
     def __init__(
         self,
         comm: MPI.Intracomm,
-        params: Dict
+        params: dict
     ):
         """ Constructor for the HeatRiskModel class """
         super().__init__(comm, params)
@@ -202,7 +179,7 @@ class HeatRiskModel(SIModel):
     @property
     def heat_threshold(self) -> float:
         return self._heat_threshold
-    
+
     def initializePopulation(self) -> None:
         """Initialize population"""
 
@@ -287,11 +264,11 @@ class HeatRiskModel(SIModel):
                 engine='pyarrow',
                 filters=[("time_hour", "=", self.cal.hour_of_day)]
             ).loc[:, ['sp_id', 'heatIndex']].dropna()
-        
+
         # print(f"size of heatindex_by_hour_place = {len(heatindex_by_hour_place)}")
         minheatindex = heatindex_by_hour_place['heatIndex'].min()
         maxheatindex = heatindex_by_hour_place['heatIndex'].max()
-        meanheatindex = heatindex_by_hour_place['heatIndex'].mean()        
+        meanheatindex = heatindex_by_hour_place['heatIndex'].mean()
         print(
             f"min heat index = {minheatindex}, "
             f"max heat index = {maxheatindex}, "
@@ -316,7 +293,7 @@ class HeatRiskModel(SIModel):
 
             # update the heat index for the place
             place.step()
-                
+
             if place.id in heatIndex_map:
                 place.data.heatIndex= heatIndex_map[place.id]
                 countOfHeatIndexMatches+=1
@@ -382,3 +359,9 @@ class HeatRiskModel(SIModel):
     def at_end(self) -> None:
         # self.data_set.close()
         self.agent_logger.close()
+
+
+# Register HeatRiskModel
+Models.add_model(
+    HeatRiskModel.__module__ + '.' + HeatRiskModel.__name__,
+    HeatRiskModel)

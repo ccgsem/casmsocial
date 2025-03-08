@@ -1,61 +1,32 @@
-# -*- coding: utf-8 -*-
 """
 Author: Jon Cline
 Created: 09 Dec 2024
 
 Defining the artificial social model for the Artificial Societies project
 """
-
 from mpi4py import MPI
-from repast4py import (
-    logging
-)
+from repast4py import logging
 
-from casmsocial.model import Model
-from casmsocial.socialmodel import SIModel
-from casmsocial.place import (
-    PlaceConfig,
-    PlaceData,
-    RemotePlace
-)
+# model factory
+from casmsocial.factory import Models
 
 # place types
 from casmsocial.household import Household
-from casmsocial.workplace import Workplace
+from casmsocial.person import Person, PersonConfig, PersonData
+from casmsocial.place import PlaceConfig, PlaceData, RemotePlace
 from casmsocial.school import School
+from casmsocial.socialmodel import SIModel
+from casmsocial.workplace import Workplace
 
-from casmsocial.person import (
-    Person,
-    PersonData,
-    PersonConfig
-)
-
-# model factory
-from casmsocial.modelfactory import (
-    register_casmsocial_model
-)
-
-from dataclasses  import dataclass
-from typing import Dict
-
-
-# register the 'casmsocial' model
-@register_casmsocial_model('casmsocial_dcsim_ArtSocModel')
-def create_casmsocial_ArtSocModel(
-    comm: MPI.Intracomm,
-    params: dict
-) -> Model:
-    print("Registering casmsocial_dcsim_ArtSocModel model")
-    return ArtSocModel(comm, params)
 
 # 1. Define a SIModel-derived Class
 class ArtSocModel(SIModel):
     """ ArtSocModel class """
-    
+
     def __init__(
         self,
         comm: MPI.Intracomm,
-        params: Dict
+        params: dict
     ):
         """ Constructor for the ArtSocModel class """
         super().__init__(comm, params)
@@ -142,3 +113,9 @@ class ArtSocModel(SIModel):
     def at_end(self) -> None:
         # self.data_set.close()
         self.agent_logger.close()
+
+
+# Register ArtSocModel
+Models.add_model(
+    ArtSocModel.__module__ + '.' + ArtSocModel.__name__,
+    ArtSocModel)

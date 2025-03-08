@@ -1,29 +1,20 @@
 """ Person Agent Base Class """
 from __future__ import annotations
+
+import math
+from dataclasses import astuple, dataclass
+from typing import NamedTuple
+
+from mpi4py import MPI
 from repast4py import core
 from repast4py.space import ContinuousPoint as cpt
 
-from casmsocial.place import PlacesProjection
-from casmsocial.calendar import Calendar
 from casmsocial.activities import Schedules
+from casmsocial.calendar import Calendar
 from casmsocial.datautility import create_dataclass_record_from_dict
 from casmsocial.message import Message
+from casmsocial.place import PlacesProjection
 
-from dataclasses  import (
-    astuple,
-    dataclass
-)
-from typing import (
-    Dict,
-    List,
-    NamedTuple,
-    Tuple,
-    Type
-)
-
-import math
-
-from mpi4py import MPI
 rank = MPI.COMM_WORLD.Get_rank()
 
 
@@ -34,7 +25,7 @@ class PersonData:
     person_id: int
     place_id: int
     activity_id: int
-    places: List[int]
+    places: list[int]
     alternative_place_id: int = -1
 
 
@@ -43,21 +34,21 @@ class ChiSimPersonData:
     person_id: int
     act_type: int
     place_id: int
-    places: List[int]
+    places: list[int]
 
 
 # 2. Define a Person Class
 # @dataclass(slots=True)
 class Person(core.Agent):
     TYPE = 0  # class variable
-    __personDataClass = Type[dataclass]  # class variable
+    __personDataClass = type[dataclass]  # class variable
 
     @classmethod
-    def registerPersonDataClass(cls, persondataclass: Type[dataclass]) -> None:
+    def registerPersonDataClass(cls, persondataclass: type[dataclass]) -> None:
         """Register Person dataclass."""
         cls.__personDataClass = persondataclass
     @classmethod
-    def getPersonDataClass(cls) -> Type[dataclass]:
+    def getPersonDataClass(cls) -> type[dataclass]:
         """Returns Person dataclass."""
         return cls.__personDataClass
 
@@ -72,9 +63,9 @@ class Person(core.Agent):
         rank: int,
         schedules: Schedules,
         places: list[int],
-        initDict: Dict):
+        initDict: dict):
         """Constructor for the Person class.
-        
+
         Arguments:
             local_id: The ID for this person on this process, combines with the
                 rank to form a simulation-wide unique ID.
@@ -87,8 +78,8 @@ class Person(core.Agent):
                 one simulation or "grocery store" in another. If there are
                 multiple activity sequences, one sequence could be for weekdays
                 and another for weekends, for example.
-            places: A list of place_id's that correspond to values coming out of 
-                the schedule. e.g. if the schedule returns "0", this Person will 
+            places: A list of place_id's that correspond to values coming out of
+                the schedule. e.g. if the schedule returns "0", this Person will
                 try to go to the place with the ID of places[0]
             initDict: A dictionary of initial values for the person
         """
@@ -107,9 +98,9 @@ class Person(core.Agent):
             initDict['y'] = 0
 
         self.location = cpt(x=int(initDict['x']), y=int(initDict['y']), z=0)
-        
+
         self.schedules: Schedules = schedules
-                
+
         # map input parameters to dict
         initDict['person_id'] = local_id
         initDict['place_id'] = places[0]
@@ -120,12 +111,12 @@ class Person(core.Agent):
         self.state = \
             create_dataclass_record_from_dict(
                 Person.getPersonDataClass(),
-                initDict          
+                initDict
             )
 
-        self.messages_outgoing: List[Message] = []
-        self.messages_sent: List[Message] = []
-        self.messages_incoming: List[Message] = []
+        self.messages_outgoing: list[Message] = []
+        self.messages_sent: list[Message] = []
+        self.messages_incoming: list[Message] = []
 
         #print(f"Person {self.id} is ready!")
 
@@ -133,21 +124,21 @@ class Person(core.Agent):
     def pt(self) -> cpt:
         """"""
         return self.location
-    
+
     @property
     def currentPlaceID(self) -> int:
         return self.state.place_id
-    
+
     @property
     def places(self) -> list[int]:
         return self.state.places
 
-    def save(self) -> Tuple:
+    def save(self) -> tuple:
         """Saves the state of this Person as a Tuple.
 
         Returns:
-            The saved state of this Person. 
-        """ 
+            The saved state of this Person.
+        """
         return (
             self.uid,   # 0: uid is a tuple
             self.schedules.data(),    # 1: schedules is a Schedules object
@@ -171,7 +162,7 @@ class Person(core.Agent):
             # print(
             #     f"Agent {self.id} is already at place {self.currentPlaceID}")
             return True
-        
+
         if not next_place_id:
             print(f"Agent {self.id} has no place to go - going remote.")
             print(f"places = {self.places}")
@@ -197,7 +188,7 @@ class Person(core.Agent):
             print(f"Remaining a currentPlaceID = {self.state.place_id}")
 
         return success
-    
+
     def selectActivities(self, cal: Calendar) ->  int:
         """Select the activities for the time of day and day of week.
         """
@@ -205,7 +196,7 @@ class Person(core.Agent):
         if not cal.is_weekday() and len(self.schedules) > 1:
             activities_idx = 1
         return activities_idx
-    
+
     def selectNextPlace(
             self,
             cal: Calendar) -> int:
@@ -218,11 +209,10 @@ class Person(core.Agent):
         act = self.schedules[activities_idx].activityAt(time)
 
         next_activity_id = 0  # home is the default
-        if act is not None:
-            if act.activity_id < len(self.places):
-                next_activity_id = int(act.activity_id)
+        if act is not None and act.activity_id < len(self.places):
+            next_activity_id = int(act.activity_id)
             # else:  if the activity is not in the list of places, go home
- 
+
         return next_activity_id
 
     def count_colocations(self, cspace):
@@ -238,15 +228,19 @@ class Person(core.Agent):
 
     def make_contacts(self, contacts):
         pass
-    
+
     def create_message(
             self,
             recipient: int,
             message: str,
             timestamp: str,
-            metadata: Dict = {},
-            attachments: Dict = {})->Message:
+            metadata: dict | None = None,
+            attachments: dict | None = None) -> Message:
         """Create a message to send to other agents."""
+        if attachments is None:
+            attachments = {}
+        if metadata is None:
+            metadata = {}
         msg = Message(
             sender=self.uid,
             recipient=recipient,
@@ -259,8 +253,8 @@ class Person(core.Agent):
         self.messages_outgoing.append(msg)
 
         return(msg)
-    
-    def send_messages(self)->List[Message]:
+
+    def send_messages(self)->list[Message]:
         """Send messages to other agents."""
         outgoing_messages = self.messages_outgoing
         self.messages_sent.extend(outgoing_messages)
@@ -279,19 +273,19 @@ class Person(core.Agent):
         for msg in self.messages_incoming:
             # process the message
             print(f"Agent {self.id} received message: {msg.message}")
-        
+
         self.messages_incoming = []
         self.messages_outgoing = []
-    
+
     def step(self):
         pass
 
     @classmethod
-    def restore(cls, person_data: Tuple) -> Person:
+    def restore(cls, person_data: tuple) -> Person:
         """Creates or updates a local person from person_data.
 
         Args:
-            person_data: tuple containing the data returned by Person.save(). 
+            person_data: tuple containing the data returned by Person.save().
         """
         # person_data: Tuple = (
         #     self.uid,
@@ -301,11 +295,11 @@ class Person(core.Agent):
 
         # 0: uid is a tuple
         uid = person_data[0]
-       
+
         schedules = Schedules.restore(person_data[1])
 
-        pt_array = list(person_data[2])
-        pt = cpt(pt_array[0], pt_array[1], 0)
+        # pt_array = list(person_data[2])
+        # pt = cpt(pt_array[0], pt_array[1], 0)
 
         # person_data[3] is a PersonData object as tuple
         # the third element of the tuple is the places list
@@ -317,7 +311,7 @@ class Person(core.Agent):
         person.state = Person.getPersonDataClass()(*person_data[3])
 
         return person
-    
+
     def __str__(self):
         return (
             "Person: "
@@ -330,14 +324,10 @@ class Person(core.Agent):
 
 
 # 3. Define a PersonConfig NamedTuple
-PersonConfig = NamedTuple(
-    'PersonConfig',
-    [
-        ('name', str),
-        ('type', Type[Person]),
-        ('dataType', Type[PersonData])
-    ]
-)
+class PersonConfig(NamedTuple):
+    name: str
+    type: type[Person]
+    dataType: type[PersonData]
 
 
 # 4. test code
