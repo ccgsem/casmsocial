@@ -5,8 +5,10 @@ Created: 02 Dec 2024
 Defining the heat risk model for the CASMSOCIAL/PRSIM project
 """
 
+import math
 from collections import deque
 from dataclasses import dataclass, field
+from heapq import nsmallest
 
 import pandas as pd
 from mpi4py import MPI
@@ -32,6 +34,38 @@ from casmsocial.place import (
 from casmsocial.school import School
 from casmsocial.socialmodel import SIModel, update_activities_data
 from casmsocial.workplace import Workplace
+
+
+def haversine_distance(lat1, lon1, lat2, lon2):
+    """Calculate the great-circle distance between two points on the Earth."""
+    R = 6371  # Earth's radius in km
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c  # Distance in km
+
+def find_closest_cooling_centers(lat, lon, places, n=3):
+    """
+    Find the `n` closest cooling centers to the given coordinates.
+
+    Args:
+        lat (float): Latitude of the target location.
+        lon (float): Longitude of the target location.
+        places (list[Place]): List of Place objects.
+        n (int): Number of closest cooling centers to return (default is 3).
+
+    Returns:
+        list[tuple[Place, float]]: List of tuples containing Place objects and their distances.
+    """
+    cooling_centers = [p for p in places if getattr(p.data, 'cooling_center', False)]
+
+    if not cooling_centers:
+        return []  # No cooling centers found
+
+    closest_places = nsmallest(n, cooling_centers, key=lambda p: haversine_distance(lat, lon, p.data.latitude, p.data.longitude))
+    return [(place, haversine_distance(lat, lon, place.data.latitude, place.data.longitude)) for place in closest_places]
 
 
 # 1. utility functions for heat-related computations
@@ -147,7 +181,15 @@ class PersonWithHeatRisk(Person):
             )
 
         if self.state.probHeatEvent > 0.0001:
-            print(f"Person {self.id} is experiencing a heat event probability of {self.state.probHeatEvent}")
+            lat = place.data.latitude
+            lon = place.data.longitude
+            print(f"Person {self.id} at ({lat},{lon}) is experiencing a heat event probability of {self.state.probHeatEvent}")
+            local_places = model.places_proj.get_local_places()
+            candidates = find_closest_cooling_centers(lat, lon, local_places, n=3)
+            print(f"Person {self.id} is considering the following cooling centers:")
+            for place, distance in candidates:
+                print(f"  {place.id} at ({place.data.latitude},{place.data.longitude}) is {distance} km away")
+
             if self.consider_to_seek_cooling():
                 print(f"Person {self.id} is seeking cooling")
                 if self.decide_to_seek_cooling():
@@ -299,6 +341,13 @@ class HeatRiskModel(SIModel):
 
         #for place in self.local_places:
         local_places = self.places_proj.get_local_places()
+        print(f"number of local places = {len(local_places)}")
+        places_with_cooling_centers = [place for place in local_places if getattr(place.data, 'cooling_center', False)]
+
+        print(f"number of places with cooling centers = {len(places_with_cooling_centers)}")
+        # for place in places_with_cooling_centers:
+        #     print(f"place {place.id} has place.data={place.data}")
+
         for place in local_places:
 
             # if "cooling_center" in get_attribute_names_from_data(place.data):
