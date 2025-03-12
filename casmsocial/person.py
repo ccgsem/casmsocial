@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from collections import namedtuple
 from dataclasses import astuple, dataclass
 from typing import NamedTuple
 
@@ -25,8 +26,8 @@ class PersonData:
     person_id: int
     place_id: int
     activity_id: int
-    places: list[int]
-    alternative_place_id: int = -1
+    places: namedtuple
+    activities_idx: int
 
 
 @dataclass
@@ -34,14 +35,14 @@ class ChiSimPersonData:
     person_id: int
     act_type: int
     place_id: int
-    places: list[int]
+    places: namedtuple
 
 
 # 2. Define a Person Class
 # @dataclass(slots=True)
 class Person(core.Agent):
     TYPE = 0  # class variable
-    __personDataClass = type[dataclass]  # class variable
+    __personDataClass: dataclass  # class variable
 
     @classmethod
     def registerPersonDataClass(cls, persondataclass: type[dataclass]) -> None:
@@ -62,7 +63,7 @@ class Person(core.Agent):
         local_id: int,
         rank: int,
         schedules: Schedules,
-        places: list[int],
+        places: namedtuple,
         initDict: dict):
         """Constructor for the Person class.
 
@@ -105,6 +106,7 @@ class Person(core.Agent):
         initDict['person_id'] = local_id
         initDict['place_id'] = places[0]
         initDict['activity_id'] = 0
+        initDict['activities_idx'] = 0
         # initDict['location'] = starting_location
         initDict['places'] = places
 
@@ -131,7 +133,7 @@ class Person(core.Agent):
 
     @property
     def places(self) -> list[int]:
-        return self.state.places
+        return list(self.state.places)
 
     def save(self) -> tuple:
         """Saves the state of this Person as a Tuple.
@@ -192,8 +194,8 @@ class Person(core.Agent):
     def selectActivities(self, cal: Calendar) ->  int:
         """Select the activities for the time of day and day of week.
         """
-        activities_idx = 0
-        if not cal.is_weekday() and len(self.schedules) > 1:
+        activities_idx = self.state.activities_idx
+        if activities_idx == 0 and cal.is_weekday() and len(self.schedules) > 1:
             activities_idx = 1
         return activities_idx
 
@@ -366,10 +368,24 @@ def test_person():
 
     print("Person test passed.")
 
+def test_person_serialization(person: Person):
+    print("Testing person serialization.")
+    person_data = person.save()
+    print(person_data)
+
+    restored_person = Person.restore(person_data)
+    print(restored_person)
+
 def test_activities(person: Person):
+    print("Testing activities.")
     schedules = person.schedules
-    for act in schedules[0].acts:
-        print(act)
+    schedule_names = [schedule.name for schedule in schedules.schedules]
+    print(schedule_names)
+ 
+    for schedule_idx in range(len(schedules)):
+        print(f"Schedule {schedule_idx}:")
+        for act in schedules[schedule_idx].acts:
+            print(act)
 
 if __name__ == "__main__":
     test_person()

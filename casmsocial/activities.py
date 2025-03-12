@@ -1,11 +1,12 @@
 from __future__ import annotations
-from dataclasses  import dataclass, astuple, field
+
+from dataclasses import astuple, dataclass, field
 
 
 @dataclass
-class Act(object):
+class Act:
     """Act Class
-    
+
     Names a place that a person will go to a particular time
     """
     person_id: int
@@ -13,7 +14,7 @@ class Act(object):
     activity_sequence: int
     starttime_min: int
     endtime_min: int
-        
+
     def contains(self, time: float) -> bool:
         """Return True if the time is within the start and end times of the activity."""
         return self.starttime_min <= time and time <= self.endtime_min
@@ -26,10 +27,15 @@ class Activities:
     A collection of activities for a person.
     """
     __id: int
-    __acts: list[Act]
+    __name: str
+    __acts: tuple[Act]
 
     def addAct(self, act: Act) -> None:
-        self.__acts.append(act)
+        """Add an activity to the activities list.
+        """
+        acts_list = list(self.__acts)
+        acts_list.append(act)
+        self.__acts = tuple(acts_list)
 
     def activityAt(self, time: float) -> Act:
         """Find the activity at a particular time.
@@ -38,13 +44,22 @@ class Activities:
         for act in self.__acts:
             if act.contains(time):
                 return act
-            
+
         return next_act
+
+    def reset(self) -> None:
+        """Reset the activities list.
+        """
+        self.__acts = ()
 
     @property
     def id(self) -> int:
         return self.__id
-    
+
+    @property
+    def name(self) -> str:
+        return self.__name
+
     @property
     def acts(self) -> list[Act]:
         return self.__acts
@@ -53,13 +68,14 @@ class Activities:
         """Get the data for activities in a tuple.
 
         Returns:
-            The activities data as a tuple. 
+            The activities data as a tuple.
         """
         return (
             self.__id,
+            self.__name,
             tuple([astuple(a) for a in self.__acts])
         )
-   
+
     @classmethod
     def restore(cls, data: tuple[tuple[int]]) -> Activities:
         """Create an  object from the data created in the data() function.
@@ -69,14 +85,15 @@ class Activities:
         """
         return cls(
             data[0],
-            tuple([Act(*act) for act in list(data[1])])
+            data[1],
+            tuple([Act(*act) for act in list(data[2])])
         )
-    
+
 
 @dataclass
-class Schedules(object):
+class Schedules:
     """Schedules Class
-    
+
     A collection of schedules for a person.
     """
     __schedules: list[Activities] = field(default_factory=lambda: [])
@@ -86,7 +103,7 @@ class Schedules(object):
 
     def __len__(self) -> int:
         return len(self.__schedules)
-    
+
     def __getitem__(self, idx: int) -> Activities:
         return self.__schedules[idx]
 
@@ -101,7 +118,7 @@ class Schedules(object):
         """Get the data for an activities set in a tuple.
 
         Returns:
-            The activities set data as a tuple. 
+            The activities set data as a tuple.
         """
         return tuple(
             [activities.data() for activities in self.__schedules]
@@ -119,4 +136,3 @@ class Schedules(object):
                 [Activities.restore(activities) for activities in list(data)]
                 )
         )
-    

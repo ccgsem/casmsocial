@@ -13,7 +13,7 @@ from mpi4py import MPI
 from repast4py import logging
 from repast4py.space import ContinuousPoint as cpt  # noqa: F401
 
-from casmsocial.activities import Schedules
+from casmsocial.activities import Act, Schedules
 from casmsocial.datautility import get_attribute_names_from_data
 
 # model factory
@@ -22,7 +22,7 @@ from casmsocial.factory import Models
 # place types
 from casmsocial.household import Household
 from casmsocial.model import Model
-from casmsocial.person import Person, PersonConfig, PersonData
+from casmsocial.person import Person, PersonConfig, PersonData, test_activities, test_person_serialization
 from casmsocial.place import (
     # Place,
     PlaceConfig,
@@ -30,7 +30,7 @@ from casmsocial.place import (
     RemotePlace,
 )
 from casmsocial.school import School
-from casmsocial.socialmodel import SIModel
+from casmsocial.socialmodel import SIModel, update_activities_data
 from casmsocial.workplace import Workplace
 
 
@@ -228,6 +228,12 @@ class HeatRiskModel(SIModel):
             )
         )
 
+        # register the activities
+        SIModel.register_planned_activity_names(
+            ['sp_hh_id', 'sp_work_id', 'sp_school_id'])
+        SIModel.register_activity_names(
+            ['home', 'work', 'school', 'cooling_center'])
+
         print("Now running initialize population for SIModel...")
         super().initializePopulation()
 
@@ -236,6 +242,14 @@ class HeatRiskModel(SIModel):
 
         # initialize the heat threshold
         self.heat_indices = deque([float('nan')])
+
+        # check the first agent
+        person = next(self.context.agents())
+        print(f"person={person}")
+        test_person_serialization(person)
+        test_activities(person)
+        test_add_move_to_cooling_center(person)
+        test_activities(person)
 
         # initialize the logging
         self.agent_logger = logging.TabularLogger(
@@ -365,3 +379,39 @@ class HeatRiskModel(SIModel):
 Models.add_model(
     HeatRiskModel.__module__ + '.' + HeatRiskModel.__name__,
     HeatRiskModel)
+
+
+# 7. create test functions
+def test_add_move_to_cooling_center(person: Person):
+    """Test the add_move_to_cooling_center function."""
+    print(f"Testing add_move_to_cooling_center for person {person.id}")
+    # TODO (2025-02-26 jcline): implement this function
+    #   - This is where the person is moved to a cooling center
+    #   - Find the closest cooling center
+    #   - Schedule moving the person to the cooling center
+    current_hour = 12
+    next_hour = current_hour + 1
+    start_time = next_hour * 60
+    end_time = 1440  # 24 hours
+
+    activity_names = SIModel.get_activity_names()
+    activity_id = activity_names.index('cooling_center')
+
+    schedule_names = [schedule.name for schedule in person.schedules.schedules]
+    schedule_idx = schedule_names.index('cooling_center')
+
+    # person.state.activities_idx = 1
+    # find cooling center
+    # need to modify the person's activities to include the cooling
+    activities_data = person.state.places
+    person.state.places = update_activities_data(activities_data, cooling_center=10)
+
+    act_go_to_cooling_center = \
+        Act(
+            person.id,
+            activity_id,
+            1.0, start_time, end_time)
+
+    # add the activity to the schedule
+    person.schedules.schedules[schedule_idx].addAct(act_go_to_cooling_center)
+

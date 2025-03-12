@@ -7,6 +7,7 @@ Defining the SIModel
 import os
 import pathlib
 import time
+from collections import namedtuple
 from typing import ClassVar
 
 import pyarrow.parquet as pq
@@ -24,7 +25,7 @@ from casmsocial.datautility import convert_to_int
 from casmsocial.factory import Models
 from casmsocial.message import Message
 from casmsocial.model import Model
-from casmsocial.person import Person, PersonConfig, person_cache, test_activities
+from casmsocial.person import Person, PersonConfig, person_cache
 from casmsocial.place import PlaceConfig, PlacesProjection
 
 
@@ -61,6 +62,15 @@ class SIModel(Model):
     # person configuration
     __person_config: PersonConfig = None
 
+    # list of planned activities (column names in the person file for activities)
+    __planned_activity_names: ClassVar[list[str]] = []
+
+    # list of activities
+    __activity_names: ClassVar[list[str]] = []
+
+    # activites data type: namedtuple
+    __activities_data_type: namedtuple = None
+
     # class methods
     @classmethod
     def register_place_config(cls, config: PlaceConfig) -> None:
@@ -91,6 +101,11 @@ class SIModel(Model):
         return cls.__placeConfigs[idx].name
 
     @classmethod
+    def get_all_place_config_names(cls) -> list[str]:
+        """Get the names of all PlacesConfig in the list of configs."""
+        return [config.name for config in cls.__placeConfigs]
+
+    @classmethod
     def register_remote_place_config(cls, config: PlaceConfig) -> None:
         """Register a remote place configuration."""
         cls.__remote_place_config = config
@@ -110,6 +125,36 @@ class SIModel(Model):
     def get_person_config(cls) -> PersonConfig:
         """Get the person configuration."""
         return cls.__person_config
+
+    @classmethod
+    def register_planned_activity_names(cls, planned_activity_names: list[str]) -> None:
+        """Register planned activities."""
+        cls.__planned_activity_names = planned_activity_names
+
+    @classmethod
+    def get_planned_activity_names(cls) -> list[str]:
+        """Get the planned activities."""
+        return cls.__planned_activity_names
+
+    @classmethod
+    def register_activity_names(cls, activity_names: list[str]) -> None:
+        """Register alternate activities."""
+        cls.__activity_names = activity_names
+
+    @classmethod
+    def get_activity_names(cls) -> list[str]:
+        """Get all activities."""
+        return cls.__activity_names
+
+    @classmethod
+    def get_activities_data_type(cls) -> namedtuple:
+        """Get the activities data type."""
+        if not cls.__activities_data_type:
+            cls.__activities_data_type = namedtuple(
+                'ActivitiesDataclass',
+                cls.get_activity_names()
+            )
+        return cls.__activities_data_type
 
     # instance variables
     def __init__(
@@ -214,29 +259,24 @@ class SIModel(Model):
             self.rng)
 
         # print(F"rank {self.rank}: number of person agents={len(self.context.agents())}")
-        agent_list = list(self.context.agents())
-        print(F"rank {self.rank}: number of person agents={len(agent_list)}")
 
-        saved = []
-        for p in self.context.agents():
-            print(p)
-            result = p.save()
-            print(result)
-            saved.append(result)
-            if len(saved) > 0:
-                break
+        # agent_list = list(self.context.agents())
+        # print(F"rank {self.rank}: number of person agents={len(agent_list)}")
 
-        restored = []
-        for i in saved:
-            p = Person.restore(i)
-            restored.append(p)
-            print(p)
+        # saved = []
+        # for p in self.context.agents():
+        #     print(p)
+        #     result = p.save()
+        #     print(result)
+        #     saved.append(result)
+        #     if len(saved) > 0:
+        #         break
 
-        person = next(self.context.agents())
-        print(f"person={person}")
-        test_activities(person)
-
-        # print(f"{next(self.context.agents())}")
+        # restored = []
+        # for i in saved:
+        #     p = Person.restore(i)
+        #     restored.append(p)
+        #     print(p)
 
     def createPersons(
         self,
@@ -252,14 +292,26 @@ class SIModel(Model):
             activitiesMap (dict): The activities map.
             rng: The random number generator.
         """
+        # get the person type
+        personType = self.get_person_config().type
 
-        # get the person places, which are the fields in the person file that
-        # contain the place ids
-        person_places = \
-            [placeConfig.personPlaceField
-                for placeConfig in self.get_place_configs()]
+        # get the activities data type: namedtuple to store places for activities
+        activitiesDataType = self.get_activities_data_type()
 
+        # get the planned_activity_names, which are the fields in the person file that
+        # contain the place ids (e.g. 'sp_work_id', 'sp_school_id', etc.)
+        planned_activity_names = self.get_planned_activity_names()
+
+        # get the activity names (list should be at least as long as planned_activity_names)
+        activity_names = self.get_activity_names()
+
+        # get the alternate activity names (activities not in the planned activities)
+        alternate_activities_names = activity_names[len(planned_activity_names):]
+
+        # load the persons from the file
         table = pq.read_table(personsFile)
+
+        print(table.column_names)
 
         for batch in table.to_batches():
             for row in zip(*batch.columns):
@@ -270,12 +322,12 @@ class SIModel(Model):
                 personID = p['sp_id']
 
                 # TODO: add tests for this
-                #  - places = [ p[x] for x in person_places ]
+                #  - activities_data = [ p[x] for x in planned_activity_names ]
                 #  - all places should be in placeMap
                 #  - the first place is a household
                 #  - how to handle the case where the person is not on this rank?
                 #  - how to handle the case where the person is not in the activitiesMap?
-                places = [ convert_to_int(p[x]) for x in person_places]
+                places = [ convert_to_int(p[x]) for x in planned_activity_names]
 
                 for place in places:
                     if isinstance(place, str):
@@ -297,15 +349,26 @@ class SIModel(Model):
 
                 schedule = activitiesMap[personID]
                 # print(f'personID={personID}, schedule={schedule}')
-                activities = Activities(personID, tuple(schedule))
+                activities = Activities(personID, 'weekday', tuple(schedule))
                 schedules = Schedules()
                 schedules.addActivities(activities)
 
                 # Person
-                #  - places: list[int]
                 #  - schedules: Schedules
 
-                personType = self.get_person_config().type
+                # add alternate places for alternate activities that are not
+                # already in the person's schedule.  These alternate activities
+                # are initially empty and may be determined during the simulation.
+                for activity_name in alternate_activities_names:
+                    activities = Activities(personID, activity_name, ())
+                    schedules.addActivities(activities)
+
+                # add alternate activities to the person's places
+                alternate_places = [None] * len(alternate_activities_names)
+                places = places + alternate_places
+
+                # place is converted to a namedtuple for readability
+                places = activitiesDataType(*places)
 
                 person = personType(
                     personID,
@@ -473,6 +536,8 @@ class SIModel(Model):
         # tick = self.runner.schedule.tick
 
         self.cal.increment()
+
+        return
 
         print(
             "Step on "
@@ -705,3 +770,9 @@ class SIModel(Model):
 Models.add_model(
     SIModel.__module__ + '.' + SIModel.__name__,
     SIModel)
+
+
+# utility functions
+def update_activities_data(activities_data: namedtuple, **kwargs) -> namedtuple:
+    """Update the activities data."""
+    return activities_data._replace(**kwargs)
