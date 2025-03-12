@@ -26,7 +26,7 @@ from casmsocial.household import Household
 from casmsocial.model import Model
 from casmsocial.person import Person, PersonConfig, PersonData, test_activities, test_person_serialization
 from casmsocial.place import (
-    # Place,
+    Place,
     PlaceConfig,
     PlaceData,
     RemotePlace,
@@ -152,6 +152,45 @@ class PersonWithHeatRisk(Person):
         # TODO (2025-02-26 jcline): implement this method
         return False
 
+    def move_to_cooling_center(self, place: Place, current_hour: int) -> None:
+        """Move the person to a cooling center."""
+
+        # find the next hour
+        next_hour = current_hour + 1
+        start_time = next_hour * 60
+
+        # currently set end time to the end of the day
+        end_time = 1440  # 24 hours
+
+        # find the activity and schedule indices
+        activity_names = SIModel.get_activity_names()
+        activity_id = activity_names.index('cooling_center')
+
+        schedule_names = [schedule.name for schedule in self.schedules.schedules]
+        schedule_idx = schedule_names.index('cooling_center')
+        if self.state.activities_idx == schedule_idx:
+            print(f"Person {self.id} is already in the cooling center schedule")
+            return
+
+        # need to modify the person's activities to include the cooling
+        activities_data = self.state.places
+        self.state.places = update_activities_data(activities_data, cooling_center=place.id)
+
+        act_go_to_cooling_center = \
+            Act(
+                self.id,
+                activity_id,
+                1.0, start_time, end_time)
+
+        # add the activity to the schedule
+        self.schedules.schedules[schedule_idx].addAct(act_go_to_cooling_center)
+        print(f"Person {self.id} updated schedule to move to cooling center {place.id}")
+        for act in self.schedules.schedules[schedule_idx].acts:
+            print(f"  {act}")
+        previous_schedule = self.state.activities_idx
+        self.state.activities_idx = schedule_idx
+        print(f"Person {self.id} moved to schedule {schedule_idx} from {previous_schedule}")
+
     def step(self) -> None:
         """Step the person forward one time step."""
         super().step()
@@ -181,14 +220,24 @@ class PersonWithHeatRisk(Person):
             )
 
         if self.state.probHeatEvent > 0.0001:
+
+            # find the closest cooling centers
+            current_hour = model.cal.hour_of_day
             lat = place.data.latitude
             lon = place.data.longitude
-            print(f"Person {self.id} at ({lat},{lon}) is experiencing a heat event probability of {self.state.probHeatEvent}")
+            print(f"Person {self.id} at ({lat},{lon}) is experiencing a heat event probability of {self.state.probHeatEvent} at hour {current_hour}")
             local_places = model.places_proj.get_local_places()
             candidates = find_closest_cooling_centers(lat, lon, local_places, n=3)
             print(f"Person {self.id} is considering the following cooling centers:")
+            selection = None
             for place, distance in candidates:
                 print(f"  {place.id} at ({place.data.latitude},{place.data.longitude}) is {distance} km away")
+                if selection is None:
+                    selection = place
+
+            if selection is not None:
+                print(f"Person {self.id} is moving to cooling center {selection.id}")
+                self.move_to_cooling_center(selection, current_hour)
 
             if self.consider_to_seek_cooling():
                 print(f"Person {self.id} is seeking cooling")
@@ -449,8 +498,6 @@ def test_add_move_to_cooling_center(person: Person):
     schedule_names = [schedule.name for schedule in person.schedules.schedules]
     schedule_idx = schedule_names.index('cooling_center')
 
-    # person.state.activities_idx = 1
-    # find cooling center
     # need to modify the person's activities to include the cooling
     activities_data = person.state.places
     person.state.places = update_activities_data(activities_data, cooling_center=10)
