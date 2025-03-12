@@ -381,7 +381,7 @@ def test_activities(person: Person):
     schedules = person.schedules
     schedule_names = [schedule.name for schedule in schedules.schedules]
     print(schedule_names)
- 
+
     for schedule_idx in range(len(schedules)):
         print(f"Schedule {schedule_idx}:")
         for act in schedules[schedule_idx].acts:

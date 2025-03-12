@@ -537,8 +537,6 @@ class SIModel(Model):
 
         self.cal.increment()
 
-        return
-
         print(
             "Step on "
             f"day {self.cal.day_of_year}, "
