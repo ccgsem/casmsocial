@@ -24,13 +24,8 @@ from casmsocial.factory import Models
 # place types
 from casmsocial.household import Household
 from casmsocial.model import Model
-from casmsocial.person import Person, PersonConfig, PersonData, test_activities, test_person_serialization
-from casmsocial.place import (
-    Place,
-    PlaceConfig,
-    PlaceData,
-    RemotePlace,
-)
+from casmsocial.person import Person, PersonConfig, PersonData
+from casmsocial.place import Place, PlaceConfig, PlaceData, RemotePlace
 from casmsocial.school import School
 from casmsocial.socialmodel import SIModel, update_activities_data
 from casmsocial.workplace import Workplace
@@ -59,7 +54,7 @@ def find_closest_cooling_centers(lat, lon, places, n=3):
     Returns:
         list[tuple[Place, float]]: List of tuples containing Place objects and their distances.
     """
-    cooling_centers = [p for p in places if getattr(p.data, 'cooling_center', False)]
+    cooling_centers = [p for p in places if getattr(p.data, 'cooling_center', False) and p.data.cooling_center > 0.0]
 
     if not cooling_centers:
         return []  # No cooling centers found
@@ -337,10 +332,10 @@ class HeatRiskModel(SIModel):
         # check the first agent
         person = next(self.context.agents())
         print(f"person={person}")
-        test_person_serialization(person)
-        test_activities(person)
-        test_add_move_to_cooling_center(person)
-        test_activities(person)
+        # test_person_serialization(person)
+        # test_activities(person)
+        # test_add_move_to_cooling_center(person)
+        # test_activities(person)
 
         # initialize the logging
         self.agent_logger = logging.TabularLogger(
@@ -391,9 +386,10 @@ class HeatRiskModel(SIModel):
         #for place in self.local_places:
         local_places = self.places_proj.get_local_places()
         print(f"number of local places = {len(local_places)}")
-        places_with_cooling_centers = [place for place in local_places if getattr(place.data, 'cooling_center', False)]
+        places_with_cooling_center = [place for place in local_places if getattr(place.data, 'cooling_center', False) and place.data.cooling_center > 0.0]
 
-        print(f"number of places with cooling centers = {len(places_with_cooling_centers)}")
+        print(f"number of places with cooling centers = {len(places_with_cooling_center)}")
+
         # for place in places_with_cooling_centers:
         #     print(f"place {place.id} has place.data={place.data}")
 

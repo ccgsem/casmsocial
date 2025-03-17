@@ -260,24 +260,6 @@ class SIModel(Model):
 
         # print(F"rank {self.rank}: number of person agents={len(self.context.agents())}")
 
-        # agent_list = list(self.context.agents())
-        # print(F"rank {self.rank}: number of person agents={len(agent_list)}")
-
-        # saved = []
-        # for p in self.context.agents():
-        #     print(p)
-        #     result = p.save()
-        #     print(result)
-        #     saved.append(result)
-        #     if len(saved) > 0:
-        #         break
-
-        # restored = []
-        # for i in saved:
-        #     p = Person.restore(i)
-        #     restored.append(p)
-        #     print(p)
-
     def createPersons(
         self,
         personsFile: pathlib.Path,
@@ -310,8 +292,6 @@ class SIModel(Model):
 
         # load the persons from the file
         table = pq.read_table(personsFile)
-
-        print(table.column_names)
 
         for batch in table.to_batches():
             for row in zip(*batch.columns):
