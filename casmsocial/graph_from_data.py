@@ -1,11 +1,14 @@
 
-import pandas as pd
+import getopt
 import math
 import sys
-import getopt
+
+import pandas as pd
+from loguru import logger
+
 
 def isNumber(v):
-    return type(v) == int or type(v) == float
+    return isinstance(v, (int, float))
 
 def map_spid_to_graph_id(places_f):
     map_df = pd.DataFrame()
@@ -14,7 +17,7 @@ def map_spid_to_graph_id(places_f):
         df = pd.read_csv(f)
 
         df = df['sp_id']
-        print(len(df))
+        logger.debug(len(df))
 
         map_df = pd.concat([map_df,df], axis=0, ignore_index=True)
 
@@ -22,16 +25,15 @@ def map_spid_to_graph_id(places_f):
     map_df['graph_id'] = range(len(map_df))
     map_df['graph_id'] = map_df['graph_id'] + 1
 
-    ret_map = {sp_id: graph_id for sp_id, graph_id in zip(map_df['sp_id'],map_df['graph_id'])}
+    ret_map = dict(zip(map_df['sp_id'],map_df['graph_id']))
     return ret_map
 
 def add_to_dict(key, val, d):
-    if key is not None:
-        if val is not None:
-            if key in d:
-                d[key].append(val)
-            else:
-                d[key] = [val]
+    if key is not None and val is not None:
+        if key in d:
+            d[key].append(val)
+        else:
+            d[key] = [val]
     return d
 
 def doubly_add_to_dict(val1, val2, d):
@@ -70,8 +72,8 @@ def get_num_v_and_e(edges):
         num_e = num_e + len(e)
 
     if num_e % 2 != 0:
-        print("Uneven number of edges??!!")
-    
+        logger.debug("Uneven number of edges??!!")
+
     num_e = num_e / 2
     return num_v, int(num_e)
 
@@ -86,7 +88,7 @@ def make_spid_to_graphid_map(edges):
 
 def write_graph_file(output_f, num_v, num_e, edges, spid_to_graphid):
     with open(output_f, 'w') as f:
-        f.write('{} {}\n'.format(num_v, num_e))
+        f.write(f'{num_v} {num_e}\n')
         for v, adjacent in edges.items():
             f.write(' '.join([str(spid_to_graphid[node]) for node in adjacent]))
             f.write('\n')
@@ -94,7 +96,7 @@ def write_graph_file(output_f, num_v, num_e, edges, spid_to_graphid):
 def write_map_file(output_f, spid_to_graphid):
     with open(output_f, 'w') as f:
         for k, v in spid_to_graphid.items():
-            f.write('{} {}\n'.format(k, v))
+            f.write(f'{k} {v}\n')
 
 def print_help():
     print("Options:\n-a|--agent_file <agent_filename>")
@@ -125,10 +127,10 @@ if __name__ == "__main__":
 
 
     full_E = full_map_of_adjacent_places(person_f)
-    
+
     num_v, num_e = get_num_v_and_e(full_E)
     spid_to_graphid_map = make_spid_to_graphid_map(full_E)
     write_graph_file(output_f, num_v, num_e, full_E, spid_to_graphid_map)
     write_map_file(output_map_f, spid_to_graphid_map)
 
-    print("NumV: {}, NumE: {}".format(num_v, num_e))
+    logger.debug(f"NumV: {num_v}, NumE: {num_e}")

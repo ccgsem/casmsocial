@@ -6,6 +6,8 @@ Defining modelfactory interface
 """
 from typing import ClassVar
 
+from loguru import logger
+
 from casmsocial.model import Model
 
 # model factory implementation
@@ -54,9 +56,9 @@ class Models:
         model - the model class
         """
         if name not in Models.__models:
-            print("Available models:")
+            logger.info("Available models:")
             for key in Models.__models:
-                print(key)
+                logger.info(key)
             raise ModelNotFoundError(name)
         return Models.__models[name]
 

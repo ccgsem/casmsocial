@@ -4,6 +4,7 @@ Created: 09 Dec 2024
 
 Defining the artificial social model for the Artificial Societies project
 """
+from loguru import logger
 from mpi4py import MPI
 from repast4py import logging
 
@@ -34,7 +35,7 @@ class ArtSocModel(SIModel):
     def initializePopulation(self) -> None:
         """Initialize population"""
         # register the place types
-        print("Registering place types...")
+        logger.info("Registering place types...")
 
         SIModel.register_place_config(
             PlaceConfig(
@@ -72,7 +73,7 @@ class ArtSocModel(SIModel):
         )
 
         # register the person types
-        print("Registering person type...")
+        logger.info("Registering person type...")
         SIModel.register_person_config(
             PersonConfig(
                 name='Person',
@@ -81,7 +82,7 @@ class ArtSocModel(SIModel):
             )
         )
 
-        print("Now running initialize population for SIModel...")
+        logger.info("Now running initialize population for SIModel...")
         super().initializePopulation()
 
         # initialize the logging

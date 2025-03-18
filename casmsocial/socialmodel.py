@@ -13,6 +13,7 @@ from typing import ClassVar
 import pyarrow.parquet as pq
 import repast4py
 from dotenv import find_dotenv, load_dotenv
+from loguru import logger
 from mpi4py import MPI
 from repast4py import context as ctx
 from repast4py import schedule
@@ -20,6 +21,7 @@ from repast4py import schedule
 from casmsocial.activities import Act, Activities, Schedules
 from casmsocial.calendar import Calendar
 from casmsocial.datautility import convert_to_int
+from casmsocial.environment import Environment
 
 # note: place types are set by derived Model classes
 from casmsocial.factory import Models
@@ -28,6 +30,21 @@ from casmsocial.model import Model
 from casmsocial.person import Person, PersonConfig, person_cache
 from casmsocial.place import PlaceConfig, PlacesProjection
 
+
+class BasicEnvironement(Environment):
+    """Basic environment class."""
+
+    def setup(self) -> None:
+        """Set up the environment."""
+        pass
+
+    def teardown(self) -> None:
+        """Tear down the environment."""
+        pass
+
+    def update(self) -> None:
+        """Update the environment."""
+        pass
 
 class SIModel(Model):
     """
@@ -70,6 +87,9 @@ class SIModel(Model):
 
     # activites data type: namedtuple
     __activities_data_type: namedtuple = None
+
+    # environment
+    __environment: Environment = None
 
     # class methods
     @classmethod
@@ -156,6 +176,19 @@ class SIModel(Model):
             )
         return cls.__activities_data_type
 
+    @classmethod
+    def register_environment(cls, environment: Environment) -> None:
+        """Register the environment."""
+        cls.__environment = environment
+
+    @classmethod
+    def get_environment(cls) -> Environment:
+        """Get the environment."""
+        environment = cls.__environment
+        if not environment:
+            cls.__environment = BasicEnvironement("environment")
+        return cls.__environment
+
     # instance variables
     def __init__(
         self,
@@ -170,7 +203,7 @@ class SIModel(Model):
         """
         Model.set_model(self)
 
-        print("Creating SIModel...")
+        logger.info("Creating SIModel...")
         self.comm = comm
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
@@ -225,9 +258,8 @@ class SIModel(Model):
         self.createPlaces(
             place_filenames
         )
-        # print(f"size of place_map = {len(self.place_map)}")
         local_places = self.places_proj.get_local_places()
-        print(f"rank {self.rank}: number of local places={len(local_places)}")
+        logger.debug(f"rank {self.rank}: number of local places={len(local_places)}")
 
         # activitiesMap is a dict of personID->Schedule object
         activitiesMap = self.createActivities(
@@ -239,15 +271,15 @@ class SIModel(Model):
         # place
         self.contact_map = {}
         if 'contact.file' in self.params:
-            print("Loading contact file...")
+            logger.debug("Loading contact file...")
 
             self.contact_map = self.createContacts(
                 self.data_input_path / self.params['contact.file']
             )
         else:
-            print("Error: contact file not specified.")
+            logger.error("Error: contact file not specified.")
 
-        print(F"rank {self.rank}: contacts size={len(self.contact_map)}")
+        logger.debug(F"rank {self.rank}: contacts size={len(self.contact_map)}")
 
         self.rng = repast4py.random.default_rng
 
@@ -257,8 +289,6 @@ class SIModel(Model):
             self.data_input_path / self.params['persons.file'],
             activitiesMap,
             self.rng)
-
-        # print(F"rank {self.rank}: number of person agents={len(self.context.agents())}")
 
     def createPersons(
         self,
@@ -311,24 +341,23 @@ class SIModel(Model):
 
                 for place in places:
                     if isinstance(place, str):
-                        print(f"Error: Place {place} not found.")
+                        logger.error(f"Error: Place {place} not found.")
                         return
 
                 hhId = places[0]  # p['sp_hh_id']
 
                 household = self.places_proj.lookup_place(hhId)
                 if not household:
-                    print(f"Error: No household found for {p}")
+                    logger.error(f"Error: No household found for {p}")
                     # continue
 
                 rank = household.rank
 
                 if rank != self.rank:
-                    print(f"Error: Person {personID} tagged on rank={rank} is not on this rank.")
+                    logger.error(f"Error: Person {personID} tagged on rank={rank} is not on this rank.")
                     continue
 
                 schedule = activitiesMap[personID]
-                # print(f'personID={personID}, schedule={schedule}')
                 activities = Activities(personID, 'weekday', tuple(schedule))
                 schedules = Schedules()
                 schedules.addActivities(activities)
@@ -429,8 +458,6 @@ class SIModel(Model):
         table = pq.read_table(activitiesFile)
 
         for batch in table.to_batches():
-            # for row in zip(*batch.columns):
-            #     print(row)
             d = batch.to_pydict()
             for sp_persons_id, activity_id, activity_seq, start, end in \
                 zip(
@@ -479,8 +506,6 @@ class SIModel(Model):
         table = pq.read_table(contactFile)
 
         for batch in table.to_batches():
-            # for row in zip(*batch.columns):
-            #     print(row)
             d = batch.to_pydict()
             for source, target, hour_of_the_day in \
                 zip(
@@ -509,7 +534,7 @@ class SIModel(Model):
             if not result:
                 countOfBadMoves += 1
 
-        print(f"number of bad moves = {countOfBadMoves}")
+        logger.debug(f"number of bad moves = {countOfBadMoves}")
 
     def step(self) -> None:
         """Step the model forward one time step."""
@@ -517,7 +542,7 @@ class SIModel(Model):
 
         self.cal.increment()
 
-        print(
+        logger.debug(
             "Step on "
             f"day {self.cal.day_of_year}, "
             f"hour {self.cal.hour_of_day}, "
@@ -536,7 +561,7 @@ class SIModel(Model):
 
         # self.make_contacts(tick)
 
-        self.update_environment()
+        self.get_environment().update()
 
         # self.send_messages_between_agents()
 
@@ -564,9 +589,9 @@ class SIModel(Model):
 
     def add_people_to_places(self) -> None:
         for person in self.context.agents():
-            print(f"Adding person {person.id} to place {person.state.place_id}")
+            logger.debug(f"Adding person {person.id} to place {person.state.place_id}")
             # if person.state.place_id not in self.place_map:
-            #     print(f"Person {person.id} has no place.")
+            #     logger.error(f"Person {person.id} has no place.")
             #     return
             # self.place_map[person.state.place_id].addPerson(person)
 
@@ -575,12 +600,12 @@ class SIModel(Model):
         for person in self.context.agents():
             personsContactMap = self.contact_map.get(person.id)
             if not personsContactMap:  # if person has no network
-                # print(f"Person {person.id} has no network.")
+                # logger.debug(f"Person {person.id} has no network.")
                 continue
 
             contactIDs = personsContactMap.get(person.state.place_id)
             if not contactIDs:
-                # print(
+                # logger.debug(
                 #     f"Person {person.id} has no contacts at "
                 #     f"place {person.state.place_id}.")
                 continue
@@ -620,17 +645,17 @@ class SIModel(Model):
 
             messages = person.send_messages()
             if len(messages) > 0:
-                print(f"Person {person} has messages.")
+                logger.debug(f"Person {person} has messages.")
 
                 for message in messages:
                     recipient = message.recipient
                     # recipient_person = self.context.agent(self.person_id_map[recipient])
                     if recipient in self.person_id_map:  # message to local person
                         recipient_uid = self.person_id_map[recipient]
-                        print(f"Message from {message.sender} to {person_cache[recipient_uid].state}:")
+                        logger.debug(f"Message from {message.sender} to {person_cache[recipient_uid].state}:")
                         person_cache[recipient_uid].receive_message(message)
                     else:   # message to remote person
-                        print(f"Message from {message.sender} to {recipient}:")
+                        logger.debug(f"Message from {message.sender} to {recipient}:")
 
                         # get remote person ID
                         remote_person_ids.append(recipient)
@@ -641,7 +666,7 @@ class SIModel(Model):
                         messages_to_send.append(message_to_send)
 
             else:
-                print(f"Person {person.id} has no messages.")
+                logger.debug(f"Person {person.id} has no messages.")
                 continue
 
         # Exchange messages between processors
@@ -656,13 +681,13 @@ class SIModel(Model):
             recipient = message.recipient
             if recipient in self.person_id_map:
                 recipient_uid = self.person_id_map[recipient]
-                print(
+                logger.debug(
                     f"Remote message from {message.sender} to "
                     f"{person_cache[recipient_uid].state}:"
                 )
                 person_cache[recipient_uid].receive_message(message)
             else:
-                print(f"Remote message from {message.sender} to {recipient} not delivered")
+                logger.debug(f"Remote message from {message.sender} to {recipient} not delivered")
 
         # Step 3: Process messages
         for person in agents:
@@ -724,10 +749,6 @@ class SIModel(Model):
         all_messages = [msg for buffer in received_buffers for msg in buffer]
         return all_messages
 
-    def update_environment(self) -> None:
-        """Update the environment for the current time step."""
-        pass
-
     def log_agents(self) -> None:
         """Log the agents at the current time step."""
         pass
@@ -741,7 +762,7 @@ class SIModel(Model):
         self.at_end()
         end_time = time.time()
 
-        print(f"Simulation took {end_time - self.start_time} seconds.")
+        logger.info(f"Simulation took {end_time - self.start_time} seconds.")
 
 
 # Register SIModel

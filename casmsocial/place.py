@@ -1,12 +1,11 @@
 """ Generic Place Class """
 import math
-
-# import repast4py.schedule as schedule
-# from repast4py.context import SharedContext
 from dataclasses import dataclass
+from heapq import nsmallest
 from typing import NamedTuple
 
 import repast4py.core as core
+from loguru import logger
 from repast4py.core import SharedProjection
 from repast4py.space import ContinuousPoint as cpt
 
@@ -134,7 +133,7 @@ class PlacesProjection(SharedProjection):
         """
         if agent.id not in self.agent_place_map:
             raise AgentNotInProjectionError(agent.id)
-        print(f"Moving Agent {agent.id} from {self.agent_place_map[agent.id]} to {new_place}")
+        logger.debug(f"Moving Agent {agent.id} from {self.agent_place_map[agent.id]} to {new_place}")
         self.assign_agent_to_place(agent, new_place)
 
     def _remove_agent_from_current_place(self, agent):
@@ -205,3 +204,34 @@ class RemotePlace(Place):
              initDict,
              placeDataClass
         )
+
+# utility functions for places
+def haversine_distance(lat1, lon1, lat2, lon2):
+    """Calculate the great-circle distance between two points on the Earth."""
+    R = 6371  # Earth's radius in km
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c  # Distance in km
+
+def find_closest_location(lat, lon, places, n=3, filter_func=None):
+    """
+    Find the `n` closest places to the given coordinates.
+
+    Args:
+        lat (float): Latitude of the target location.
+        lon (float): Longitude of the target location.
+        places (list[Place]): List of Place objects.
+        n (int): Number of closest places to return (default is 3).
+        filter_func (function): Function to filter places (default is None).
+
+    Returns:
+        list[tuple[Place, float]]: List of tuples containing Place objects and their distances.
+    """
+    if filter_func is None:
+        filter_func = lambda p: True
+
+    closest_places = nsmallest(n, places, key=lambda p: haversine_distance(lat, lon, p.data.latitude, p.data.longitude))
+    return [(place, haversine_distance(lat, lon, place.data.latitude, place.data.longitude)) for place in closest_places if filter_func(place)]

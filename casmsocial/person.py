@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 from collections import namedtuple
 from dataclasses import astuple, dataclass
+from loguru import logger
 from typing import NamedTuple
 
 from mpi4py import MPI
@@ -120,7 +121,7 @@ class Person(core.Agent):
         self.messages_sent: list[Message] = []
         self.messages_incoming: list[Message] = []
 
-        #print(f"Person {self.id} is ready!")
+        #logger.debug(f"Person {self.id} is ready!")
 
     @property
     def pt(self) -> cpt:
@@ -161,33 +162,33 @@ class Person(core.Agent):
 
         if next_place_id == self.currentPlaceID:
             # already at the place
-            # print(
+            # logger.debug(
             #     f"Agent {self.id} is already at place {self.currentPlaceID}")
             return True
 
         if not next_place_id:
-            print(f"Agent {self.id} has no place to go - going remote.")
-            print(f"places = {self.places}")
-            print(f"schedule = {self.schedules}")
+            logger.debug(f"Agent {self.id} has no place to go - going remote.")
+            logger.debug(f"places = {self.places}")
+            logger.debug(f"schedule = {self.schedules}")
             next_place_id = 0  # reset to home
 
         place = places_proj.lookup_place(next_place_id) # place_map.get(next_place_id)
         if place is None:
-            print(f"Place {next_place_id} not found.")
-            print(f"places = {self.places}")
+            logger.debug(f"Place {next_place_id} not found.")
+            logger.debug(f"places = {self.places}")
             return False
 
         if place is not None:
             success = True
             self.state.place_id = next_place_id
-            print(
+            logger.debug(
                f"Rank {rank}: "
                f"Agent {self.id} is moving to place {self.state.place_id}")
             places_proj.move_agent_to_place(self, place)
         else:
-            print(f"move for act {next_activity_id} to place {next_place_id} failed.")
-            print(f"places = {self.places}")
-            print(f"Remaining a currentPlaceID = {self.state.place_id}")
+            logger.debug(f"move for act {next_activity_id} to place {next_place_id} failed.")
+            logger.debug(f"places = {self.places}")
+            logger.debug(f"Remaining a currentPlaceID = {self.state.place_id}")
 
         return success
 
@@ -220,7 +221,7 @@ class Person(core.Agent):
     def count_colocations(self, cspace):
         # subtract self
         num_here = cspace.get_num_agents(self.state.location) - 1
-        print(f"Agent {self.id} sees {num_here} other agents.")
+        logger.debug(f"Agent {self.id} sees {num_here} other agents.")
         # meet_log.total_meets += num_here
         # if num_here < meet_log.min_meets:
         #     meet_log.min_meets = num_here
@@ -274,7 +275,7 @@ class Person(core.Agent):
         """modify the state of the person based on the messages received."""
         for msg in self.messages_incoming:
             # process the message
-            print(f"Agent {self.id} received message: {msg.message}")
+            logger.debug(f"Agent {self.id} received message: {msg.message}")
 
         self.messages_incoming = []
         self.messages_outgoing = []
@@ -358,34 +359,34 @@ def test_person():
         initDict=person_data
     )
 
-    print(person)
+    logger.debug(person)
 
     person_data = person.save()
-    print(person_data)
+    logger.debug(person_data)
 
     restored_person = Person.restore(person_data)
-    print(restored_person)
+    logger.debug(restored_person)
 
-    print("Person test passed.")
+    logger.debug("Person test passed.")
 
 def test_person_serialization(person: Person):
-    print("Testing person serialization.")
+    logger.debug("Testing person serialization.")
     person_data = person.save()
-    print(person_data)
+    logger.debug(person_data)
 
     restored_person = Person.restore(person_data)
-    print(restored_person)
+    logger.debug(restored_person)
 
 def test_activities(person: Person):
-    print("Testing activities.")
+    logger.debug("Testing activities.")
     schedules = person.schedules
     schedule_names = [schedule.name for schedule in schedules.schedules]
-    print(schedule_names)
+    logger.debug(schedule_names)
 
     for schedule_idx in range(len(schedules)):
-        print(f"Schedule {schedule_idx}:")
+        logger.debug(f"Schedule {schedule_idx}:")
         for act in schedules[schedule_idx].acts:
-            print(act)
+            logger.debug(act)
 
 if __name__ == "__main__":
     test_person()

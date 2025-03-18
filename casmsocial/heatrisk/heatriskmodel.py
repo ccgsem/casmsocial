@@ -5,18 +5,19 @@ Created: 02 Dec 2024
 Defining the heat risk model for the CASMSOCIAL/PRSIM project
 """
 
-import math
+
 from collections import deque
 from dataclasses import dataclass, field
-from heapq import nsmallest
 
 import pandas as pd
+from loguru import logger
 from mpi4py import MPI
 from repast4py import logging
 from repast4py.space import ContinuousPoint as cpt  # noqa: F401
 
 from casmsocial.activities import Act, Schedules
 from casmsocial.datautility import get_attribute_names_from_data
+from casmsocial.environment import Environment
 
 # model factory
 from casmsocial.factory import Models
@@ -25,42 +26,116 @@ from casmsocial.factory import Models
 from casmsocial.household import Household
 from casmsocial.model import Model
 from casmsocial.person import Person, PersonConfig, PersonData
-from casmsocial.place import Place, PlaceConfig, PlaceData, RemotePlace
+from casmsocial.place import Place, PlaceConfig, PlaceData, RemotePlace, find_closest_location
 from casmsocial.school import School
 from casmsocial.socialmodel import SIModel, update_activities_data
 from casmsocial.workplace import Workplace
 
 
-def haversine_distance(lat1, lon1, lat2, lon2):
-    """Calculate the great-circle distance between two points on the Earth."""
-    R = 6371  # Earth's radius in km
-    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c  # Distance in km
+def if_place_has_cooling_center(place) -> bool:
+    """Check if a place has a cooling center.
 
-def find_closest_cooling_centers(lat, lon, places, n=3):
-    """
-    Find the `n` closest cooling centers to the given coordinates.
-
-    Args:
-        lat (float): Latitude of the target location.
-        lon (float): Longitude of the target location.
-        places (list[Place]): List of Place objects.
-        n (int): Number of closest cooling centers to return (default is 3).
+    Arguments:
+        place: Place: The place to check.
 
     Returns:
-        list[tuple[Place, float]]: List of tuples containing Place objects and their distances.
+        bool: True if the place has a cooling center, False otherwise.
     """
-    cooling_centers = [p for p in places if getattr(p.data, 'cooling_center', False) and p.data.cooling_center > 0.0]
+    return getattr(place.data, 'cooling_center', False) and place.data.cooling_center > 0.0
 
-    if not cooling_centers:
-        return []  # No cooling centers found
+def if_place_has_air_conditioning(place) -> bool:
+    """Check if a place has air conditioning.
 
-    closest_places = nsmallest(n, cooling_centers, key=lambda p: haversine_distance(lat, lon, p.data.latitude, p.data.longitude))
-    return [(place, haversine_distance(lat, lon, place.data.latitude, place.data.longitude)) for place in closest_places]
+    Arguments:
+        place: Place: The place to check.
+
+    Returns:
+        bool: True if the place has air conditioning, False otherwise.
+    """
+    return 'AIR' in get_attribute_names_from_data(place.data) and place.data.AIR
+
+# 0. define the environment
+class HeatRiskEnvironment(Environment):
+    """HeatRiskEnvironment class"""
+    def __init__(self, name: str):
+        """Constructor for the HeatRiskEnvironment class."""
+        super().__init__(name)
+
+    def setup(self) -> None:
+        """Setup the environment."""
+        pass
+
+    def teardown(self) -> None:
+        """Teardown the environment."""
+        pass
+
+    def update(self) -> None:
+        """Update the environment."""
+        theModel = Model.get_model()
+        logger.debug(f"Updating the environment for hour {theModel.cal.hour_of_day}")
+
+        if not theModel:
+            logger.debug("model is unavailable!")
+            return
+
+        # update the heat indices
+        heatindex_by_hour_place = \
+            pd.read_parquet(
+                theModel.heatindex_by_hour_place_file_path,
+                engine='pyarrow',
+                filters=[("time_hour", "=", theModel.cal.hour_of_day)]
+            ).loc[:, ['sp_id', 'heatIndex']].dropna()
+
+        # logger.debug(f"size of heatindex_by_hour_place = {len(heatindex_by_hour_place)}")
+        minheatindex = heatindex_by_hour_place['heatIndex'].min()
+        maxheatindex = heatindex_by_hour_place['heatIndex'].max()
+        meanheatindex = heatindex_by_hour_place['heatIndex'].mean()
+        logger.debug(
+            f"min heat index = {minheatindex}, "
+            f"max heat index = {maxheatindex}, "
+            f"mean heat index = {meanheatindex}")
+
+        heatIndex_map = \
+            heatindex_by_hour_place.set_index('sp_id')['heatIndex'].to_dict()
+
+        # metrics
+        countOfHeatIndexMatches = 0
+        # countOfHeatIncidents = 0
+        countOfAirConditionedPlaces = 0
+        # countOfOutsideWorkers = 0
+
+        #for place in self.local_places:
+        local_places = theModel.places_proj.get_local_places()
+        logger.debug(f"number of local places = {len(local_places)}")
+        places_with_cooling_center = [place for place in local_places if if_place_has_cooling_center(place)]
+
+        logger.debug(f"number of places with cooling centers = {len(places_with_cooling_center)}")
+
+        # for place in places_with_cooling_centers:
+        #     logger.debug(f"place {place.id} has place.data={place.data}")
+
+        for place in local_places:
+
+            # if "cooling_center" in get_attribute_names_from_data(place.data):
+            #     if place.data.cooling_center > 0.0:
+            #         logger.debug(f"place {place.id} is a cooling center")
+
+            # update the heat index for the place
+            place.step()
+
+            if place.id in heatIndex_map:
+                place.data.heatIndex= heatIndex_map[place.id]
+                countOfHeatIndexMatches+=1
+            else:
+                place.data.heatIndex= meanheatindex
+
+            # Take air conditioned places as 72 degrees and non-air conditioned
+            #  places as the heat index
+            if 'AIR' in get_attribute_names_from_data(place.data) and place.data.AIR:
+                countOfAirConditionedPlaces += 1
+                place.data.heatIndexIndoors = 72
+            else:
+                place.data.heatIndexIndoors = place.data.heatIndex
 
 
 # 1. utility functions for heat-related computations
@@ -164,7 +239,7 @@ class PersonWithHeatRisk(Person):
         schedule_names = [schedule.name for schedule in self.schedules.schedules]
         schedule_idx = schedule_names.index('cooling_center')
         if self.state.activities_idx == schedule_idx:
-            print(f"Person {self.id} is already in the cooling center schedule")
+            logger.debug(f"Person {self.id} is already in the cooling center schedule")
             return
 
         # need to modify the person's activities to include the cooling
@@ -179,26 +254,26 @@ class PersonWithHeatRisk(Person):
 
         # add the activity to the schedule
         self.schedules.schedules[schedule_idx].addAct(act_go_to_cooling_center)
-        print(f"Person {self.id} updated schedule to move to cooling center {place.id}")
+        logger.debug(f"Person {self.id} updated schedule to move to cooling center {place.id}")
         for act in self.schedules.schedules[schedule_idx].acts:
-            print(f"  {act}")
+            logger.debug(f"  {act}")
         previous_schedule = self.state.activities_idx
         self.state.activities_idx = schedule_idx
-        print(f"Person {self.id} moved to schedule {schedule_idx} from {previous_schedule}")
+        logger.debug(f"Person {self.id} moved to schedule {schedule_idx} from {previous_schedule}")
 
     def step(self) -> None:
         """Step the person forward one time step."""
         super().step()
 
-        model = Model.get_model()
-        if model is not None:
-            place = model.places_proj.get_place_for_agent(self)
+        theModel = Model.get_model()
+        if theModel is not None:
+            place = theModel.places_proj.get_place_for_agent(self)
         else:
-            print("model is unavailable!")
+            logger.debug("model is unavailable!")
             return
 
         if not place:
-            print(f"=====>Person {self.id} is without a place!")
+            logger.debug(f"=====>Person {self.id} is without a place!")
             return
 
         # update the heat index for the person
@@ -211,31 +286,31 @@ class PersonWithHeatRisk(Person):
         # update the probability of a heat event
         self.state.probHeatEvent = \
             self.compute_prob_heat_event(
-                model.heat_threshold
+                theModel.heat_threshold
             )
 
         if self.state.probHeatEvent > 0.0001:
 
             # find the closest cooling centers
-            current_hour = model.cal.hour_of_day
+            current_hour = theModel.cal.hour_of_day
             lat = place.data.latitude
             lon = place.data.longitude
-            print(f"Person {self.id} at ({lat},{lon}) is experiencing a heat event probability of {self.state.probHeatEvent} at hour {current_hour}")
-            local_places = model.places_proj.get_local_places()
-            candidates = find_closest_cooling_centers(lat, lon, local_places, n=3)
-            print(f"Person {self.id} is considering the following cooling centers:")
+            logger.debug(f"Person {self.id} at ({lat},{lon}) is experiencing a heat event probability of {self.state.probHeatEvent} at hour {current_hour}")
+            local_places = theModel.places_proj.get_local_places()
+            candidates = find_closest_location(lat, lon, local_places, n=3, filter_func=if_place_has_cooling_center)
+            logger.debug(f"Person {self.id} is considering the following cooling centers:")
             selection = None
             for place, distance in candidates:
-                print(f"  {place.id} at ({place.data.latitude},{place.data.longitude}) is {distance} km away")
+                logger.debug(f"  {place.id} at ({place.data.latitude},{place.data.longitude}) is {distance} km away")
                 if selection is None:
                     selection = place
 
             if selection is not None:
-                print(f"Person {self.id} is moving to cooling center {selection.id}")
+                logger.debug(f"Person {self.id} is moving to cooling center {selection.id}")
                 self.move_to_cooling_center(selection, current_hour)
 
             if self.consider_to_seek_cooling():
-                print(f"Person {self.id} is seeking cooling")
+                logger.debug(f"Person {self.id} is seeking cooling")
                 if self.decide_to_seek_cooling():
                     pass
 
@@ -257,9 +332,9 @@ class HeatRiskModel(SIModel):
         self.heatindex_by_hour_place_file_path = \
             self.data_input_path / self.params['heatIndex.file']
         if self.heatindex_by_hour_place_file_path.exists():
-            print(f"Loading heat map places from {self.heatindex_by_hour_place_file_path}")
+            logger.debug(f"Loading heat map places from {self.heatindex_by_hour_place_file_path}")
         else:
-            print(f"Error: Heat map places file {self.heatindex_by_hour_place_file_path} not found.")
+            logger.debug(f"Error: Heat map places file {self.heatindex_by_hour_place_file_path} not found.")
             exit(1)
 
     @property
@@ -268,6 +343,9 @@ class HeatRiskModel(SIModel):
 
     def initializePopulation(self) -> None:
         """Initialize population"""
+
+        # register the environment
+        SIModel.register_environment(HeatRiskEnvironment('HeatRiskEnvironment'))
 
         # register the place types
         SIModel.register_place_config(
@@ -320,7 +398,8 @@ class HeatRiskModel(SIModel):
         SIModel.register_activity_names(
             ['home', 'work', 'school', 'cooling_center'])
 
-        print("Now running initialize population for SIModel...")
+        logger.debug("Now running initialize population for SIModel...")
+
         super().initializePopulation()
 
         self._heat_threshold = 90.0
@@ -331,7 +410,7 @@ class HeatRiskModel(SIModel):
 
         # check the first agent
         person = next(self.context.agents())
-        print(f"person={person}")
+        logger.debug(f"person={person}")
         # test_person_serialization(person)
         # test_activities(person)
         # test_add_move_to_cooling_center(person)
@@ -352,96 +431,6 @@ class HeatRiskModel(SIModel):
             ]  # , 'meet_count']
         )
         self.log_agents()
-
-    def update_environment(self) -> None:
-        """Update the environment for the current time step."""
-        super().update_environment()
-
-         # update the heat indices
-        heatindex_by_hour_place = \
-            pd.read_parquet(
-                self.heatindex_by_hour_place_file_path,
-                engine='pyarrow',
-                filters=[("time_hour", "=", self.cal.hour_of_day)]
-            ).loc[:, ['sp_id', 'heatIndex']].dropna()
-
-        # print(f"size of heatindex_by_hour_place = {len(heatindex_by_hour_place)}")
-        minheatindex = heatindex_by_hour_place['heatIndex'].min()
-        maxheatindex = heatindex_by_hour_place['heatIndex'].max()
-        meanheatindex = heatindex_by_hour_place['heatIndex'].mean()
-        print(
-            f"min heat index = {minheatindex}, "
-            f"max heat index = {maxheatindex}, "
-            f"mean heat index = {meanheatindex}")
-
-        heatIndex_map = \
-            heatindex_by_hour_place.set_index('sp_id')['heatIndex'].to_dict()
-
-        # metrics
-        countOfHeatIndexMatches = 0
-        # countOfHeatIncidents = 0
-        countOfAirConditionedPlaces = 0
-        # countOfOutsideWorkers = 0
-
-        #for place in self.local_places:
-        local_places = self.places_proj.get_local_places()
-        print(f"number of local places = {len(local_places)}")
-        places_with_cooling_center = [place for place in local_places if getattr(place.data, 'cooling_center', False) and place.data.cooling_center > 0.0]
-
-        print(f"number of places with cooling centers = {len(places_with_cooling_center)}")
-
-        # for place in places_with_cooling_centers:
-        #     print(f"place {place.id} has place.data={place.data}")
-
-        for place in local_places:
-
-            # if "cooling_center" in get_attribute_names_from_data(place.data):
-            #     if place.data.cooling_center > 0.0:
-            #         print(f"place {place.id} is a cooling center")
-
-            # update the heat index for the place
-            place.step()
-
-            if place.id in heatIndex_map:
-                place.data.heatIndex= heatIndex_map[place.id]
-                countOfHeatIndexMatches+=1
-            else:
-                place.data.heatIndex= meanheatindex
-
-            # Take air conditioned places as 72 degrees and non-air conditioned
-            #  places as the heat index
-            if 'AIR' in get_attribute_names_from_data(place.data) and place.data.AIR:
-                countOfAirConditionedPlaces += 1
-                place.data.heatIndexIndoors = 72
-            else:
-                place.data.heatIndexIndoors = place.data.heatIndex
-
-        #     localHeatIndex = place.data.heatIndex
-
-        #     peopleAtPlace = self.places_proj.get_agents_at_place(place)
-        #     # if len(peopleAtPlace) > 0:
-        #     #     print(f"place {place.id} has {len(peopleAtPlace)} people")
-        #     for person in peopleAtPlace:
-
-        #         # adjust the heat index for outside workers
-        #         personHeatIndex = localHeatIndex
-        #         if person.state.outside_worker:
-        #             countOfOutsideWorkers += 1
-        #             personHeatIndex = place.data.heatIndex
-
-        #         person.state.heatIndices.appendleft(personHeatIndex)
-
-        #         person.state.probHeatEvent = compute_prob_heat_event(
-        #             person.state.heatIndices,
-        #             self.heat_threshold
-        #         )
-        #         if person.state.probHeatEvent > 0.0001:
-        #             countOfHeatIncidents += 1
-
-        # print(f"number of heat index matches = {countOfHeatIndexMatches}")
-        # print(f"number of heat incidents = {countOfHeatIncidents}")
-        # print(f"number of air conditioned places = {countOfAirConditionedPlaces}")
-        # print(f"number of outside workers = {countOfOutsideWorkers}")
 
     def log_agents(self) -> None:
         # tick = self.runner.schedule.tick
@@ -478,7 +467,7 @@ Models.add_model(
 # 7. create test functions
 def test_add_move_to_cooling_center(person: Person):
     """Test the add_move_to_cooling_center function."""
-    print(f"Testing add_move_to_cooling_center for person {person.id}")
+    logger.debug(f"Testing add_move_to_cooling_center for person {person.id}")
     # TODO (2025-02-26 jcline): implement this function
     #   - This is where the person is moved to a cooling center
     #   - Find the closest cooling center
