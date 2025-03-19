@@ -28,11 +28,14 @@ from casmsocial.factory import Models
 from casmsocial.message import Message
 from casmsocial.model import Model
 from casmsocial.person import Person, PersonConfig, person_cache
-from casmsocial.place import PlaceConfig, PlacesProjection
+from casmsocial.place import Place, PlaceConfig, PlacesProjection
 
 
-class BasicEnvironement(Environment):
-    """Basic environment class."""
+class SimEnvironment(Environment):
+    """Sim (social interaction model) environment class.
+
+    Creates a basic physical and social environment for the simulation.
+    """
 
     def setup(self) -> None:
         """Set up the environment."""
@@ -44,7 +47,19 @@ class BasicEnvironement(Environment):
 
     def update(self) -> None:
         """Update the environment."""
-        pass
+        theModel = Model.get_model()
+        # tick = self.runner.schedule.tick
+
+        # move persons
+        theModel.movePersons()
+        theModel.context.synchronize(Person.restore)
+
+        # theModel.make_contacts(tick)
+
+    def get_values_at_place(self, place: Place) -> namedtuple:
+        """Get the values at the given coordinates."""
+        return None
+
 
 class SIModel(Model):
     """
@@ -139,6 +154,7 @@ class SIModel(Model):
     def register_person_config(cls, config: PersonConfig) -> None:
         """Register a person configuration."""
         Person.registerPersonDataClass(config.dataType)
+        Person.registerBehaviorEngine(config.behaviorEngine)
         cls.__person_config = config
 
     @classmethod
@@ -170,10 +186,7 @@ class SIModel(Model):
     def get_activities_data_type(cls) -> namedtuple:
         """Get the activities data type."""
         if not cls.__activities_data_type:
-            cls.__activities_data_type = namedtuple(
-                'ActivitiesDataclass',
-                cls.get_activity_names()
-            )
+            cls.__activities_data_type = namedtuple("ActivitiesDataclass", cls.get_activity_names())
         return cls.__activities_data_type
 
     @classmethod
@@ -186,16 +199,12 @@ class SIModel(Model):
         """Get the environment."""
         environment = cls.__environment
         if not environment:
-            cls.__environment = BasicEnvironement("environment")
+            cls.__environment = SimEnvironment("sim_environment")
         return cls.__environment
 
     # instance variables
-    def __init__(
-        self,
-        comm: MPI.Intracomm,
-        params: dict
-    ):
-        """ Constructor for the SIModel class
+    def __init__(self, comm: MPI.Intracomm, params: dict):
+        """Constructor for the SIModel class
 
         Args:
             comm: the mpi communicator over which the model is distributed.
@@ -217,10 +226,10 @@ class SIModel(Model):
         self.runner.schedule_event(0, self.initializePopulation)
         self.runner.schedule_repeating_event(1, 1, self.step)
         # self.runner.schedule_repeating_event(1.1, 10, self.log_agents)
-        self.runner.schedule_stop(self.params['stop.at'])
+        self.runner.schedule_stop(self.params["stop.at"])
         self.runner.schedule_end_event(self.at_end)
 
-        self.steps_per_day = int(self.params['steps.per.day'])
+        self.steps_per_day = int(self.params["steps.per.day"])
         self.cal = Calendar()
 
         # create the context to hold the agents and manage cross process
@@ -250,54 +259,43 @@ class SIModel(Model):
         self.places_proj = PlacesProjection("places_projection", self.comm)
 
         # initialize the places
-        place_filenames = [
-            self.data_input_path / filename for filename in self.params['places.files']
-        ]
+        place_filenames = [self.data_input_path / filename for filename in self.params["places.files"]]
 
         # self.place_map, self.local_places = self.createPlaces(
-        self.createPlaces(
-            place_filenames
-        )
+        self.createPlaces(place_filenames)
         local_places = self.places_proj.get_local_places()
         logger.debug(f"rank {self.rank}: number of local places={len(local_places)}")
 
         # activitiesMap is a dict of personID->Schedule object
-        activitiesMap = self.createActivities(
-            self.data_input_path / self.params['activities.file']
-        )
+        activitiesMap = self.createActivities(self.data_input_path / self.params["activities.file"])
 
         # contact_map is a dict of personID->{placeID->[personID]}
         # i.e. it is a map of personIDs to a list of contacted persons at each
         # place
         self.contact_map = {}
-        if 'contact.file' in self.params:
+        if "contact.file" in self.params:
             logger.debug("Loading contact file...")
 
-            self.contact_map = self.createContacts(
-                self.data_input_path / self.params['contact.file']
-            )
+            self.contact_map = self.createContacts(self.data_input_path / self.params["contact.file"])
         else:
             logger.error("Error: contact file not specified.")
 
-        logger.debug(F"rank {self.rank}: contacts size={len(self.contact_map)}")
+        logger.debug(f"rank {self.rank}: contacts size={len(self.contact_map)}")
 
         self.rng = repast4py.random.default_rng
 
         # agent_id_map is a map of personID->repast4py.Agent.uid
         # self.person_id_map = {}
-        self.createPersons(
-            self.data_input_path / self.params['persons.file'],
-            activitiesMap,
-            self.rng)
+        self.createPersons(self.data_input_path / self.params["persons.file"], activitiesMap, self.rng)
 
     def createPersons(
         self,
         personsFile: pathlib.Path,
         # placeMap: Dict,
         activitiesMap: dict,
-        rng
+        rng,
     ) -> None:
-        """ Create persons from the given file.
+        """Create persons from the given file.
 
         Args:
             personsFile (pathlib.Path): The persons file.
@@ -305,7 +303,7 @@ class SIModel(Model):
             rng: The random number generator.
         """
         # get the person type
-        personType = self.get_person_config().type
+        personType = self.get_person_config().person_type
 
         # get the activities data type: namedtuple to store places for activities
         activitiesDataType = self.get_activities_data_type()
@@ -318,7 +316,7 @@ class SIModel(Model):
         activity_names = self.get_activity_names()
 
         # get the alternate activity names (activities not in the planned activities)
-        alternate_activities_names = activity_names[len(planned_activity_names):]
+        alternate_activities_names = activity_names[len(planned_activity_names) :]
 
         # load the persons from the file
         table = pq.read_table(personsFile)
@@ -329,7 +327,7 @@ class SIModel(Model):
                 row = [x.as_py() for x in row]
                 p = dict(zip(table.column_names, row))
 
-                personID = p['sp_id']
+                personID = p["sp_id"]
 
                 # TODO: add tests for this
                 #  - activities_data = [ p[x] for x in planned_activity_names ]
@@ -337,7 +335,7 @@ class SIModel(Model):
                 #  - the first place is a household
                 #  - how to handle the case where the person is not on this rank?
                 #  - how to handle the case where the person is not in the activitiesMap?
-                places = [ convert_to_int(p[x]) for x in planned_activity_names]
+                places = [convert_to_int(p[x]) for x in planned_activity_names]
 
                 for place in places:
                     if isinstance(place, str):
@@ -358,7 +356,7 @@ class SIModel(Model):
                     continue
 
                 schedule = activitiesMap[personID]
-                activities = Activities(personID, 'weekday', tuple(schedule))
+                activities = Activities(personID, "weekday", tuple(schedule))
                 schedules = Schedules()
                 schedules.addActivities(activities)
 
@@ -384,18 +382,14 @@ class SIModel(Model):
                     rank,
                     schedules,
                     places,
-                    p  # initDict for additional data
+                    p,  # initDict for additional data
                 )
 
                 self.context.add(person)
                 self.places_proj.add(person)
                 self.places_proj.assign_agent_to_place(person, household)
 
-    def createPlacesFromFile(
-        self,
-        placeTypeIndex: int,
-        placesFile: pathlib.Path
-    ) -> None:
+    def createPlacesFromFile(self, placeTypeIndex: int, placesFile: pathlib.Path) -> None:
         """
         Create places from the given file.
 
@@ -406,7 +400,7 @@ class SIModel(Model):
 
         # get the place type
         placeConfig = self.get_place_config(placeTypeIndex)
-        placeType = placeConfig.type
+        placeType = placeConfig.place_type
         placeDataType = placeConfig.dataType
 
         # load the places from the file
@@ -417,15 +411,12 @@ class SIModel(Model):
                 # convert arrow scalars to python
                 row = [x.as_py() for x in row]
                 place_record = dict(zip(table.column_names, row))
-                if 'rank' not in place_record:
-                    place_record['rank'] = 0
+                if "rank" not in place_record:
+                    place_record["rank"] = 0
                 place = placeType(place_record, placeDataType)
                 self.places_proj.add_place(place)
 
-    def createPlaces(
-        self,
-        places_files: list[pathlib.Path]
-    ) -> None:
+    def createPlaces(self, places_files: list[pathlib.Path]) -> None:
         """
         Create places from the given files.
 
@@ -433,22 +424,15 @@ class SIModel(Model):
             places_files (list[pathlib.Path]): The list of place files.
         """
         for placeTypeIndex, placesFile in enumerate(places_files):
-            self.createPlacesFromFile(
-                placeTypeIndex,
-                placesFile
-            )
+            self.createPlacesFromFile(placeTypeIndex, placesFile)
 
         # add a remote place
-        remote_place = self.get_remote_place_config().type(
-            {'sp_id': 0, 'rank': 0},
-            self.get_remote_place_config().dataType
+        remote_place = self.get_remote_place_config().place_type(
+            {"sp_id": 0, "rank": 0}, self.get_remote_place_config().dataType
         )
         self.places_proj.add_place(remote_place)
 
-    def createActivities(
-        self,
-        activitiesFile: pathlib.Path
-    ) -> dict[int, list[int]]:
+    def createActivities(self, activitiesFile: pathlib.Path) -> dict[int, list[int]]:
         # activitiesMap looks like:
         # personID -> Activities object
         act_map = {}
@@ -459,43 +443,17 @@ class SIModel(Model):
 
         for batch in table.to_batches():
             d = batch.to_pydict()
-            for sp_persons_id, activity_id, activity_seq, start, end in \
-                zip(
-                    d['sp_persons_id'],
-                    d['activity_id'],
-                    d['activity_sequence'],
-                    d['starttime_min'],
-                    d['endtime_min']):
-
+            for sp_persons_id, activity_id, activity_seq, start, end in zip(
+                d["sp_persons_id"], d["activity_id"], d["activity_sequence"], d["starttime_min"], d["endtime_min"]
+            ):
                 if sp_persons_id not in act_map:
-                    act_map[sp_persons_id] = \
-                        [
-                            Act(
-                                sp_persons_id,
-                                activity_id,
-                                activity_seq,
-                                start,
-                                end
-                            )
-                        ]
+                    act_map[sp_persons_id] = [Act(sp_persons_id, activity_id, activity_seq, start, end)]
                 else:
-                    act_map[sp_persons_id].append(
-                        Act(
-                            sp_persons_id,
-                            activity_id,
-                            activity_seq,
-                            start,
-                            end
-                        )
-                    )
+                    act_map[sp_persons_id].append(Act(sp_persons_id, activity_id, activity_seq, start, end))
 
         return act_map
 
-    def createContacts(
-        self,
-        contactFile: pathlib.Path
-    ) -> dict[int, dict[int, int]]:
-
+    def createContacts(self, contactFile: pathlib.Path) -> dict[int, dict[int, int]]:
         # contactMap looks like:
         # personID -> { hour_of_day -> [ otherPersonIDs ] }
         # dict
@@ -507,12 +465,7 @@ class SIModel(Model):
 
         for batch in table.to_batches():
             d = batch.to_pydict()
-            for source, target, hour_of_the_day in \
-                zip(
-                    d['from_person'],
-                    d['to_person'],
-                    d['hour']):
-
+            for source, target, hour_of_the_day in zip(d["from_person"], d["to_person"], d["hour"]):
                 if source not in contactMap:
                     contactMap[source] = {}
 
@@ -538,7 +491,6 @@ class SIModel(Model):
 
     def step(self) -> None:
         """Step the model forward one time step."""
-        # tick = self.runner.schedule.tick
 
         self.cal.increment()
 
@@ -549,19 +501,23 @@ class SIModel(Model):
             f"minute {self.cal.minute_of_day}"
         )
 
-        self.movePersons()
-
-        self.context.synchronize(Person.restore)
-
         # 2025-02-26 jcline: this is a hack to get the person_id_map
         # self.get_local_ids()
 
-        # 2025-02-26 jcline: this is no longer needed due to places_projection?
-        # self.add_people_to_places()
-
-        # self.make_contacts(tick)
-
         self.get_environment().update()
+
+        # 2025-03-19 jcline: place.step method not implemented
+        # for place in self.places_proj.get_local_places():
+        #    place.step()
+
+        # sequence of actions
+        # 1. sense physical environment
+        # 2. sense social environment
+        # 3. update state
+        # 4. update beliefs
+        # 5. communicate
+        # 6. make decisions
+        # 7. act on decisions
 
         # self.send_messages_between_agents()
 
@@ -596,7 +552,6 @@ class SIModel(Model):
             # self.place_map[person.state.place_id].addPerson(person)
 
     def make_contacts(self, tick) -> None:
-
         for person in self.context.agents():
             personsContactMap = self.contact_map.get(person.id)
             if not personsContactMap:  # if person has no network
@@ -612,9 +567,7 @@ class SIModel(Model):
 
             contacts = []
             for contactID in contactIDs:
-                contacts.append(
-                    self.context.agent(self.person_id_map[contactID])
-                )
+                contacts.append(self.context.agent(self.person_id_map[contactID]))
             person.make_contacts(contacts)
 
     def send_messages_between_agents(self) -> None:
@@ -627,20 +580,20 @@ class SIModel(Model):
         agents = self.context.agents(shuffle=True)
 
         for person in agents:
-
             import secrets
+
             recipient = secrets.choice(agents)
 
             if person.id != recipient.id:  # Avoid sending to self
                 message = person.create_message(
-                    recipient= recipient.id,
+                    recipient=recipient.id,
                     message=f"Hello from {person.uid}",
                     timestamp=(
                         "Step on "
                         f"day {self.cal.day_of_year}, "
                         f"hour {self.cal.hour_of_day}, "
                         f"minute {self.cal.minute_of_day}"
-                    )
+                    ),
                 )
 
             messages = person.send_messages()
@@ -654,7 +607,7 @@ class SIModel(Model):
                         recipient_uid = self.person_id_map[recipient]
                         logger.debug(f"Message from {message.sender} to {person_cache[recipient_uid].state}:")
                         person_cache[recipient_uid].receive_message(message)
-                    else:   # message to remote person
+                    else:  # message to remote person
                         logger.debug(f"Message from {message.sender} to {recipient}:")
 
                         # get remote person ID
@@ -670,21 +623,14 @@ class SIModel(Model):
                 continue
 
         # Exchange messages between processors
-        all_messages = \
-            self.exchange_messages(
-                remote_person_ids,
-                messages_to_send
-            )
+        all_messages = self.exchange_messages(remote_person_ids, messages_to_send)
 
         # Step 2: Deliver messages from remote processors
         for message in all_messages:
             recipient = message.recipient
             if recipient in self.person_id_map:
                 recipient_uid = self.person_id_map[recipient]
-                logger.debug(
-                    f"Remote message from {message.sender} to "
-                    f"{person_cache[recipient_uid].state}:"
-                )
+                logger.debug(f"Remote message from {message.sender} to " f"{person_cache[recipient_uid].state}:")
                 person_cache[recipient_uid].receive_message(message)
             else:
                 logger.debug(f"Remote message from {message.sender} to {recipient} not delivered")
@@ -693,9 +639,7 @@ class SIModel(Model):
         for person in agents:
             person.process_messages()
 
-    def get_remote_person_id_map(
-            self,
-            remote_person_ids: list[int]) -> dict[int, int]:
+    def get_remote_person_id_map(self, remote_person_ids: list[int]) -> dict[int, int]:
         """Get the remote person ID map."""
         remote_person_id_map = {}
 
@@ -716,22 +660,18 @@ class SIModel(Model):
                 for rank in range(self.size):
                     if rank != self.rank:
                         person_uid = self.person_id_map[person_id]
-                        msg = {'id': person_id, 'uid': person_uid}
+                        msg = {"id": person_id, "uid": person_uid}
                         send_buffers[rank].append(msg)
 
         # 3. Send remote person ID->UID map to other ranks
         received_buffers = self.comm.alltoall(send_buffers)
         all_messages = [msg for buffer in received_buffers for msg in buffer]
         for msg in all_messages:
-            remote_person_id_map[msg['id']] = msg['uid']
+            remote_person_id_map[msg["id"]] = msg["uid"]
 
         return remote_person_id_map
 
-    def exchange_messages(
-            self,
-            remote_person_ids: list[int],
-            messages_to_send: list[Message]
-        ) -> list[Message]:
+    def exchange_messages(self, remote_person_ids: list[int], messages_to_send: list[Message]) -> list[Message]:
         """Exchange messages between processors using MPI."""
         remote_person_id_map = self.get_remote_person_id_map(remote_person_ids)
 
@@ -766,9 +706,7 @@ class SIModel(Model):
 
 
 # Register SIModel
-Models.add_model(
-    SIModel.__module__ + '.' + SIModel.__name__,
-    SIModel)
+Models.add_model(SIModel.__module__ + "." + SIModel.__name__, SIModel)
 
 
 # utility functions

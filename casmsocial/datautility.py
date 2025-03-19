@@ -4,26 +4,23 @@ from typing import Optional, Union
 
 
 # extract_dataclass_fields
-def extract_dataclass_attribute_names(
-        dataclass: type[dataclass]) -> list[str]:
+def extract_dataclass_attribute_names(dataclass: type[dataclass]) -> list[str]:
     """Extract dataclass fields as a dictionary."""
-     # Get a list of field objects
+    # Get a list of field objects
     field_objects = fields(dataclass)
 
     # Extract attribute names from field objects
     attribute_names = [field.name for field in field_objects]
     return attribute_names
 
-def get_attribute_names_from_data(
-        data: dataclass) -> list[str]:
+
+def get_attribute_names_from_data(data: dataclass) -> list[str]:
     """Get a list of attribute names from a dataclass instance."""
     return [f.name for f in fields(data)]
 
+
 # create_dataclass_record_from_dict
-def create_dataclass_record_from_dict(
-        dataclass: type[dataclass],
-        initDict: dict
-        ) -> dataclass:
+def create_dataclass_record_from_dict(dataclass: type[dataclass], initDict: dict) -> dataclass:
     """Create a dataclass record from a dictionary.
 
     Steps:
@@ -53,8 +50,9 @@ def create_dataclass_record_from_dict(
 
     return dataclass(**parameters)
 
+
 def convert_to_int(x: Union[int, str, None]) -> Optional[int]:
-    """ Convert a string to an integer if possible.
+    """Convert a string to an integer if possible.
 
     Arguments:
         x: Optional[int, str]: The value to convert.

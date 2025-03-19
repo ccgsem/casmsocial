@@ -8,7 +8,7 @@ from casmsocial.factory import Models
 
 def run(params: dict):
     """Run the model."""
-    model_name = params['model.name']
+    model_name = params["model.name"]
 
     logger.info(f"Retrieving model <{model_name}>...")
 
@@ -16,7 +16,7 @@ def run(params: dict):
         logger.debug(model)
 
     try:
-        ModelCreator = Models.create_model(params['model.name'])  #get_casmsocial_model(params['model.name'])
+        ModelCreator = Models.create_model(params["model.name"])  # get_casmsocial_model(params['model.name'])
     except ValueError as ve:
         logger.error(f"Error: {ve}")
         return

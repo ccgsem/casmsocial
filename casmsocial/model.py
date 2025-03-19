@@ -21,22 +21,20 @@ class Model(ABC):
         params: the simulation input parameters
     """
 
-    theModel: 'Model' = None
+    theModel: "Model" = None
 
-    def get_model() -> 'Model':
+    def get_model() -> "Model":
         """Get the model."""
         return Model.theModel
+
     def set_model(new_model):
         """Set the model."""
         Model.theModel = new_model
 
     @abstractmethod
-    def __init__(
-        self,
-        comm: MPI.Intracomm,
-        params: dict
-    ):
+    def __init__(self, comm: MPI.Intracomm, params: dict):
         """Constructor for the Model class."""
+
         def __init__(self, model_type: str):
             super().__init__(f"Unsupported model type: {model_type}")
 

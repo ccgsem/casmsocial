@@ -39,6 +39,7 @@ class Models:
         """
         if name in Models.__models:
             raise ModelAlreadyExistsError(name)
+        logger.info(f"Adding model: {name}")
         Models.__models[name] = model
         return model
 
@@ -81,24 +82,23 @@ class ModelAlreadyExistsError(Exception):
 
 
 class ModelNotFoundError(Exception):
-    """ exception if model not found """
+    """exception if model not found"""
+
     def __init__(self, model_type: str):
         self.message = f"Unsupported model type: {model_type}"
         super().__init__(self.message)
 
 
-def load_models(
-        module_list = None
-        ) -> None:
-    """ load models from a list of modules """
+def load_models(module_list=None) -> None:
+    """load models from a list of modules"""
     if module_list is None:
         module_list = []
     for module in module_list:
         __import__(module)
 
-def load_models_from_dotenv(
-        ) -> None:
-    """ load models from a list of modules """
+
+def load_models_from_dotenv() -> None:
+    """load models from a list of modules"""
     import os
 
     import dotenv

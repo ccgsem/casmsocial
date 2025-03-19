@@ -1,22 +1,11 @@
-from casmsocial.place import Place
-from casmsocial.calendar import Calendar
+from dataclasses import dataclass
 
-from typing import (
-    Dict,
-    Type
-)
-from dataclasses  import dataclass
+from casmsocial.place import Place
 
 
 class Household(Place):
     """Household class"""
-    def __init__(
-            self,
-            initDict: Dict,
-            placeDataClass: Type[dataclass]
-        ):
+
+    def __init__(self, initDict: dict, placeDataClass: type[dataclass]):
         initDict["place_type"] = "Household"
-        super().__init__(
-             initDict,
-             placeDataClass
-        )
+        super().__init__(initDict, placeDataClass)

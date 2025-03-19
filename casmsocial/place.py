@@ -17,47 +17,41 @@ from casmsocial.datautility import create_dataclass_record_from_dict
 @dataclass
 class PlaceData:
     """Data for a Place."""
+
     place_type: str = "Household"
     place_name: str = ""
-    latitude: float = float('nan')
-    longitude: float = float('nan')
-    x: float = float('nan')
-    y: float = float('nan')
+    latitude: float = float("nan")
+    longitude: float = float("nan")
+    x: float = float("nan")
+    y: float = float("nan")
 
 
 # 2. Define a Place Class
 class Place:
     """Generic Place Class"""
 
-    def __init__(
-            self,
-            initDict: dict,
-            placeDataClass: type[dataclass]
-        ):
+    def __init__(self, initDict: dict, placeDataClass: type[dataclass]):
         """Constructor for the Place class."""
 
-        placeId = initDict['sp_id']
+        placeId = initDict["sp_id"]
 
         # `location` is currently referenced required but not used
-        if 'x' not in initDict:
-            initDict['x'] = 0
-        if 'y' not in initDict:
-            initDict['y'] = 0
-        if math.isinf(initDict['x']) or math.isinf(initDict['y']):
-            initDict['x'] = 0
-            initDict['y'] = 0
+        if "x" not in initDict:
+            initDict["x"] = 0
+        if "y" not in initDict:
+            initDict["y"] = 0
+        if math.isinf(initDict["x"]) or math.isinf(initDict["y"]):
+            initDict["x"] = 0
+            initDict["y"] = 0
 
-        self.location = cpt(x=int(initDict['x']), y=int(initDict['y']), z=0)
+        self.location = cpt(x=int(initDict["x"]), y=int(initDict["y"]), z=0)
 
         self.id = placeId
-        self.rank = initDict['rank']
+        self.rank = initDict["rank"]
 
         # create data from initDict
-        self.data = \
-            create_dataclass_record_from_dict(
-                placeDataClass,
-                initDict
-            )
+        self.data = create_dataclass_record_from_dict(placeDataClass, initDict)
+
     @property
     def pt(self) -> cpt:
         return self.location
@@ -69,7 +63,7 @@ class Place:
 # 3. Define a PlaceConfig NamedTuple
 class PlaceConfig(NamedTuple):
     name: str
-    type: type[Place]
+    place_type: type[Place]
     dataType: PlaceData
     personPlaceField: str
 
@@ -85,7 +79,7 @@ class PlacesProjection(SharedProjection):
         super().__init__(name, comm)
         self.agent_place_map = {}  # Map agents=>place
         self.place_agent_map = {}  # Map Place ID to list of agents
-        self.place_map = {}        # Map place_id=>place
+        self.place_map = {}  # Map place_id=>place
 
         self.rank = comm.Get_rank()
 
@@ -174,8 +168,14 @@ class PlacesProjection(SharedProjection):
 
     def get_agent_by_id(self, agent_id) -> core.Agent:
         if agent_id in self.agent_place_map:
-            return next((agent for agent in self.place_agent_map.get(self.agent_place_map[agent_id].id, [])
-                        if agent.id == agent_id), None)
+            return next(
+                (
+                    agent
+                    for agent in self.place_agent_map.get(self.agent_place_map[agent_id].id, [])
+                    if agent.id == agent_id
+                ),
+                None,
+            )
         return None
 
     def __repr__(self):
@@ -187,23 +187,19 @@ class AgentNotInProjectionError(ValueError):
     def __init__(self, agent_id):
         super().__init__(f"Agent with ID {agent_id} is not in the projection.")
 
+
 # 6. Define a Remote Place Class
 class RemotePlace(Place):
-    """ Remote Place class
+    """Remote Place class
 
     A remote place is a place that is outside of the simulation area.
     """
-    def __init__(
-            self,
-            initDict: dict,
-            placeDataClass: type[dataclass]
-        ):
+
+    def __init__(self, initDict: dict, placeDataClass: type[dataclass]):
         """Constructor for the RemotePlace class."""
         initDict["place_type"] = "RemotePlace"
-        super().__init__(
-             initDict,
-             placeDataClass
-        )
+        super().__init__(initDict, placeDataClass)
+
 
 # utility functions for places
 def haversine_distance(lat1, lon1, lat2, lon2):
@@ -215,6 +211,7 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c  # Distance in km
+
 
 def find_closest_location(lat, lon, places, n=3, filter_func=None):
     """
@@ -234,4 +231,8 @@ def find_closest_location(lat, lon, places, n=3, filter_func=None):
         filter_func = lambda p: True
 
     closest_places = nsmallest(n, places, key=lambda p: haversine_distance(lat, lon, p.data.latitude, p.data.longitude))
-    return [(place, haversine_distance(lat, lon, place.data.latitude, place.data.longitude)) for place in closest_places if filter_func(place)]
+    return [
+        (place, haversine_distance(lat, lon, place.data.latitude, place.data.longitude))
+        for place in closest_places
+        if filter_func(place)
+    ]

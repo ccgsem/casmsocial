@@ -13,7 +13,7 @@ from casmsocial.factory import Models
 
 # place types
 from casmsocial.household import Household
-from casmsocial.person import Person, PersonConfig, PersonData
+from casmsocial.person import BehaviorEngine, Person, PersonConfig, PersonData
 from casmsocial.place import PlaceConfig, PlaceData, RemotePlace
 from casmsocial.school import School
 from casmsocial.socialmodel import SIModel
@@ -22,14 +22,10 @@ from casmsocial.workplace import Workplace
 
 # 1. Define a SIModel-derived Class
 class ArtSocModel(SIModel):
-    """ ArtSocModel class """
+    """ArtSocModel class"""
 
-    def __init__(
-        self,
-        comm: MPI.Intracomm,
-        params: dict
-    ):
-        """ Constructor for the ArtSocModel class """
+    def __init__(self, comm: MPI.Intracomm, params: dict):
+        """Constructor for the ArtSocModel class"""
         super().__init__(comm, params)
 
     def initializePopulation(self) -> None:
@@ -38,48 +34,24 @@ class ArtSocModel(SIModel):
         logger.info("Registering place types...")
 
         SIModel.register_place_config(
-            PlaceConfig(
-                name='Household',
-                type=Household,
-                dataType=PlaceData,
-                personPlaceField='sp_hh_id'
-            )
+            PlaceConfig(name="Household", place_type=Household, dataType=PlaceData, personPlaceField="sp_hh_id")
         )
         SIModel.register_place_config(
-            PlaceConfig(
-                name='School',
-                type=School,
-                dataType=PlaceData,
-                personPlaceField='sp_school_id'
-            )
+            PlaceConfig(name="School", place_type=School, dataType=PlaceData, personPlaceField="sp_school_id")
         )
         SIModel.register_place_config(
-            PlaceConfig(
-                name='Workplace',
-                type=Workplace,
-                dataType=PlaceData,
-                personPlaceField='sp_work_id'
-            )
+            PlaceConfig(name="Workplace", place_type=Workplace, dataType=PlaceData, personPlaceField="sp_work_id")
         )
 
         # register the remote place type
         SIModel.register_remote_place_config(
-            PlaceConfig(
-                name='RemotePlace',
-                type=RemotePlace,
-                dataType=PlaceData,
-                personPlaceField=''
-            )
+            PlaceConfig(name="RemotePlace", place_type=RemotePlace, dataType=PlaceData, personPlaceField="")
         )
 
         # register the person types
         logger.info("Registering person type...")
         SIModel.register_person_config(
-            PersonConfig(
-                name='Person',
-                type=Person,
-                dataType=PersonData
-            )
+            PersonConfig(name="Person", person_type=Person, dataType=PersonData, behaviorEngine=BehaviorEngine)
         )
 
         logger.info("Now running initialize population for SIModel...")
@@ -88,13 +60,13 @@ class ArtSocModel(SIModel):
         # initialize the logging
         self.agent_logger = logging.TabularLogger(
             self.comm,
-            self.params['agent_log_file'],
+            self.params["agent_log_file"],
             [
-                'tick',
-                'agent_id',
-                'x',
-                'y',
-            ]
+                "tick",
+                "agent_id",
+                "x",
+                "y",
+            ],
         )
         self.log_agents()
 
@@ -103,11 +75,7 @@ class ArtSocModel(SIModel):
         tick = self.cal.hour_of_day
 
         for person in self.context.agents():
-
-            self.agent_logger.log_row(
-                tick,
-                person.id
-            )
+            self.agent_logger.log_row(tick, person.id)
 
         self.agent_logger.write()
 
@@ -117,6 +85,4 @@ class ArtSocModel(SIModel):
 
 
 # Register ArtSocModel
-Models.add_model(
-    ArtSocModel.__module__ + '.' + ArtSocModel.__name__,
-    ArtSocModel)
+Models.add_model(ArtSocModel.__module__ + "." + ArtSocModel.__name__, ArtSocModel)

@@ -4,9 +4,9 @@ from __future__ import annotations
 import math
 from collections import namedtuple
 from dataclasses import astuple, dataclass
-from loguru import logger
 from typing import NamedTuple
 
+from loguru import logger
 from mpi4py import MPI
 from repast4py import core
 from repast4py.space import ContinuousPoint as cpt
@@ -20,10 +20,40 @@ from casmsocial.place import PlacesProjection
 rank = MPI.COMM_WORLD.Get_rank()
 
 
+class BehaviorEngine:
+    """
+    A behavioral engine that governs the decision-making of a Person agent.
+    """
+
+    def __init__(self, agent: Person):
+        self.agent = agent
+        # self.social_network = social_network
+        # self.environment = environment
+
+    def decide(self):
+        """
+        Simulate decision-making based on the agent's attributes, social network, and environment.
+        """
+        pass
+        # temperature = self.environment.get("temperature", 20)
+        # precipitation = self.environment.get("precipitation", 0)
+        # social_influence = sum(friend.income for friend in self.social_network) / len(self.social_network) if self.social_network else 0
+
+        # if self.agent.age < 18:
+        #     self.agent.current_action = "Studying"
+        # elif self.agent.income + social_influence > 50000:
+        #     self.agent.current_action = "Investing"
+        # elif temperature < 0 and precipitation > 10:
+        #     self.agent.current_action = "Staying Indoors"
+        # else:
+        #     self.agent.current_action = "Working"
+
+
 # 1. Define a PersonData Class
 @dataclass(slots=True)
 class PersonData:
     """Data for a Person."""
+
     person_id: int
     place_id: int
     activity_id: int
@@ -42,30 +72,40 @@ class ChiSimPersonData:
 # 2. Define a Person Class
 # @dataclass(slots=True)
 class Person(core.Agent):
+    """Person class."""
+
+    # class variables
     TYPE = 0  # class variable
     __personDataClass: dataclass  # class variable
+    __behaviorEngine: BehaviorEngine  # class variable
 
+    # class methods
     @classmethod
     def registerPersonDataClass(cls, persondataclass: type[dataclass]) -> None:
         """Register Person dataclass."""
         cls.__personDataClass = persondataclass
+
     @classmethod
     def getPersonDataClass(cls) -> type[dataclass]:
         """Returns Person dataclass."""
         return cls.__personDataClass
+
+    @classmethod
+    def registerBehaviorEngine(cls, behaviorEngine: BehaviorEngine) -> None:
+        """Register Person behavior engine."""
+        cls.__behaviorEngine = behaviorEngine
+
+    @classmethod
+    def getBehaviorEngine(cls) -> BehaviorEngine:
+        """Returns Person behavior engine."""
+        return cls.__behaviorEngine
 
     # schedules: Optional[Schedules] = \
     #     field(default=tuple[Activities(0, tuple[0, 0, 0])])
     # places: Optional[list[int]] = field(default_factory=list)
     # currentPlaceID: Optional[str] = field(default=None)
 
-    def __init__(
-        self,
-        local_id: int,
-        rank: int,
-        schedules: Schedules,
-        places: namedtuple,
-        initDict: dict):
+    def __init__(self, local_id: int, rank: int, schedules: Schedules, places: namedtuple, initDict: dict):
         """Constructor for the Person class.
 
         Arguments:
@@ -85,43 +125,39 @@ class Person(core.Agent):
                 try to go to the place with the ID of places[0]
             initDict: A dictionary of initial values for the person
         """
-        super().__init__(
-            id=local_id,
-            type=Person.TYPE,
-            rank=rank)
+        super().__init__(id=local_id, type=Person.TYPE, rank=rank)
 
         # `location` is currently referenced required but not used
-        if 'x' not in initDict:
-            initDict['x'] = 0
-        if 'y' not in initDict:
-            initDict['y'] = 0
-        if math.isinf(initDict['x']) or math.isinf(initDict['y']):
-            initDict['x'] = 0
-            initDict['y'] = 0
+        if "x" not in initDict:
+            initDict["x"] = 0
+        if "y" not in initDict:
+            initDict["y"] = 0
+        if math.isinf(initDict["x"]) or math.isinf(initDict["y"]):
+            initDict["x"] = 0
+            initDict["y"] = 0
 
-        self.location = cpt(x=int(initDict['x']), y=int(initDict['y']), z=0)
+        self.location = cpt(x=int(initDict["x"]), y=int(initDict["y"]), z=0)
 
         self.schedules: Schedules = schedules
 
         # map input parameters to dict
-        initDict['person_id'] = local_id
-        initDict['place_id'] = places[0]
-        initDict['activity_id'] = 0
-        initDict['activities_idx'] = 0
+        initDict["person_id"] = local_id
+        initDict["place_id"] = places[0]
+        initDict["activity_id"] = 0
+        initDict["activities_idx"] = 0
         # initDict['location'] = starting_location
-        initDict['places'] = places
+        initDict["places"] = places
 
-        self.state = \
-            create_dataclass_record_from_dict(
-                Person.getPersonDataClass(),
-                initDict
-            )
+        self.state = create_dataclass_record_from_dict(Person.getPersonDataClass(), initDict)
 
         self.messages_outgoing: list[Message] = []
         self.messages_sent: list[Message] = []
         self.messages_incoming: list[Message] = []
 
-        #logger.debug(f"Person {self.id} is ready!")
+        # create the behavior engine
+        self.behavior_engine = Person.getBehaviorEngine()(self)
+
+        # logger.debug(f"Person {self.id} is ready!")
 
     @property
     def pt(self) -> cpt:
@@ -143,19 +179,14 @@ class Person(core.Agent):
             The saved state of this Person.
         """
         return (
-            self.uid,   # 0: uid is a tuple
-            self.schedules.data(),    # 1: schedules is a Schedules object
+            self.uid,  # 0: uid is a tuple
+            self.schedules.data(),  # 1: schedules is a Schedules object
             tuple(e for e in self.location.coordinates),  # 2: location
-            astuple(self.state)  # 3: state is a PersonData object
-            )
+            astuple(self.state),  # 3: state is a PersonData object
+        )
 
-    def move(
-            self,
-            cal: Calendar,
-            places_proj: PlacesProjection
-        ) -> bool:
-        """Move to the place indicated by the schedule for this tick.
-        """
+    def move(self, cal: Calendar, places_proj: PlacesProjection) -> bool:
+        """Move to the place indicated by the schedule for this tick."""
         success = False
         next_activity_id = self.selectNextPlace(cal)
         next_place_id = self.places[next_activity_id]
@@ -172,7 +203,7 @@ class Person(core.Agent):
             logger.debug(f"schedule = {self.schedules}")
             next_place_id = 0  # reset to home
 
-        place = places_proj.lookup_place(next_place_id) # place_map.get(next_place_id)
+        place = places_proj.lookup_place(next_place_id)  # place_map.get(next_place_id)
         if place is None:
             logger.debug(f"Place {next_place_id} not found.")
             logger.debug(f"places = {self.places}")
@@ -181,9 +212,7 @@ class Person(core.Agent):
         if place is not None:
             success = True
             self.state.place_id = next_place_id
-            logger.debug(
-               f"Rank {rank}: "
-               f"Agent {self.id} is moving to place {self.state.place_id}")
+            logger.debug(f"Rank {rank}: " f"Agent {self.id} is moving to place {self.state.place_id}")
             places_proj.move_agent_to_place(self, place)
         else:
             logger.debug(f"move for act {next_activity_id} to place {next_place_id} failed.")
@@ -192,17 +221,14 @@ class Person(core.Agent):
 
         return success
 
-    def selectActivities(self, cal: Calendar) ->  int:
-        """Select the activities for the time of day and day of week.
-        """
+    def selectActivities(self, cal: Calendar) -> int:
+        """Select the activities for the time of day and day of week."""
         activities_idx = self.state.activities_idx
         if activities_idx == 0 and cal.is_weekday() and len(self.schedules) > 1:
             activities_idx = 1
         return activities_idx
 
-    def selectNextPlace(
-            self,
-            cal: Calendar) -> int:
+    def selectNextPlace(self, cal: Calendar) -> int:
         """Select the next place to go to based on the schedule for time of
         day and day of week.
         """
@@ -233,12 +259,13 @@ class Person(core.Agent):
         pass
 
     def create_message(
-            self,
-            recipient: int,
-            message: str,
-            timestamp: str,
-            metadata: dict | None = None,
-            attachments: dict | None = None) -> Message:
+        self,
+        recipient: int,
+        message: str,
+        timestamp: str,
+        metadata: dict | None = None,
+        attachments: dict | None = None,
+    ) -> Message:
         """Create a message to send to other agents."""
         if attachments is None:
             attachments = {}
@@ -250,14 +277,14 @@ class Person(core.Agent):
             message=message,
             timestamp=timestamp,
             metadata=metadata,
-            attachments=attachments
+            attachments=attachments,
         )
 
         self.messages_outgoing.append(msg)
 
-        return(msg)
+        return msg
 
-    def send_messages(self)->list[Message]:
+    def send_messages(self) -> list[Message]:
         """Send messages to other agents."""
         outgoing_messages = self.messages_outgoing
         self.messages_sent.extend(outgoing_messages)
@@ -265,13 +292,13 @@ class Person(core.Agent):
 
         return outgoing_messages
 
-    def receive_message(self, message: Message)->bool:
+    def receive_message(self, message: Message) -> bool:
         """Process received messages."""
         self.messages_incoming.append(message)
 
         return True
 
-    def process_messages(self)->None:
+    def process_messages(self) -> None:
         """modify the state of the person based on the messages received."""
         for msg in self.messages_incoming:
             # process the message
@@ -329,24 +356,17 @@ class Person(core.Agent):
 # 3. Define a PersonConfig NamedTuple
 class PersonConfig(NamedTuple):
     name: str
-    type: type[Person]
+    person_type: type[Person]
     dataType: type[PersonData]
+    behaviorEngine: type[BehaviorEngine]
 
 
 # 4. test code
 def test_person():
     """Test the Person class."""
-    person_data = {
-        'person_id': 1,
-        'place_id': 0,
-        'activity_id': 0,
-        'places': [0, 1, 2]
-    }
+    person_data = {"person_id": 1, "place_id": 0, "activity_id": 0, "places": [0, 1, 2]}
 
-    person_data_class = dataclass(
-        PersonData,
-        frozen=True
-    )
+    person_data_class = dataclass(PersonData, frozen=True)
 
     Person.registerPersonDataClass(person_data_class)
 
@@ -356,7 +376,7 @@ def test_person():
         schedules=Schedules(),
         places=[0, 1, 2],
         starting_location=cpt(0, 0, 0),
-        initDict=person_data
+        initDict=person_data,
     )
 
     logger.debug(person)
@@ -369,6 +389,7 @@ def test_person():
 
     logger.debug("Person test passed.")
 
+
 def test_person_serialization(person: Person):
     logger.debug("Testing person serialization.")
     person_data = person.save()
@@ -376,6 +397,7 @@ def test_person_serialization(person: Person):
 
     restored_person = Person.restore(person_data)
     logger.debug(restored_person)
+
 
 def test_activities(person: Person):
     logger.debug("Testing activities.")
@@ -387,6 +409,7 @@ def test_activities(person: Person):
         logger.debug(f"Schedule {schedule_idx}:")
         for act in schedules[schedule_idx].acts:
             logger.debug(act)
+
 
 if __name__ == "__main__":
     test_person()

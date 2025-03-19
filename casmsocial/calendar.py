@@ -1,6 +1,6 @@
-
-class Calendar(object):
+class Calendar:
     """Calendar Class"""
+
     def __init__(self) -> None:
         self.__minute_of_day = 0
         self.__hour_of_day = 0
@@ -12,23 +12,23 @@ class Calendar(object):
     @property
     def minute_of_day(self):
         return self.__minute_of_day
-    
+
     @property
     def hour_of_day(self):
         return self.__hour_of_day
-    
+
     @property
     def day_of_week(self):
         return self.__day_of_week
-    
+
     @property
     def day_of_year(self):
         return self.__day_of_year
-    
+
     @property
     def year(self):
         return self.__year
-    
+
     def increment(self) -> None:
         """Increment the calendar by one hour."""
         self.__hour_of_day += 1
@@ -47,4 +47,3 @@ class Calendar(object):
     def is_weekday(self) -> bool:
         """Return True if it is a weekday."""
         return not (self.__day_of_week == 0 or self.__day_of_week == 6)
-
