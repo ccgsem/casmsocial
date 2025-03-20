@@ -28,24 +28,18 @@ class ArtSocModel(SIModel):
         """Constructor for the ArtSocModel class"""
         super().__init__(comm, params)
 
-    def initializePopulation(self) -> None:
+    def initialize_population(self) -> None:
         """Initialize population"""
         # register the place types
         logger.info("Registering place types...")
 
-        SIModel.register_place_config(
-            PlaceConfig(name="Household", place_type=Household, dataType=PlaceData, personPlaceField="sp_hh_id")
-        )
-        SIModel.register_place_config(
-            PlaceConfig(name="School", place_type=School, dataType=PlaceData, personPlaceField="sp_school_id")
-        )
-        SIModel.register_place_config(
-            PlaceConfig(name="Workplace", place_type=Workplace, dataType=PlaceData, personPlaceField="sp_work_id")
-        )
+        SIModel.register_place_config(PlaceConfig(name="Household", place_type=Household, dataType=PlaceData))
+        SIModel.register_place_config(PlaceConfig(name="School", place_type=School, dataType=PlaceData))
+        SIModel.register_place_config(PlaceConfig(name="Workplace", place_type=Workplace, dataType=PlaceData))
 
         # register the remote place type
         SIModel.register_remote_place_config(
-            PlaceConfig(name="RemotePlace", place_type=RemotePlace, dataType=PlaceData, personPlaceField="")
+            PlaceConfig(name="RemotePlace", place_type=RemotePlace, dataType=PlaceData)
         )
 
         # register the person types
@@ -55,7 +49,7 @@ class ArtSocModel(SIModel):
         )
 
         logger.info("Now running initialize population for SIModel...")
-        super().initializePopulation()
+        super().initialize_population()
 
         # initialize the logging
         self.agent_logger = logging.TabularLogger(

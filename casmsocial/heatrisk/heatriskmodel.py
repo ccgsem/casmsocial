@@ -10,13 +10,14 @@ from collections import deque, namedtuple
 from dataclasses import dataclass, field
 
 import pandas as pd
-from icecream import ic
+import repast4py.context as ctx
 from loguru import logger
 from mpi4py import MPI
 from repast4py import logging
 from repast4py.space import ContinuousPoint as cpt  # noqa: F401
 
-from casmsocial.activities import Act, Schedules
+from casmsocial.activities import Act
+from casmsocial.calendar import Calendar
 from casmsocial.datautility import get_attribute_names_from_data
 
 # model factory
@@ -71,9 +72,27 @@ class HeatRiskEnvironment(SimEnvironment):
         """Constructor for the HeatRiskEnvironment class."""
         super().__init__(name)
 
+        # load the heat index data
+        theModel = Model.get_model()
+        self.heatindex_by_hour_place_file_path = theModel.data_input_path / theModel.params["heatIndex.file"]
+        if self.heatindex_by_hour_place_file_path.exists():
+            logger.debug(f"Loading heat map places from {self.heatindex_by_hour_place_file_path}")
+        else:
+            logger.error(f"Error: Heat map places file {self.heatindex_by_hour_place_file_path} not found.")
+            exit(1)
+
+        # initialize the heat threshold
+        self._heat_threshold = 90.0
+        # self._heat_threshold = float(theModel.params['heat_threshold'])
+        # self.heat_indices = deque([float("nan")])
+
         self.environment_tuple = namedtuple("HeatRiskEnvironment", ["heatIndex", "heatIndexIndoors"])
         self.heatIndex_map: dict[int, float] = {}
         self.meanheatindex: float = float("nan")
+
+    @property
+    def heat_threshold(self) -> float:
+        return self._heat_threshold
 
     def setup(self) -> None:
         """Setup the environment."""
@@ -83,24 +102,19 @@ class HeatRiskEnvironment(SimEnvironment):
         """Teardown the environment."""
         pass
 
-    def update(self) -> None:
+    def step(self, context: ctx.SharedContext, cal: Calendar) -> None:
         """Update the environment."""
-        super().update()  # updates the social environment
+        super().step(context, cal)  # updates the social environment
 
         # now update the physical environment
-        theModel = Model.get_model()
-        logger.debug(f"Updating the environment for hour {theModel.cal.hour_of_day}")
-
-        if not theModel:
-            logger.debug("model is unavailable!")
-            return
+        logger.debug(f"Updating the environment for hour {cal.hour_of_day}")
 
         # update the heat indices
         heatindex_by_hour_place = (
             pd.read_parquet(
-                theModel.heatindex_by_hour_place_file_path,
+                self.heatindex_by_hour_place_file_path,
                 engine="pyarrow",
-                filters=[("time_hour", "=", theModel.cal.hour_of_day)],
+                filters=[("time_hour", "=", cal.hour_of_day)],
             )
             .loc[:, ["sp_id", "heatIndex"]]
             .dropna()
@@ -141,8 +155,6 @@ class HeatRiskEnvironment(SimEnvironment):
 class PlaceDataWithClimate(PlaceData):
     """Place with heat index data."""
 
-    heatIndex: float = float("nan")
-    heatIndexIndoors: float = float("nan")
     AIR: bool = False
     cooling_center: float = 0.0  # bool = False
 
@@ -153,21 +165,63 @@ class PersonDataWithHeatRisk(PersonData):
     """Data for a Person."""
 
     outside_worker: bool = False
-    heatIndices: deque = field(default_factory=lambda: deque([float("nan")]))
-    probHeatEvent: float = 0.0
+    heat_indices: deque = field(default_factory=lambda: deque([float("nan")]))
+    prob_heat_event: float = 0.0
 
 
-# 4. Define a PersonWithHeatRisk Class
-class PersonWithHeatRisk(Person):
-    """Person with heat risk data."""
+# 4. Define a HeatRiskBehaviorEngine Class
+class HeatRiskBehaviorEngine(BehaviorEngine):
+    """HeatRiskBehaviorEngine class"""
 
-    def __init__(self, local_id: int, rank: int, schedules: Schedules, places: list[int], initDict: dict):
-        """Constructor for the PersonWithHeatRisk class."""
-        super().__init__(local_id, rank, schedules, places, initDict)
+    def __init__(self, person: Person):
+        """Constructor for the HeatRiskBehaviorEngine class."""
+        super().__init__(person)
+
+    def decide(self, context: ctx.SharedContext, cal: Calendar) -> None:
+        """Decide what to do."""
+        # TODO (2025-02-26 jcline): implement this method
+        #   - This is where the person decides what to do
+        #   - This could be based on the heat index, probability of a heat event,
+        #     or other factors
+        #   - For now, we will return False
+
+        # get the heat index at the person's location
+        places_proj = context.get_projection("places_projection")
+        place = places_proj.get_place_for_agent(self.agent)
+        if not place:
+            logger.error(f"Person {self.agent.id} does not have a place")
+            return
+
+        environment = Model.get_model().get_environment()
+        environment_values = environment.get_values_at_place(place)
+        localHeatIndex = environment_values.heatIndexIndoors
+        if self.agent.state.outside_worker:
+            localHeatIndex = environment_values.heatIndex
+
+        self.agent.state.heat_indices.append(localHeatIndex)
+
+        # update the probability of a heat event
+        self.agent.state.prob_heat_event = self.compute_prob_heat_event(environment.heat_threshold)
+
+        if self.agent.state.prob_heat_event > 0.0001:
+            lat = place.data.latitude
+            lon = place.data.longitude
+            logger.debug(
+                f"Person {self.agent.id} at ({lat}, {lon}) has a probability of a heat event of {self.prob_heat_event}"
+            )
+
+            local_places = places_proj.get_local_places()
+            candidates = find_closest_location(lat, lon, local_places, n=3, filter_func=if_place_has_cooling_center)
+            for place, distance in candidates:
+                logger.debug(f"  closest cooling center {place.id} at {distance} km")
+
+            if self.consider_to_seek_cooling():
+                logger.debug(f"Person {self.agent.id} decided to seek cooling")
+                self.move_to_cooling_center(candidates[0][0], cal.hour_of_day)
 
     def compute_prob_heat_event(self, threshold: float) -> float:
         """Compute the probability of a heat event."""
-        heat_indices = self.state.heatIndices
+        heat_indices = self.agent.state.heat_indices
 
         # filter out all heat indices above the threshold
         heat_index = heat_indices[0]
@@ -210,79 +264,28 @@ class PersonWithHeatRisk(Person):
         activity_names = SIModel.get_activity_names()
         activity_id = activity_names.index("cooling_center")
 
-        schedule_names = [schedule.name for schedule in self.schedules.schedules]
+        person = self.agent
+
+        schedule_names = [schedule.name for schedule in person.schedules.schedules]
         schedule_idx = schedule_names.index("cooling_center")
-        if self.state.activities_idx == schedule_idx:
-            logger.debug(f"Person {self.id} is already in the cooling center schedule")
+        if self.agent.state.activities_idx == schedule_idx:
+            logger.debug(f"Person {person.id} is already in the cooling center schedule")
             return
 
         # need to modify the person's activities to include the cooling
-        activities_data = self.state.places
-        self.state.places = update_activities_data(activities_data, cooling_center=place.id)
+        activities_data = person.state.places
+        person.state.places = update_activities_data(activities_data, cooling_center=place.id)
 
-        act_go_to_cooling_center = Act(self.id, activity_id, 1.0, start_time, end_time)
+        act_go_to_cooling_center = Act(person.id, activity_id, 1.0, start_time, end_time)
 
         # add the activity to the schedule
-        self.schedules.schedules[schedule_idx].addAct(act_go_to_cooling_center)
-        logger.debug(f"Person {self.id} updated schedule to move to cooling center {place.id}")
-        for act in self.schedules.schedules[schedule_idx].acts:
+        person.schedules.schedules[schedule_idx].addAct(act_go_to_cooling_center)
+        logger.debug(f"Person {person.id} updated schedule to move to cooling center {place.id}")
+        for act in person.schedules.schedules[schedule_idx].acts:
             logger.debug(f"  {act}")
-        previous_schedule = self.state.activities_idx
-        self.state.activities_idx = schedule_idx
-        logger.debug(f"Person {self.id} moved to schedule {schedule_idx} from {previous_schedule}")
-
-    def step(self) -> None:
-        """Step the person forward one time step."""
-        super().step()
-
-        theModel = Model.get_model()
-        if theModel is not None:
-            place = theModel.places_proj.get_place_for_agent(self)
-        else:
-            logger.debug("model is unavailable!")
-            return
-
-        if not place:
-            logger.debug(f"=====>Person {self.id} is without a place!")
-            return
-
-        # update the heat index for the person
-        environment_values = theModel.get_environment().get_values_at_place(place)
-        ic(environment_values)
-        localHeatIndex = environment_values.heatIndexIndoors
-        if self.state.outside_worker:
-            localHeatIndex = environment_values.heatIndex
-
-        self.state.heatIndices.appendleft(localHeatIndex)
-
-        # update the probability of a heat event
-        self.state.probHeatEvent = self.compute_prob_heat_event(theModel.heat_threshold)
-
-        if self.state.probHeatEvent > 0.0001:
-            # find the closest cooling centers
-            current_hour = theModel.cal.hour_of_day
-            lat = place.data.latitude
-            lon = place.data.longitude
-            logger.debug(
-                f"Person {self.id} at ({lat},{lon}) is experiencing a heat event probability of {self.state.probHeatEvent} at hour {current_hour}"
-            )
-            local_places = theModel.places_proj.get_local_places()
-            candidates = find_closest_location(lat, lon, local_places, n=3, filter_func=if_place_has_cooling_center)
-            logger.debug(f"Person {self.id} is considering the following cooling centers:")
-            selection = None
-            for place, distance in candidates:
-                logger.debug(f"  {place.id} at ({place.data.latitude},{place.data.longitude}) is {distance} km away")
-                if selection is None:
-                    selection = place
-
-            if selection is not None:
-                logger.debug(f"Person {self.id} is moving to cooling center {selection.id}")
-                self.move_to_cooling_center(selection, current_hour)
-
-            if self.consider_to_seek_cooling():
-                logger.debug(f"Person {self.id} is seeking cooling")
-                if self.decide_to_seek_cooling():
-                    pass
+        previous_schedule = person.state.activities_idx
+        person.state.activities_idx = schedule_idx
+        logger.debug(f"Person {person.id} moved to schedule {schedule_idx} from {previous_schedule}")
 
 
 # 6. Define the HeatRiskModel class
@@ -293,20 +296,11 @@ class HeatRiskModel(SIModel):
         """Constructor for the HeatRiskModel class"""
         super().__init__(comm, params)
 
-        # load environment file
-        # heat_index_file_path = data_input_path / self.params['heat.index.file']
-        self.heatindex_by_hour_place_file_path = self.data_input_path / self.params["heatIndex.file"]
-        if self.heatindex_by_hour_place_file_path.exists():
-            logger.debug(f"Loading heat map places from {self.heatindex_by_hour_place_file_path}")
-        else:
-            logger.debug(f"Error: Heat map places file {self.heatindex_by_hour_place_file_path} not found.")
-            exit(1)
-
     @property
     def heat_threshold(self) -> float:
         return self._heat_threshold
 
-    def initializePopulation(self) -> None:
+    def initialize_population(self) -> None:
         """Initialize population"""
 
         # register the environment
@@ -314,33 +308,25 @@ class HeatRiskModel(SIModel):
 
         # register the place types
         SIModel.register_place_config(
-            PlaceConfig(
-                name="Household", place_type=Household, dataType=PlaceDataWithClimate, personPlaceField="sp_hh_id"
-            )
+            PlaceConfig(name="Household", place_type=Household, dataType=PlaceDataWithClimate)
         )
         SIModel.register_place_config(
-            PlaceConfig(
-                name="Workplace", place_type=Workplace, dataType=PlaceDataWithClimate, personPlaceField="sp_work_id"
-            )
+            PlaceConfig(name="Workplace", place_type=Workplace, dataType=PlaceDataWithClimate)
         )
-        SIModel.register_place_config(
-            PlaceConfig(
-                name="School", place_type=School, dataType=PlaceDataWithClimate, personPlaceField="sp_school_id"
-            )
-        )
+        SIModel.register_place_config(PlaceConfig(name="School", place_type=School, dataType=PlaceDataWithClimate))
 
         # register the remote place type
         SIModel.register_remote_place_config(
-            PlaceConfig(name="RemotePlace", place_type=RemotePlace, dataType=PlaceData, personPlaceField="")
+            PlaceConfig(name="RemotePlace", place_type=RemotePlace, dataType=PlaceData)
         )
 
         # register the person type
         SIModel.register_person_config(
             PersonConfig(
                 name="Person",
-                person_type=PersonWithHeatRisk,
+                person_type=Person,
                 dataType=PersonDataWithHeatRisk,
-                behaviorEngine=BehaviorEngine,
+                behaviorEngine=HeatRiskBehaviorEngine,
             )
         )
 
@@ -350,13 +336,10 @@ class HeatRiskModel(SIModel):
 
         logger.debug("Now running initialize population for SIModel...")
 
-        super().initializePopulation()
+        super().initialize_population()
 
         self._heat_threshold = 90.0
         # self._heat_threshold = float(self.params['heat_threshold'])
-
-        # initialize the heat threshold
-        self.heat_indices = deque([float("nan")])
 
         # check the first agent
         person = next(self.context.agents())
@@ -378,16 +361,18 @@ class HeatRiskModel(SIModel):
         # tick = self.runner.schedule.tick
         tick = self.cal.hour_of_day
 
+        heat_threshold = self.get_environment().heat_threshold
+
         for person in self.context.agents():
-            heat = filter_heat_indices(person.state.heatIndices, self.heat_threshold)
+            heat = filter_heat_indices(person.state.heat_indices, heat_threshold)
             self.agent_logger.log_row(
                 tick,
                 person.id,
                 person.pt.x,
                 person.pt.y,
-                person.state.heatIndices[0],
+                person.state.heat_indices[0],
                 len(heat),
-                person.state.probHeatEvent,
+                person.state.prob_heat_event,
             )
             # person.uid_rank, person.meet_count)
 

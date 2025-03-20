@@ -1,5 +1,9 @@
 from collections import namedtuple
 
+from repast4py.context import SharedContext
+
+from casmsocial.calendar import Calendar
+
 
 class Environment:
     """Base class for all environments"""
@@ -18,7 +22,7 @@ class Environment:
     def teardown(self) -> None:
         raise NotImplementedError("Subclasses should implement this method")
 
-    def update(self) -> None:
+    def step(self, context: SharedContext, cal: Calendar) -> None:
         raise NotImplementedError("Subclasses should implement this method")
 
     def get_values_at(self, x: float, y: float, z: float = 0.0) -> namedtuple:

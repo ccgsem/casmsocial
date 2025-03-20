@@ -6,6 +6,7 @@ from collections import namedtuple
 from dataclasses import astuple, dataclass
 from typing import NamedTuple
 
+import repast4py.context as ctx
 from loguru import logger
 from mpi4py import MPI
 from repast4py import core
@@ -30,7 +31,7 @@ class BehaviorEngine:
         # self.social_network = social_network
         # self.environment = environment
 
-    def decide(self):
+    def decide(self, context: ctx.SharedContext, cal: Calendar):
         """
         Simulate decision-making based on the agent's attributes, social network, and environment.
         """
@@ -307,8 +308,9 @@ class Person(core.Agent):
         self.messages_incoming = []
         self.messages_outgoing = []
 
-    def step(self):
-        pass
+    def step(self, context: ctx.SharedContext, cal: Calendar) -> None:
+        self.behavior_engine.decide(context, cal)
+        # self.move(cal, context.get_projection("places"))
 
     @classmethod
     def restore(cls, person_data: tuple) -> Person:

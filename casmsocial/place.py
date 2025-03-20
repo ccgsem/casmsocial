@@ -56,16 +56,12 @@ class Place:
     def pt(self) -> cpt:
         return self.location
 
-    def step(self):
-        pass
-
 
 # 3. Define a PlaceConfig NamedTuple
 class PlaceConfig(NamedTuple):
     name: str
     place_type: type[Place]
     dataType: PlaceData
-    personPlaceField: str
 
 
 # 4. Define a Custom Projection for Agent-Place Association
@@ -77,6 +73,7 @@ class PlacesProjection(SharedProjection):
             comm (MPI.Comm): The MPI communicator.
         """
         super().__init__(name, comm)
+        self.name = name
         self.agent_place_map = {}  # Map agents=>place
         self.place_agent_map = {}  # Map Place ID to list of agents
         self.place_map = {}  # Map place_id=>place

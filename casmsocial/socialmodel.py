@@ -37,6 +37,14 @@ class SimEnvironment(Environment):
     Creates a basic physical and social environment for the simulation.
     """
 
+    def __init__(self, name: str):
+        """Constructor for the SimEnvironment class.
+
+        Args:
+            name: The name of the environment.
+        """
+        super().__init__(name)
+
     def setup(self) -> None:
         """Set up the environment."""
         pass
@@ -45,14 +53,28 @@ class SimEnvironment(Environment):
         """Tear down the environment."""
         pass
 
-    def update(self) -> None:
+    def movePersons(self, context: ctx.SharedContext, cal: Calendar) -> None:
+        """Move all persons"""
+        # to_move = []
+        # next_place = Place()
+        countOfBadMoves = 0
+
+        places_proj = context.get_projection("places_projection")
+        for person in context.agents():
+            result = person.move(cal, places_proj)
+            if not result:
+                countOfBadMoves += 1
+
+        logger.debug(f"number of bad moves = {countOfBadMoves}")
+
+    def step(self, context: ctx.SharedContext, cal: Calendar) -> None:
         """Update the environment."""
-        theModel = Model.get_model()
+        # theModel = Model.get_model()
         # tick = self.runner.schedule.tick
 
         # move persons
-        theModel.movePersons()
-        theModel.context.synchronize(Person.restore)
+        self.movePersons(context, cal)
+        context.synchronize(Person.restore)
 
         # theModel.make_contacts(tick)
 
@@ -223,7 +245,7 @@ class SIModel(Model):
 
         # create the schedule
         self.runner = schedule.init_schedule_runner(self.comm)
-        self.runner.schedule_event(0, self.initializePopulation)
+        self.runner.schedule_event(0, self.initialize_population)
         self.runner.schedule_repeating_event(1, 1, self.step)
         # self.runner.schedule_repeating_event(1.1, 10, self.log_agents)
         self.runner.schedule_stop(self.params["stop.at"])
@@ -245,7 +267,7 @@ class SIModel(Model):
 
         self.data_input_path = data_input_path
 
-    def initializePopulation(self) -> None:
+    def initialize_population(self) -> None:
         """
         Initialize population
 
@@ -257,17 +279,18 @@ class SIModel(Model):
 
         # create SharedContext consisting of all of the places in this model
         self.places_proj = PlacesProjection("places_projection", self.comm)
+        self.context.add_projection(self.places_proj)
 
         # initialize the places
         place_filenames = [self.data_input_path / filename for filename in self.params["places.files"]]
 
         # self.place_map, self.local_places = self.createPlaces(
-        self.createPlaces(place_filenames)
+        self.create_places(place_filenames)
         local_places = self.places_proj.get_local_places()
         logger.debug(f"rank {self.rank}: number of local places={len(local_places)}")
 
         # activitiesMap is a dict of personID->Schedule object
-        activitiesMap = self.createActivities(self.data_input_path / self.params["activities.file"])
+        activitiesMap = self.create_activities(self.data_input_path / self.params["activities.file"])
 
         # contact_map is a dict of personID->{placeID->[personID]}
         # i.e. it is a map of personIDs to a list of contacted persons at each
@@ -276,7 +299,7 @@ class SIModel(Model):
         if "contact.file" in self.params:
             logger.debug("Loading contact file...")
 
-            self.contact_map = self.createContacts(self.data_input_path / self.params["contact.file"])
+            self.contact_map = self.create_contacts(self.data_input_path / self.params["contact.file"])
         else:
             logger.error("Error: contact file not specified.")
 
@@ -286,9 +309,9 @@ class SIModel(Model):
 
         # agent_id_map is a map of personID->repast4py.Agent.uid
         # self.person_id_map = {}
-        self.createPersons(self.data_input_path / self.params["persons.file"], activitiesMap, self.rng)
+        self.create_persons(self.data_input_path / self.params["persons.file"], activitiesMap, self.rng)
 
-    def createPersons(
+    def create_persons(
         self,
         personsFile: pathlib.Path,
         # placeMap: Dict,
@@ -389,7 +412,7 @@ class SIModel(Model):
                 self.places_proj.add(person)
                 self.places_proj.assign_agent_to_place(person, household)
 
-    def createPlacesFromFile(self, placeTypeIndex: int, placesFile: pathlib.Path) -> None:
+    def create_places_from_file(self, placeTypeIndex: int, placesFile: pathlib.Path) -> None:
         """
         Create places from the given file.
 
@@ -416,7 +439,7 @@ class SIModel(Model):
                 place = placeType(place_record, placeDataType)
                 self.places_proj.add_place(place)
 
-    def createPlaces(self, places_files: list[pathlib.Path]) -> None:
+    def create_places(self, places_files: list[pathlib.Path]) -> None:
         """
         Create places from the given files.
 
@@ -424,7 +447,7 @@ class SIModel(Model):
             places_files (list[pathlib.Path]): The list of place files.
         """
         for placeTypeIndex, placesFile in enumerate(places_files):
-            self.createPlacesFromFile(placeTypeIndex, placesFile)
+            self.create_places_from_file(placeTypeIndex, placesFile)
 
         # add a remote place
         remote_place = self.get_remote_place_config().place_type(
@@ -432,7 +455,7 @@ class SIModel(Model):
         )
         self.places_proj.add_place(remote_place)
 
-    def createActivities(self, activitiesFile: pathlib.Path) -> dict[int, list[int]]:
+    def create_activities(self, activitiesFile: pathlib.Path) -> dict[int, list[int]]:
         # activitiesMap looks like:
         # personID -> Activities object
         act_map = {}
@@ -453,7 +476,7 @@ class SIModel(Model):
 
         return act_map
 
-    def createContacts(self, contactFile: pathlib.Path) -> dict[int, dict[int, int]]:
+    def create_contacts(self, contactFile: pathlib.Path) -> dict[int, dict[int, int]]:
         # contactMap looks like:
         # personID -> { hour_of_day -> [ otherPersonIDs ] }
         # dict
@@ -476,19 +499,6 @@ class SIModel(Model):
 
         return contactMap
 
-    def movePersons(self) -> None:
-        """Move all persons"""
-        # to_move = []
-        # next_place = Place()
-        countOfBadMoves = 0
-
-        for person in self.context.agents():
-            result = person.move(self.cal, self.places_proj)
-            if not result:
-                countOfBadMoves += 1
-
-        logger.debug(f"number of bad moves = {countOfBadMoves}")
-
     def step(self) -> None:
         """Step the model forward one time step."""
 
@@ -504,7 +514,7 @@ class SIModel(Model):
         # 2025-02-26 jcline: this is a hack to get the person_id_map
         # self.get_local_ids()
 
-        self.get_environment().update()
+        self.get_environment().step(self.context, self.cal)
 
         # 2025-03-19 jcline: place.step method not implemented
         # for place in self.places_proj.get_local_places():
@@ -522,7 +532,7 @@ class SIModel(Model):
         # self.send_messages_between_agents()
 
         for person in self.context.agents():
-            person.step()
+            person.step(self.context, self.cal)
 
         self.log_agents()
 
