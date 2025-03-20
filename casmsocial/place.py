@@ -227,9 +227,10 @@ def find_closest_location(lat, lon, places, n=3, filter_func=None):
     if filter_func is None:
         filter_func = lambda p: True
 
-    closest_places = nsmallest(n, places, key=lambda p: haversine_distance(lat, lon, p.data.latitude, p.data.longitude))
+    places_of_interest = [place for place in places if filter_func(place)]
+    closest_places = nsmallest(
+        n, places_of_interest, key=lambda p: haversine_distance(lat, lon, p.data.latitude, p.data.longitude)
+    )
     return [
-        (place, haversine_distance(lat, lon, place.data.latitude, place.data.longitude))
-        for place in closest_places
-        if filter_func(place)
+        (place, haversine_distance(lat, lon, place.data.latitude, place.data.longitude)) for place in closest_places
     ]

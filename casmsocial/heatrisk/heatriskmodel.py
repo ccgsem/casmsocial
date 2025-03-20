@@ -9,6 +9,7 @@ Defining the heat risk model for the CASMSOCIAL/PRSIM project
 from collections import deque, namedtuple
 from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
 import repast4py.context as ctx
 from loguru import logger
@@ -167,57 +168,25 @@ class PersonDataWithHeatRisk(PersonData):
     outside_worker: bool = False
     heat_indices: deque = field(default_factory=lambda: deque([float("nan")]))
     prob_heat_event: float = 0.0
+    experienced_heat_event: bool = False
+    moved_to_cooling_center: bool = False
+    cooling_center_id: int = None
 
 
 # 4. Define a HeatRiskBehaviorEngine Class
 class HeatRiskBehaviorEngine(BehaviorEngine):
-    """HeatRiskBehaviorEngine class"""
+    """HeatRiskBehaviorEngine class
+
+    This class defines the behavior engine for a person in the heat risk model.
+
+    After the model has a probability of a heat event, the person decides to seek cooling.
+    - 1) prob
+    - 2) knowing the probability of
+    """
 
     def __init__(self, person: Person):
         """Constructor for the HeatRiskBehaviorEngine class."""
         super().__init__(person)
-
-    def decide(self, context: ctx.SharedContext, cal: Calendar) -> None:
-        """Decide what to do."""
-        # TODO (2025-02-26 jcline): implement this method
-        #   - This is where the person decides what to do
-        #   - This could be based on the heat index, probability of a heat event,
-        #     or other factors
-        #   - For now, we will return False
-
-        # get the heat index at the person's location
-        places_proj = context.get_projection("places_projection")
-        place = places_proj.get_place_for_agent(self.agent)
-        if not place:
-            logger.error(f"Person {self.agent.id} does not have a place")
-            return
-
-        environment = Model.get_model().get_environment()
-        environment_values = environment.get_values_at_place(place)
-        localHeatIndex = environment_values.heatIndexIndoors
-        if self.agent.state.outside_worker:
-            localHeatIndex = environment_values.heatIndex
-
-        self.agent.state.heat_indices.append(localHeatIndex)
-
-        # update the probability of a heat event
-        self.agent.state.prob_heat_event = self.compute_prob_heat_event(environment.heat_threshold)
-
-        if self.agent.state.prob_heat_event > 0.0001:
-            lat = place.data.latitude
-            lon = place.data.longitude
-            logger.debug(
-                f"Person {self.agent.id} at ({lat}, {lon}) has a probability of a heat event of {self.prob_heat_event}"
-            )
-
-            local_places = places_proj.get_local_places()
-            candidates = find_closest_location(lat, lon, local_places, n=3, filter_func=if_place_has_cooling_center)
-            for place, distance in candidates:
-                logger.debug(f"  closest cooling center {place.id} at {distance} km")
-
-            if self.consider_to_seek_cooling():
-                logger.debug(f"Person {self.agent.id} decided to seek cooling")
-                self.move_to_cooling_center(candidates[0][0], cal.hour_of_day)
 
     def compute_prob_heat_event(self, threshold: float) -> float:
         """Compute the probability of a heat event."""
@@ -234,8 +203,18 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         prob_heat_event = 1 - (1 - ((heat_index - threshold) / 80.0) ** 2) ** (3 * hours_above_threshold)
         return prob_heat_event
 
-    def consider_to_seek_cooling(self) -> bool:
-        """Decide to seek cooling."""
+    def decide_to_seek_cooling(self, context: ctx.SharedContext, cal: Calendar) -> bool:
+        """Decide to seek cooling.
+
+        Probability of a heat event has already been computed and the person has not experienced a heat event.
+
+        Arguments:
+            context: ctx.SharedContext: The shared context.
+            cal: Calendar: The calendar.
+
+        Returns:
+            bool: True if the person decides to seek cooling, False otherwise.
+        """
         # TODO (2025-02-26 jcline): implement this method
         #   - This is where the person decides to seek cooling
         #   - This could be based on the heat index, probability of a heat event,
@@ -243,15 +222,41 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         #   - Also looking at the place data for cooling centers and
         #     air conditioning - looking for the three closest places
         #   - For now, we will return False
-        return False
 
-    def decide_to_seek_cooling(self) -> bool:
-        """Decide to seek cooling."""
-        # TODO (2025-02-26 jcline): implement this method
+        # 1) get the location of the person
+        person = self.agent
+        places_proj = context.get_projection("places_projection")
+        place = places_proj.get_place_for_agent(person)
+        lat = place.data.latitude
+        lon = place.data.longitude
+
+        # 2) find the closest cooling center
+        local_places = places_proj.get_local_places()
+        candidates = find_closest_location(lat, lon, local_places, n=3, filter_func=if_place_has_cooling_center)
+        if len(candidates) == 0:
+            logger.error(f"No cooling centers found near person {self.agent.id}")
+            return False  # no cooling centers found
+        for place, distance in candidates:
+            logger.debug(f"  closest cooling center {place.id} at {distance} km")
+
+        # 3) decide to seek cooling
+        #    - inputs: probability of a heat event, heat index, distance to cooling center
+        #    - later, could add more factors
+        #    - for now, just move to the closest cooling center
+        seeking_cooling = np.random.rand() < self.agent.state.prob_heat_event
+        if seeking_cooling:
+            self.move_to_cooling_center(candidates[0][0], cal.hour_of_day)
+            return True
+
         return False
 
     def move_to_cooling_center(self, place: Place, current_hour: int) -> None:
-        """Move the person to a cooling center."""
+        """Move the person to a cooling center.
+
+        Arguments:
+            place: Place: The cooling center to move to.
+            current_hour: int: The current hour of the day.
+        """
 
         # find the next hour
         next_hour = current_hour + 1
@@ -269,7 +274,7 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         schedule_names = [schedule.name for schedule in person.schedules.schedules]
         schedule_idx = schedule_names.index("cooling_center")
         if self.agent.state.activities_idx == schedule_idx:
-            logger.debug(f"Person {person.id} is already in the cooling center schedule")
+            logger.error(f"Person {person.id} is already in the cooling center schedule")
             return
 
         # need to modify the person's activities to include the cooling
@@ -286,6 +291,58 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         previous_schedule = person.state.activities_idx
         person.state.activities_idx = schedule_idx
         logger.debug(f"Person {person.id} moved to schedule {schedule_idx} from {previous_schedule}")
+
+    def decide(self, context: ctx.SharedContext, cal: Calendar) -> None:
+        """Decide what to do."""
+        # TODO (2025-02-26 jcline): implement this method
+        #   - This is where the person decides what to do
+        #   - This could be based on the heat index, probability of a heat event,
+        #     or other factors
+
+        # check if the person has already experienced a heat event
+        if self.agent.state.experienced_heat_event:
+            logger.debug(f"Person {self.agent.id} has already experienced a heat event")
+            return
+
+        if self.agent.state.moved_to_cooling_center:
+            logger.debug(f"Person {self.agent.id} has already moved to a cooling center")
+            return
+
+        # get the heat index at the person's location
+        places_proj = context.get_projection("places_projection")
+        place = places_proj.get_place_for_agent(self.agent)
+        if not place:
+            logger.error(f"Person {self.agent.id} does not have a place")
+            return
+
+        environment = Model.get_model().get_environment()
+        environment_values = environment.get_values_at_place(place)
+
+        person = self.agent
+        local_heat_index = environment_values.heatIndexIndoors
+        if person.state.outside_worker:
+            local_heat_index = environment_values.heatIndex
+
+        person.state.heat_indices.appendleft(local_heat_index)
+
+        # update the probability of a heat event
+        person.state.prob_heat_event = self.compute_prob_heat_event(environment.heat_threshold)
+
+        # compute whether a heat event has occurred
+        if np.random.rand() < self.agent.state.prob_heat_event:
+            # if a heat event has occurred, set the flag and return
+            #   - This person has experienced a heat event, so they will not seek cooling
+            #   - This is a simplification for now - person will conitnue to act as if they have not experienced a heat event
+            #   - This person is now immune to future heat events
+            person.state.experienced_heat_event = True
+            logger.info(f"Person {self.agent.id} has experienced a heat event at hour {cal.hour_of_day}")
+            return
+
+        if self.decide_to_seek_cooling(context, cal):
+            logger.info(f"Person {self.agent.id} is seeking cooling at hour {cal.hour_of_day}")
+            return
+        else:
+            logger.debug(f"Person {self.agent.id} is not seeking cooling at hour {cal.hour_of_day}")
 
 
 # 6. Define the HeatRiskModel class
@@ -356,6 +413,27 @@ class HeatRiskModel(SIModel):
             ["tick", "agent_id", "x", "y", "heatIndex", "hrsAboveHeatThreshold", "probHeatEvent"],  # , 'meet_count']
         )
         self.log_agents()
+
+    def step(self) -> None:
+        """Step the model."""
+        super().step()
+        logger.info("Running step for HeatRiskModel")
+
+        # local_places = self.context.get_projection("places_projection").get_local_places()
+        # places_with_cooling_centers = [place for place in local_places if if_place_has_cooling_center(place)]
+        # logger.info(f"Number of cooling centers = {len(places_with_cooling_centers)}")
+
+        # agents_at_cooling_center = [person for person in self.context.agents() if person.state.activities_idx == 3]
+        # logger.info(f"Number of agents at cooling center = {len(agents_at_cooling_center)}")
+
+        # update the environment
+        # self.get_environment().step(self.context, self.cal)
+
+        # update the agents
+        # for person in self.context.agents():
+        #    person.behaviorEngine.decide(self.context, self.cal)
+
+        # self.log_agents()
 
     def log_agents(self) -> None:
         # tick = self.runner.schedule.tick

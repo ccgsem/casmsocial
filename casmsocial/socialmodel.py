@@ -6,6 +6,7 @@ Defining the SIModel
 """
 import os
 import pathlib
+import sys
 import time
 from collections import namedtuple
 from typing import ClassVar
@@ -232,6 +233,8 @@ class SIModel(Model):
             comm: the mpi communicator over which the model is distributed.
             params: the simulation input parameters
         """
+        logger.remove(0)
+        logger.add(sys.stderr, level="INFO")
         Model.set_model(self)
 
         logger.info("Creating SIModel...")
@@ -504,7 +507,7 @@ class SIModel(Model):
 
         self.cal.increment()
 
-        logger.debug(
+        logger.info(
             "Step on "
             f"day {self.cal.day_of_year}, "
             f"hour {self.cal.hour_of_day}, "
@@ -515,10 +518,6 @@ class SIModel(Model):
         # self.get_local_ids()
 
         self.get_environment().step(self.context, self.cal)
-
-        # 2025-03-19 jcline: place.step method not implemented
-        # for place in self.places_proj.get_local_places():
-        #    place.step()
 
         # sequence of actions
         # 1. sense physical environment

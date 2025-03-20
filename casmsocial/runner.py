@@ -13,7 +13,7 @@ def run(params: dict):
     logger.info(f"Retrieving model <{model_name}>...")
 
     for model in Models.get_models():
-        logger.debug(model)
+        logger.info(model)
 
     try:
         ModelCreator = Models.create_model(params["model.name"])  # get_casmsocial_model(params['model.name'])
