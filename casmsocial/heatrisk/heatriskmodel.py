@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 import repast4py.context as ctx
+from icecream import ic
 from loguru import logger
 from mpi4py import MPI
 from repast4py import logging
@@ -270,6 +271,11 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         activity_id = activity_names.index("cooling_center")
 
         person = self.agent
+        if person.state.moved_to_cooling_center:
+            logger.error(f"Person {person.id} has already moved to a cooling center")
+            return
+        person.state.moved_to_cooling_center = True
+        person.state.cooling_center_id = place.id
 
         schedule_names = [schedule.name for schedule in person.schedules.schedules]
         schedule_idx = schedule_names.index("cooling_center")
@@ -400,7 +406,7 @@ class HeatRiskModel(SIModel):
 
         # check the first agent
         person = next(self.context.agents())
-        logger.debug(f"person={person}")
+        ic(person)
         # test_person_serialization(person)
         # test_activities(person)
         # test_add_move_to_cooling_center(person)
@@ -410,7 +416,18 @@ class HeatRiskModel(SIModel):
         self.agent_logger = logging.TabularLogger(
             self.comm,
             self.params["agent_log_file"],
-            ["tick", "agent_id", "x", "y", "heatIndex", "hrsAboveHeatThreshold", "probHeatEvent"],  # , 'meet_count']
+            [
+                "tick",
+                "agent_id",
+                "x",
+                "y",
+                "heatIndex",
+                "hrsAboveHeatThreshold",
+                "probHeatEvent",
+                "experiencedHeatEvent",
+                "movedToCoolingCenter",
+                "coolingCenterId",
+            ],
         )
         self.log_agents()
 
@@ -418,22 +435,6 @@ class HeatRiskModel(SIModel):
         """Step the model."""
         super().step()
         logger.info("Running step for HeatRiskModel")
-
-        # local_places = self.context.get_projection("places_projection").get_local_places()
-        # places_with_cooling_centers = [place for place in local_places if if_place_has_cooling_center(place)]
-        # logger.info(f"Number of cooling centers = {len(places_with_cooling_centers)}")
-
-        # agents_at_cooling_center = [person for person in self.context.agents() if person.state.activities_idx == 3]
-        # logger.info(f"Number of agents at cooling center = {len(agents_at_cooling_center)}")
-
-        # update the environment
-        # self.get_environment().step(self.context, self.cal)
-
-        # update the agents
-        # for person in self.context.agents():
-        #    person.behaviorEngine.decide(self.context, self.cal)
-
-        # self.log_agents()
 
     def log_agents(self) -> None:
         # tick = self.runner.schedule.tick
@@ -451,6 +452,9 @@ class HeatRiskModel(SIModel):
                 person.state.heat_indices[0],
                 len(heat),
                 person.state.prob_heat_event,
+                person.state.experienced_heat_event,
+                person.state.moved_to_cooling_center,
+                person.state.cooling_center_id,
             )
             # person.uid_rank, person.meet_count)
 

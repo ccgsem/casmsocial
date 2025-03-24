@@ -35,6 +35,13 @@ To build a Docker image for `casmsocial`:
     ```
 
 ## Launch the modeling environment:
+First create the virtual environments with
+
+```bash
+% python -m venv .vent
+```
+
+To launch the virtualenv, run
 
 ```bash
 % source ./.venv/bin/activate
