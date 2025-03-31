@@ -92,6 +92,9 @@ class HeatRiskEnvironment(SimEnvironment):
         self.heatIndex_map: dict[int, float] = {}
         self.meanheatindex: float = float("nan")
 
+        self.closest_cooling_station = dict[int, list[tuple[Place, float]]]
+        self.cooling_stations = dict[int, list[tuple[Place, float]]]
+
     @property
     def heat_threshold(self) -> float:
         return self._heat_threshold
@@ -150,6 +153,28 @@ class HeatRiskEnvironment(SimEnvironment):
             heatIndexIndoors = 72
 
         return self.environment_tuple(heatIndex=heatIndex, heatIndexIndoors=heatIndexIndoors)
+
+    def get_closest_cooling_station(
+        self, place: Place, local_places: list[Place], n: int = 3
+    ) -> list[tuple[Place, float]]:
+        """Get the closest cooling station.
+
+        Arguments:
+            lat: float: The latitude of the person.
+            lon: float: The longitude of the person.
+            local_places: list[Place]: The list of places to search.
+            n: int: The number of closest places to return.
+
+        Returns:
+            list[tuple[Place, float]]: The closest cooling stations.
+        """
+        if place.id in self.closest_cooling_station:
+            return self.closest_cooling_station[place.id]
+        lat = place.data.latitude
+        lon = place.data.longitude
+        candidates = find_closest_location(lat, lon, local_places, n=n, filter_func=if_place_has_cooling_center)
+        self.closest_cooling_station[place.id] = candidates
+        return candidates
 
 
 # 2. Define a PlaceData Class
@@ -222,18 +247,27 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         #     or other factors
         #   - Also looking at the place data for cooling centers and
         #     air conditioning - looking for the three closest places
-        #   - For now, we will return False
+
+        consider_seeking_cooling = np.random.rand() < self.agent.state.prob_heat_event
+        if not consider_seeking_cooling:
+            return False
+
+        logger.info(f"Person {self.agent.id} is considering seeking cooling")
 
         # 1) get the location of the person
         person = self.agent
         places_proj = context.get_projection("places_projection")
-        place = places_proj.get_place_for_agent(person)
+        place = places_proj.lookup_place(person.currentPlaceID)  # get_place_for_agent(person)
         lat = place.data.latitude
         lon = place.data.longitude
 
         # 2) find the closest cooling center
         local_places = places_proj.get_local_places()
+        return False
+
         candidates = find_closest_location(lat, lon, local_places, n=3, filter_func=if_place_has_cooling_center)
+        # candidates = \
+        #    Model.get_model().get_environment().get_closest_cooling_station(place, local_places, n=3)
         if len(candidates) == 0:
             logger.error(f"No cooling centers found near person {self.agent.id}")
             return False  # no cooling centers found
@@ -316,7 +350,7 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
 
         # get the heat index at the person's location
         places_proj = context.get_projection("places_projection")
-        place = places_proj.get_place_for_agent(self.agent)
+        place = places_proj.lookup_place(self.agent.currentPlaceID)
         if not place:
             logger.error(f"Person {self.agent.id} does not have a place")
             return
