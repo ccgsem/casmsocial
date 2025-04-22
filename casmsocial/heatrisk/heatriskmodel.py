@@ -196,6 +196,7 @@ class PersonDataWithHeatRisk(PersonData):
     prob_heat_event: float = 0.0
     experienced_heat_event: bool = False
     moved_to_cooling_center: bool = False
+    heat_event_place_id: int = None
     cooling_center_id: int = None
 
 
@@ -262,17 +263,25 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         lon = place.data.longitude
 
         # 2) find the closest cooling center
-        local_places = places_proj.get_local_places()
-        return False
+        searching_for_cooling = False
+        cooling_center_candidate = None
+        if searching_for_cooling:
+            local_places = places_proj.get_local_places()
 
-        candidates = find_closest_location(lat, lon, local_places, n=3, filter_func=if_place_has_cooling_center)
-        # candidates = \
-        #    Model.get_model().get_environment().get_closest_cooling_station(place, local_places, n=3)
-        if len(candidates) == 0:
-            logger.error(f"No cooling centers found near person {self.agent.id}")
-            return False  # no cooling centers found
-        for place, distance in candidates:
-            logger.debug(f"  closest cooling center {place.id} at {distance} km")
+            candidates = find_closest_location(lat, lon, local_places, n=3, filter_func=if_place_has_cooling_center)
+            # candidates = \
+            #    Model.get_model().get_environment().get_closest_cooling_station(place, local_places, n=3)
+            if len(candidates) == 0:
+                logger.error(f"No cooling centers found near person {self.agent.id}")
+                return False  # no cooling centers found
+            for place, distance in candidates:
+                logger.debug(f"  closest cooling center {place.id} at {distance} km")
+
+            # selecting the first one for now
+            cooling_center_candidate = candidates[0][0]
+        else:
+            # just use the person's current place as the cooling center
+            cooling_center_candidate = place
 
         # 3) decide to seek cooling
         #    - inputs: probability of a heat event, heat index, distance to cooling center
@@ -280,7 +289,7 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         #    - for now, just move to the closest cooling center
         seeking_cooling = np.random.rand() < self.agent.state.prob_heat_event
         if seeking_cooling:
-            self.move_to_cooling_center(candidates[0][0], cal.hour_of_day)
+            self.move_to_cooling_center(cooling_center_candidate, cal.hour_of_day)
             return True
 
         return False
@@ -289,10 +298,9 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         """Move the person to a cooling center.
 
         Arguments:
-            place: Place: The cooling center to move to.
+            place: Place: The cooling center to move to is available.
             current_hour: int: The current hour of the day.
         """
-
         # find the next hour
         next_hour = current_hour + 1
         start_time = next_hour * 60
@@ -375,10 +383,13 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
             #   - This is a simplification for now - person will conitnue to act as if they have not experienced a heat event
             #   - This person is now immune to future heat events
             person.state.experienced_heat_event = True
+            person.state.heat_event_place_id = place.id
+
             logger.info(f"Person {self.agent.id} has experienced a heat event at hour {cal.hour_of_day}")
             return
 
         if self.decide_to_seek_cooling(context, cal):
+            person.state.heat_event_place_id = place.id
             logger.info(f"Person {self.agent.id} is seeking cooling at hour {cal.hour_of_day}")
             return
         else:
@@ -460,6 +471,7 @@ class HeatRiskModel(SIModel):
                 "probHeatEvent",
                 "experiencedHeatEvent",
                 "movedToCoolingCenter",
+                "heatEventPlaceId",
                 "coolingCenterId",
             ],
         )
@@ -488,6 +500,7 @@ class HeatRiskModel(SIModel):
                 person.state.prob_heat_event,
                 person.state.experienced_heat_event,
                 person.state.moved_to_cooling_center,
+                person.state.heat_event_place_id,
                 person.state.cooling_center_id,
             )
             # person.uid_rank, person.meet_count)

@@ -233,7 +233,7 @@ class SIModel(Model):
             comm: the mpi communicator over which the model is distributed.
             params: the simulation input parameters
         """
-        logger.remove(0)
+        # logger.remove(0)
         logger.add(sys.stderr, level="INFO")
         Model.set_model(self)
 
