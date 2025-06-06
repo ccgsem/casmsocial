@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
+import polars as pl
 import repast4py.context as ctx
 from icecream import ic
 from loguru import logger
@@ -456,6 +457,8 @@ class HeatRiskModel(SIModel):
         # test_activities(person)
         # test_add_move_to_cooling_center(person)
         # test_activities(person)
+        # set up polars table for the agents
+        self.agent_data = pl.DataFrame()
 
         # initialize the logging
         self.agent_logger = logging.TabularLogger(

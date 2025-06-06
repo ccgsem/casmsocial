@@ -13,7 +13,7 @@ from typing import ClassVar
 
 import pyarrow.parquet as pq
 import repast4py
-from dotenv import find_dotenv, load_dotenv
+from dotenv import load_dotenv
 from loguru import logger
 from mpi4py import MPI
 from repast4py import context as ctx
@@ -263,7 +263,7 @@ class SIModel(Model):
 
         # the data input path should be defined by $CASMSOCIAL_DATA_PATH
         # load $CASMSOCIAL_DATA_PATH from .env
-        load_dotenv(find_dotenv())
+        load_dotenv()
         data_input_path = os.environ.get("CASMSOCIAL_DATA_PATH")
 
         data_input_path = pathlib.Path.cwd() if not data_input_path else pathlib.Path(data_input_path)
@@ -513,6 +513,8 @@ class SIModel(Model):
             f"hour {self.cal.hour_of_day}, "
             f"minute {self.cal.minute_of_day}"
         )
+
+        return
 
         # 2025-02-26 jcline: this is a hack to get the person_id_map
         # self.get_local_ids()
