@@ -71,6 +71,8 @@ class HeatRiskEnvironment(SimEnvironment):
     def __init__(self, name: str):
         """Constructor for the HeatRiskEnvironment class."""
         super().__init__(name)
+        self.__heat_threshold = 90.0  # default heat threshold in Fahrenheit
+        return
 
         # load the heat index data
         theModel = Model.get_model()
@@ -111,6 +113,7 @@ class HeatRiskEnvironment(SimEnvironment):
 
         # now update the physical environment
         logger.debug(f"Updating the environment for hour {cal.hour_of_day}")
+        return
 
         # update the heat indices
         heatindex_by_hour_place = (
@@ -144,12 +147,14 @@ class HeatRiskEnvironment(SimEnvironment):
             namedtuple: The value at the place.
         """
 
-        heatIndex = self.heatIndex_map.get(place.id, self.meanheatindex)
-        heatIndexIndoors = heatIndex
+        # heatIndex = self.heatIndex_map.get(place.id, self.meanheatindex)
+        # heatIndexIndoors = heatIndex
 
-        if "AIR" in get_attribute_names_from_data(place.data) and place.data.AIR:
-            heatIndexIndoors = 72
+        # if "AIR" in get_attribute_names_from_data(place.data) and place.data.AIR:
+        #     heatIndexIndoors = 72
 
+        heatIndex = 72.0
+        heatIndexIndoors = 72.0
         return self.environment_tuple(heatIndex=heatIndex, heatIndexIndoors=heatIndexIndoors)
 
     def get_closest_cooling_station(
@@ -166,12 +171,13 @@ class HeatRiskEnvironment(SimEnvironment):
         Returns:
             list[tuple[Place, float]]: The closest cooling stations.
         """
-        if place.id in self.closest_cooling_station:
-            return self.closest_cooling_station[place.id]
-        lat = place.data.latitude
-        lon = place.data.longitude
-        candidates = find_closest_location(lat, lon, local_places, n=n, filter_func=if_place_has_cooling_center)
-        self.closest_cooling_station[place.id] = candidates
+        # if place.id in self.closest_cooling_station:
+        #     return self.closest_cooling_station[place.id]
+        # lat = place.data.latitude
+        # lon = place.data.longitude
+        # candidates = find_closest_location(lat, lon, local_places, n=n, filter_func=if_place_has_cooling_center)
+        # self.closest_cooling_station[place.id] = candidates
+        candidates = []
         return candidates
 
 
@@ -344,6 +350,7 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         #   - This is where the person decides what to do
         #   - This could be based on the heat index, probability of a heat event,
         #     or other factors
+        return
 
         # check if the person has already experienced a heat event
         if self.agent.state.experienced_heat_event:
@@ -483,6 +490,8 @@ class HeatRiskModel2(SIModel):
     def log_agents(self) -> None:
         # tick = self.runner.schedule.tick
         tick = self.cal.hour_of_day
+
+        return
 
         heat_threshold = self.get_environment().heat_threshold
 

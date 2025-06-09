@@ -11,7 +11,7 @@ timezone: 'America/New_York'
 time.step.minutes: 15
 places.file: 'data/processed/wake_county_30/abm_inputs/places.parquet'
 activities.file: 'data/processed/wake_county_30/abm_inputs/activities.parquet'
-persons.file: 'data/processed/wake_county_30/abm_inputs//persons.parquet
+persons.file: 'data/processed/wake_county_30/abm_inputs/persons.parquet'
 environment.file: 'data/processed/wake_county_prism_fulltest/environment.parquet'
 heat_threshold: 90
 agent_log_file: 'output/agent_log.csv'

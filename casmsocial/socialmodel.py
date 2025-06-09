@@ -50,6 +50,11 @@ class InvalidPlacesFilesError(Exception):
         super().__init__(f"places.files must be a list of filenames, got: {value}")
 
 
+class InvalidTableNameError(Exception):
+    def __init__(self, table_name):
+        super().__init__(f"Invalid table name: {table_name}")
+
+
 # note: place types are set by derived Model classes
 
 
@@ -87,7 +92,7 @@ class SimEnvironment(Environment):
             if not result:
                 countOfBadMoves += 1
 
-        logger.debug(f"number of bad moves = {countOfBadMoves}")
+        logger.info(f"number of bad moves = {countOfBadMoves}")
 
     def step(self, context: ctx.SharedContext, cal: Calendar) -> None:
         """Update the environment."""
@@ -331,6 +336,24 @@ class SIModel(Model):
         data_input_path = pathlib.Path.cwd() if not data_input_path else pathlib.Path(data_input_path)
         self.data_input_path = data_input_path
 
+        # create a DuckDB connection for in-memory operations
+        self.conn = duckdb.connect(database=":memory:", read_only=False)
+        self.queries = {
+            "get_tables": "SHOW TABLES",
+            "get_table_schema": "DESCRIBE {table_name}",
+            "hh": "SELECT * FROM hh",
+            "work": "SELECT * FROM work",
+            "sch": "SELECT * FROM sch",
+            "create_places": """
+                CREATE TABLE places AS
+                SELECT * FROM hh
+                UNION BY NAME
+                SELECT * FROM work
+                UNION BY NAME
+                SELECT * FROM sch;
+                """,
+        }
+
     def _validate_and_set_required_params(self):
         """Validate and set required parameters."""
         required_keys = ["persons.file", "activities.file"]
@@ -433,9 +456,6 @@ class SIModel(Model):
         # create SharedContext consisting of all of the places in this model
         self.places_proj = PlacesProjection("places_projection", self.comm)
         self.context.add_projection(self.places_proj)
-
-        # create a DuckDB connection for in-memory operations
-        self.conn = duckdb.connect(database=":memory:", read_only=False)
 
         # initialize the places
         if "places.file" in self.params and self.params["places.file"] is not None:
@@ -540,9 +560,8 @@ class SIModel(Model):
                 household = self.places_proj.lookup_place(hhId)
                 if not household:
                     logger.error(f"Error: No household found for {p}")
-                    # continue
+                    continue
 
-                print(f"Household {hhId} for person {personID} is {household}")
                 rank = household.rank
 
                 if rank != self.rank:
@@ -597,8 +616,23 @@ class SIModel(Model):
         placeType = placeConfig.place_type
         placeDataType = placeConfig.dataType
 
-        # load the places from the file
+        table_names = ["hh", "work", "sch"]
+        table_name = table_names[placeTypeIndex]
+        print(
+            f"Creating places of type {placeConfig.name} from {placesFile}:"
+            f" {placeType.__name__} with data type {placeDataType.__name__}"
+            f" and table name {table_name}"
+        )
         table = pq.read_table(placesFile)
+        # Register the PyArrow table as a DuckDB view
+        self.conn.register("my_temp_view", table)
+
+        # Use that view in your CREATE TABLE AS query
+        query = f'CREATE OR REPLACE TABLE "{table_name}" AS SELECT * FROM my_temp_view'  # noqa: S608
+        self.conn.execute(query)
+
+        # Optionally fetch the result (if needed)
+        # result = self.conn.table(table_name).arrow()
 
         for batch in table.to_batches():
             for row in zip(*batch.columns):
@@ -619,6 +653,21 @@ class SIModel(Model):
         """
         for placeTypeIndex, placesFile in enumerate(places_files):
             self.create_places_from_file(placeTypeIndex, placesFile)
+
+        # create the places table
+        logger.info("Creating places table...")
+        self.conn.execute(self.queries["create_places"])
+        # verify the places table was created
+        # if not self.conn.table("places").exists():
+        # logger.error("Error: places table was not created.")
+        # raise InvalidTableNameError("places")
+        # show the tables to verify creation
+        logger.info("Showing tables after creating places...")
+        result = self.conn.execute("SHOW TABLES").fetchall()  # Show tables to verify creation
+        logger.info(f"Created tables: {result}")
+
+        places_df = self.conn.query("SELECT * FROM places").pl()
+        logger.info(f"Number of places created: {len(places_df)}")
 
         # add a remote place
         remote_place = self.get_remote_place_config().place_type(
