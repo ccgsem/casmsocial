@@ -48,6 +48,10 @@ class ArtSocModel(SIModel):
             PersonConfig(name="Person", person_type=Person, dataType=PersonData, behaviorEngine=BehaviorEngine)
         )
 
+        # register the activities
+        SIModel.register_planned_activity_names(["sp_hh_id", "sp_work_id", "sp_school_id"])
+        SIModel.register_activity_names(["home", "work", "school"])
+
         logger.info("Now running initialize population for SIModel...")
         super().initialize_population()
 

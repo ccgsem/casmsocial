@@ -6,11 +6,13 @@ Defining the SIModel
 """
 import os
 import pathlib
-import sys
 import time
 from collections import namedtuple
+from datetime import datetime
 from typing import ClassVar
+from zoneinfo import ZoneInfo
 
+import duckdb
 import pyarrow.parquet as pq
 import repast4py
 from dotenv import load_dotenv
@@ -22,14 +24,33 @@ from repast4py import schedule
 from casmsocial.activities import Act, Activities, Schedules
 from casmsocial.calendar import Calendar
 from casmsocial.datautility import convert_to_int
+from casmsocial.date_utilities import get_closest_monday, get_midnight
 from casmsocial.environment import Environment
-
-# note: place types are set by derived Model classes
 from casmsocial.factory import Models
 from casmsocial.message import Message
 from casmsocial.model import Model
 from casmsocial.person import Person, PersonConfig, person_cache
 from casmsocial.place import Place, PlaceConfig, PlacesProjection
+from casmsocial.sim_time import SimTime
+
+
+class MissingRequiredParameterError(Exception):
+    def __init__(self, keys):
+        keys_str = ", ".join(str(k) for k in keys) if isinstance(keys, (list, tuple)) else str(keys)
+        super().__init__(f"Missing required parameter(s): {keys_str}")
+
+
+class InvalidTimeStepError(Exception):
+    def __init__(self, value):
+        super().__init__(f"Invalid time step value: {value}. Time step must be an integer.")
+
+
+class InvalidPlacesFilesError(Exception):
+    def __init__(self, value):
+        super().__init__(f"places.files must be a list of filenames, got: {value}")
+
+
+# note: place types are set by derived Model classes
 
 
 class SimEnvironment(Environment):
@@ -108,14 +129,17 @@ class SIModel(Model):
 
     # class variables
 
-    # list of places configurations
+    # list of places configurations (deprecated)
     __placeConfigs: ClassVar[list[PlaceConfig]] = []
 
-    # remote place configuration
+    # remote place configuration (deprecated)
     __remote_place_config: PlaceConfig = None
 
+    # list of place_types names (replaces __placeConfigs)
+    __place_type_names: ClassVar[list[str]] = []
+
     # person configuration
-    __person_config: PersonConfig = None
+    __person_config: ClassVar[PersonConfig] = None
 
     # list of planned activities (column names in the person file for activities)
     __planned_activity_names: ClassVar[list[str]] = []
@@ -130,21 +154,26 @@ class SIModel(Model):
     __environment: Environment = None
 
     # class methods
+
+    # Register a place configuration. (deprecated)
     @classmethod
     def register_place_config(cls, config: PlaceConfig) -> None:
         """Register a place configuration."""
         cls.__placeConfigs.append(config)
 
+    # Get the list of place configurations. (deprecated)
     @classmethod
     def get_place_configs(cls) -> list[PlaceConfig]:
         """Get the list of place configurations."""
         return cls.__placeConfigs
 
+    # Get a specific place configuration by index. (deprecated)
     @classmethod
     def get_place_config(cls, idx: int) -> PlaceConfig:
         """Get a PlacesConfig from the list of configs."""
         return cls.__placeConfigs[idx]
 
+    # Get a specific place configuration by name. (deprecated)
     @classmethod
     def get_place_config_idx(cls, name: str) -> int:
         """Get the index of a PlacesConfig in the list of configs."""
@@ -153,25 +182,48 @@ class SIModel(Model):
                 return idx
         return -1
 
+    # Get the name of a specific place configuration by index. (deprecated)
     @classmethod
     def get_place_config_name(cls, idx: int) -> str:
         """Get the name of a PlacesConfig in the list of configs."""
         return cls.__placeConfigs[idx].name
 
+    # Get the names of all place configurations. (deprecated)
     @classmethod
     def get_all_place_config_names(cls) -> list[str]:
         """Get the names of all PlacesConfig in the list of configs."""
         return [config.name for config in cls.__placeConfigs]
 
+    # Register a remote place configuration. (deprecated)
     @classmethod
     def register_remote_place_config(cls, config: PlaceConfig) -> None:
         """Register a remote place configuration."""
         cls.__remote_place_config = config
 
+    # Get the remote place configuration. (deprecated)
     @classmethod
     def get_remote_place_config(cls) -> PlaceConfig:
         """Get the remote place configuration."""
         return cls.__remote_place_config
+
+    @classmethod
+    def register_place_names(cls, place_names: list[str]) -> None:
+        """Register place names.
+
+        Args:
+            place_names (list[str]): The list of place type names.
+        """
+        cls.__place_type_names = place_names
+
+    @classmethod
+    def get_places_names(cls) -> list[str]:
+        """Get the names of all registered place types.
+        Returns:
+            list[str]: The list of place type names.
+        """
+        if not cls.__place_type_names:
+            cls.__place_type_names = [config.name for config in cls.__placeConfigs]
+        return cls.__place_type_names
 
     @classmethod
     def register_person_config(cls, config: PersonConfig) -> None:
@@ -233,8 +285,6 @@ class SIModel(Model):
             comm: the mpi communicator over which the model is distributed.
             params: the simulation input parameters
         """
-        # logger.remove(0)
-        logger.add(sys.stderr, level="INFO")
         Model.set_model(self)
 
         logger.info("Creating SIModel...")
@@ -246,29 +296,129 @@ class SIModel(Model):
         # start timer
         self.start_time = time.time()
 
+        self._validate_and_set_required_params()
+        self._set_optional_params_with_defaults()
+        self._remove_deprecated_params()
+        self._compute_ticks()
+
+        logger.info(f"Rank {self.rank} starting SIModel with params: {self.params}")
+
         # create the schedule
         self.runner = schedule.init_schedule_runner(self.comm)
         self.runner.schedule_event(0, self.initialize_population)
         self.runner.schedule_repeating_event(1, 1, self.step)
-        # self.runner.schedule_repeating_event(1.1, 10, self.log_agents)
-        self.runner.schedule_stop(self.params["stop.at"])
+        self.runner.schedule_stop(self.params["ticks"])
         self.runner.schedule_end_event(self.at_end)
 
-        self.steps_per_day = int(self.params["steps.per.day"])
-        self.cal = Calendar()
+        # set the start datetime and timezone
+        start_datetime = datetime.strptime(self.params["start.datetime"], "%Y-%m-%d %H:%M:%S")
+        tz = ZoneInfo(self.params["timezone"])
+        start_datetime = start_datetime.replace(tzinfo=tz)
+
+        # initialize the simulation time
+        self.cal = SimTime(start_datetime=start_datetime)
+
+        # set the time step in minutes
+        self.time_step_minutes = self.params["time.step.minutes"]
 
         # create the context to hold the agents and manage cross process
         # synchronization
         self.context = ctx.SharedContext(self.comm)
 
         # the data input path should be defined by $CASMSOCIAL_DATA_PATH
-        # load $CASMSOCIAL_DATA_PATH from .env
         load_dotenv()
         data_input_path = os.environ.get("CASMSOCIAL_DATA_PATH")
-
         data_input_path = pathlib.Path.cwd() if not data_input_path else pathlib.Path(data_input_path)
-
         self.data_input_path = data_input_path
+
+    def _validate_and_set_required_params(self):
+        """Validate and set required parameters."""
+        required_keys = ["persons.file", "activities.file"]
+        for key in required_keys:
+            if key not in self.params:
+                logger.error(f"Missing required parameter: {key}")
+                raise MissingRequiredParameterError(key)
+
+    def _set_optional_params_with_defaults(self):
+        """Set optional parameters with default values if not provided."""
+        optional_keys = [
+            "start.datetime",
+            "duration.hours",
+            "timezone",
+            "time.step.minutes",
+            "places.file",
+            "places.files",
+            "contacts.file",
+        ]
+        for key in optional_keys:
+            if key not in self.params:
+                logger.warning(f"Optional parameter {key} not found, using default value.")
+                self.params[key] = None
+
+        self._set_default_start_datetime()
+        self._set_default_duration_hours()
+        self._set_default_timezone()
+        self._parse_time_step_minutes()
+
+        if self.params["places.file"] is None and "places.files" not in self.params:
+            logger.error("No places file specified. Please provide 'places.file' or 'places.files'.")
+            raise MissingRequiredParameterError(["places.file", "places.files"])
+
+    def _set_default_start_datetime(self):
+        if self.params["start.datetime"] is None:
+            self.params["start.datetime"] = get_midnight(get_closest_monday(datetime.now())).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+
+    def _set_default_duration_hours(self):
+        if self.params["duration.hours"] is None:
+            self.params["duration.hours"] = 24
+
+    def _set_default_timezone(self):
+        if self.params["timezone"] is None:
+            self.params["timezone"] = "America/New_York"
+
+    def _parse_time_step_minutes(self):
+        if self.params["time.step.minutes"] is None:
+            self.params["time.step.minutes"] = 60
+            return
+        if isinstance(self.params["time.step.minutes"], str):
+            try:
+                self.params["time.step.minutes"] = int(self.params["time.step.minutes"])
+            except ValueError as err:
+                logger.error(f"Invalid time step value: {self.params['time.step.minutes']}")
+                raise InvalidTimeStepError(self.params["time.step.minutes"]) from err
+        if "time.step.minutes" in self.params and isinstance(self.params["time.step.minutes"], str):
+            try:
+                self.params["time.step.minutes"] = int(self.params["time.step.minutes"])
+            except ValueError as err:
+                logger.error(f"Invalid time step value: {self.params.get('time.step', None)}")
+                raise InvalidTimeStepError(self.params.get("time.step.minutes", None)) from err
+        if self.params["time.step.minutes"] <= 0:
+            logger.error(
+                f"Invalid time step value: {self.params['time.step.minutes']}. Time step must be a positive integer."
+            )
+            raise InvalidTimeStepError(self.params["time.step.minutes"])
+        if 1440 % self.params["time.step.minutes"] != 0:
+            logger.error(
+                f"Invalid time step value: {self.params['time.step.minutes']}. "
+                "Time step must be a divisor of 1440 (the number of minutes in a day)."
+            )
+            raise InvalidTimeStepError(self.params["time.step.minutes"])
+
+    def _remove_deprecated_params(self):
+        """Remove deprecated parameters from the params dictionary."""
+        deprecated_keys = ["stop.at", "steps.per.day"]
+        for key in deprecated_keys:
+            if key in self.params:
+                logger.warning(f"Deprecated parameter {key} found, please update your configuration.")
+                del self.params[key]
+
+    def _compute_ticks(self):
+        if "time.step.minutes" not in self.params or "duration.hours" not in self.params:
+            logger.error("Missing required parameters: time.step.minutes or duration.hours")
+            raise MissingRequiredParameterError(["time.step.minutes", "duration.hours"])
+        self.params["ticks"] = int(self.params["duration.hours"] * 60 / self.params["time.step.minutes"])
 
     def initialize_population(self) -> None:
         """
@@ -284,11 +434,28 @@ class SIModel(Model):
         self.places_proj = PlacesProjection("places_projection", self.comm)
         self.context.add_projection(self.places_proj)
 
-        # initialize the places
-        place_filenames = [self.data_input_path / filename for filename in self.params["places.files"]]
+        # create a DuckDB connection for in-memory operations
+        self.conn = duckdb.connect(database=":memory:", read_only=False)
 
-        # self.place_map, self.local_places = self.createPlaces(
-        self.create_places(place_filenames)
+        # initialize the places
+        if "places.file" in self.params and self.params["places.file"] is not None:
+            logger.debug("Loading places from single file...")
+            self.create_places_from_file(0, self.data_input_path / self.params["places.file"])
+        else:
+            logger.debug("Loading places from multiple files...")
+            if "places.files" not in self.params:
+                logger.error("Error: places.files parameter not specified.")
+                raise MissingRequiredParameterError("places.files")
+                logger.error("Error: places.files must be a list of filenames.")
+                raise InvalidPlacesFilesError(self.params["places.files"])
+                self.params["places.files"] = [self.params["places.files"]]
+            elif not isinstance(self.params["places.files"], list):
+                logger.error("Error: places.files must be a list of filenames.")
+                raise InvalidPlacesFilesError(self.params["places.files"])
+
+            place_filenames = [self.data_input_path / filename for filename in self.params["places.files"]]
+            self.create_places_from_files(place_filenames)
+
         local_places = self.places_proj.get_local_places()
         logger.debug(f"rank {self.rank}: number of local places={len(local_places)}")
 
@@ -375,6 +542,7 @@ class SIModel(Model):
                     logger.error(f"Error: No household found for {p}")
                     # continue
 
+                print(f"Household {hhId} for person {personID} is {household}")
                 rank = household.rank
 
                 if rank != self.rank:
@@ -442,7 +610,7 @@ class SIModel(Model):
                 place = placeType(place_record, placeDataType)
                 self.places_proj.add_place(place)
 
-    def create_places(self, places_files: list[pathlib.Path]) -> None:
+    def create_places_from_files(self, places_files: list[pathlib.Path]) -> None:
         """
         Create places from the given files.
 
@@ -505,16 +673,13 @@ class SIModel(Model):
     def step(self) -> None:
         """Step the model forward one time step."""
 
-        self.cal.increment()
-
+        self.cal.increment(self.time_step_minutes)
         logger.info(
             "Step on "
             f"day {self.cal.day_of_year}, "
             f"hour {self.cal.hour_of_day}, "
             f"minute {self.cal.minute_of_day}"
         )
-
-        return
 
         # 2025-02-26 jcline: this is a hack to get the person_id_map
         # self.get_local_ids()

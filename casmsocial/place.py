@@ -47,6 +47,8 @@ class Place:
         self.location = cpt(x=int(initDict["x"]), y=int(initDict["y"]), z=0)
 
         self.id = placeId
+        if "rank" not in initDict:
+            initDict["rank"] = 0
         self.rank = initDict["rank"]
 
         # create data from initDict

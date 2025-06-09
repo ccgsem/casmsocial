@@ -1,0 +1,17 @@
+model.name: 'casmsocial.heatrisk.heatriskmodel2.HeatRiskModel2'
+random.seed: 42
+stop.at: 24
+world.width: 2
+world.height: 2
+steps.per.day: 24
+world.bounding.box: [682382, 65291, 3933088, 61693]
+start.datetime: '2023-09-07 00:00:00'
+duration.hours: 24
+timezone: 'America/New_York'
+time.step.minutes: 15
+places.file: 'data/processed/wake_county_30/abm_inputs/places.parquet'
+activities.file: 'data/processed/wake_county_30/abm_inputs/activities.parquet'
+persons.file: 'data/processed/wake_county_30/abm_inputs//persons.parquet
+environment.file: 'data/processed/wake_county_prism_fulltest/environment.parquet'
+heat_threshold: 90
+agent_log_file: 'output/agent_log.csv'
