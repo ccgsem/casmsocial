@@ -34,6 +34,11 @@ class SimTime:
     def year(self):
         return self._dt.year
 
+    @property
+    def datetime(self) -> datetime:
+        """Return the current simulation time as a datetime object."""
+        return self._dt
+
     def increment(self, minutes: int = 60) -> None:
         """Increment the simulation time by a number of minutes (default 60)."""
         self._dt += timedelta(minutes=minutes)

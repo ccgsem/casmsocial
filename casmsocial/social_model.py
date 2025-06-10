@@ -23,7 +23,7 @@ from repast4py import schedule
 
 from casmsocial.activities import Act, Activities, Schedules
 from casmsocial.calendar import Calendar
-from casmsocial.datautility import convert_to_int
+from casmsocial.data_utilities import convert_to_int
 from casmsocial.date_utilities import get_closest_monday, get_midnight
 from casmsocial.environment import Environment
 from casmsocial.factory import Models
@@ -92,7 +92,7 @@ class SimEnvironment(Environment):
             if not result:
                 countOfBadMoves += 1
 
-        logger.info(f"number of bad moves = {countOfBadMoves}")
+        logger.debug(f"number of bad moves = {countOfBadMoves}")
 
     def step(self, context: ctx.SharedContext, cal: Calendar) -> None:
         """Update the environment."""
@@ -341,9 +341,9 @@ class SIModel(Model):
         self.queries = {
             "get_tables": "SHOW TABLES",
             "get_table_schema": "DESCRIBE {table_name}",
-            "hh": "SELECT * FROM hh",
-            "work": "SELECT * FROM work",
-            "sch": "SELECT * FROM sch",
+            "hh": "SELECT SELECT sp_id, 'Household' as place_type, latitude, longitude  FROM hh",
+            "work": "SELECT SELECT sp_id, 'Workplace' as place_type, latitude, longitude FROM work",
+            "sch": "SELECT SELECT sp_id, 'School' as place_type, latitude, longitude FROM sch",
             "create_places": """
                 CREATE TABLE places AS
                 SELECT * FROM hh
@@ -477,11 +477,15 @@ class SIModel(Model):
             self.create_places_from_files(place_filenames)
 
         local_places = self.places_proj.get_local_places()
-        logger.debug(f"rank {self.rank}: number of local places={len(local_places)}")
+        logger.info(f"rank {self.rank}: number of local places={len(local_places)}")
 
-        # activitiesMap is a dict of personID->Schedule object
-        activitiesMap = self.create_activities(self.data_input_path / self.params["activities.file"])
-
+        # schedulesList is a list of dict of personID->Schedule object
+        schedulesList = self.create_activities(self.data_input_path / self.params["activities.file"])
+        if not schedulesList or len(schedulesList) == 0:
+            logger.error("Error: activities file is empty or not found.")
+            raise MissingRequiredParameterError("activities.file")
+        logger.info(f"rank {self.rank}: weekday activitiesMap size={len(schedulesList[0])}")
+        logger.info(f"rank {self.rank}: weekday activitiesMap number of keys={len(schedulesList[0].keys())}")
         # contact_map is a dict of personID->{placeID->[personID]}
         # i.e. it is a map of personIDs to a list of contacted persons at each
         # place
@@ -499,24 +503,29 @@ class SIModel(Model):
 
         # agent_id_map is a map of personID->repast4py.Agent.uid
         # self.person_id_map = {}
-        self.create_persons(self.data_input_path / self.params["persons.file"], activitiesMap, self.rng)
+        self.create_persons(self.data_input_path / self.params["persons.file"], schedulesList, self.rng)
 
     def create_persons(
         self,
         personsFile: pathlib.Path,
-        # placeMap: Dict,
-        activitiesMap: dict,
+        schedulesList: list[dict[int, list[int]]],
         rng,
     ) -> None:
         """Create persons from the given file.
 
         Args:
             personsFile (pathlib.Path): The persons file.
-            activitiesMap (dict): The activities map.
+            schedulesList (list[dict]): The list of activities maps.
             rng: The random number generator.
         """
-        # get the person type
+        # get the person type and data type
         personType = self.get_person_config().person_type
+
+        # get the activities map, which is a dict of personID->Activities object
+        # Currently, we assume that there is only one schedule in the list,
+        # which is the weekday schedule. If there are multiple schedules, we
+        # will need to handle them differently.
+        activitiesMap = schedulesList[0] if schedulesList else {}
 
         # get the activities data type: namedtuple to store places for activities
         activitiesDataType = self.get_activities_data_type()
@@ -568,13 +577,23 @@ class SIModel(Model):
                     logger.error(f"Error: Person {personID} tagged on rank={rank} is not on this rank.")
                     continue
 
+                # Person
+                #  - activitiesMap: schedulesList[0] is a dict of personID->Activities object
+
+                # if personID not in activitiesMap:
+                if personID not in activitiesMap:
+                    logger.error(f"Error: No activities found for person {personID}.")
+                    continue
+
+                # get the schedule for the person
                 schedule = activitiesMap[personID]
                 activities = Activities(personID, "weekday", tuple(schedule))
                 schedules = Schedules()
                 schedules.addActivities(activities)
 
-                # Person
-                #  - schedules: Schedules
+                # create an empty list for weekend activities (if not already present)
+                weekend_activities = Activities(personID, "weekend", ())
+                schedules.addActivities(weekend_activities)
 
                 # add alternate places for alternate activities that are not
                 # already in the person's schedule.  These alternate activities
@@ -675,7 +694,18 @@ class SIModel(Model):
         )
         self.places_proj.add_place(remote_place)
 
-    def create_activities(self, activitiesFile: pathlib.Path) -> dict[int, list[int]]:
+    def create_activities(self, activitiesFile: pathlib.Path) -> list[dict[int, list[int]]]:
+        """Create activities from the given file.
+        This method reads the activities file and creates a mapping of person IDs
+        to their activities. Activities are grouped in schedules for each person.
+        The default schedule is for weekdays, but weekend activities can be added later.
+
+        Args:
+            activitiesFile (pathlib.Path): The activities file.
+        Returns:
+            list[dict[int, list[int]]]: A list containing a single dictionary
+            mapping person IDs to their activities for a weekday.
+        """
         # activitiesMap looks like:
         # personID -> Activities object
         act_map = {}
@@ -694,7 +724,7 @@ class SIModel(Model):
                 else:
                     act_map[sp_persons_id].append(Act(sp_persons_id, activity_id, activity_seq, start, end))
 
-        return act_map
+        return [act_map]
 
     def create_contacts(self, contactFile: pathlib.Path) -> dict[int, dict[int, int]]:
         # contactMap looks like:
@@ -723,6 +753,7 @@ class SIModel(Model):
         """Step the model forward one time step."""
 
         self.cal.increment(self.time_step_minutes)
+        # log the current step
         logger.info(
             "Step on "
             f"day {self.cal.day_of_year}, "

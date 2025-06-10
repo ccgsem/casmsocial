@@ -14,7 +14,7 @@ from repast4py.space import ContinuousPoint as cpt
 
 from casmsocial.activities import Schedules
 from casmsocial.calendar import Calendar
-from casmsocial.datautility import create_dataclass_record_from_dict
+from casmsocial.data_utilities import create_dataclass_record_from_dict
 from casmsocial.message import Message
 from casmsocial.place import PlacesProjection
 
@@ -187,7 +187,13 @@ class Person(core.Agent):
         )
 
     def move(self, cal: Calendar, places_proj: PlacesProjection) -> bool:
-        """Move to the place indicated by the schedule for this tick."""
+        """Move to the place indicated by the schedule for this tick.
+        Args:
+            cal: The calendar for the current time.
+            places_proj: The PlacesProjection to use for moving the agent.
+        Returns:
+            True if the agent successfully moved to the next place, False otherwise.
+        """
         success = False
         next_activity_id = self.selectNextPlace(cal)
         next_place_id = self.places[next_activity_id]
@@ -223,15 +229,38 @@ class Person(core.Agent):
         return success
 
     def selectActivities(self, cal: Calendar) -> int:
-        """Select the activities for the time of day and day of week."""
-        activities_idx = self.state.activities_idx
-        if activities_idx == 0 and cal.is_weekday() and len(self.schedules) > 1:
-            activities_idx = 1
+        """Select the activities for the time of day and day of week.
+        Args:
+            cal: The calendar for the current time.
+        Returns:
+            The index of the activities to use for the current time.
+        """
+        # Select the activities based on the time of day and day of week
+        activities_idx = self.state.activities_idx  # previously selected activities index
+
+        # the first two activities are for weekdays and weekends
+        # any additional activities are for unplanned activities
+        if activities_idx < 2:  # if sticking to planned activities
+            if cal.is_weekday():
+                activities_idx = 0
+            elif len(self.schedule[1]) > 0:  # if there is a weekend schedule
+                activities_idx = 1
+            else:  # if unplanned activities
+                activities_idx = 0  # default to weekday activities
+        else:
+            # if unplanned activities, use the current index
+            activities_idx = self.state.activities_idx
+
         return activities_idx
 
     def selectNextPlace(self, cal: Calendar) -> int:
         """Select the next place to go to based on the schedule for time of
         day and day of week.
+        Args:
+            cal: The calendar for the current time.
+        Returns:
+            The ID of the next place to go to.  If the activity is not in the
+            list of places, it defaults to home (place_id 0).
         """
         time = cal.minute_of_day
 

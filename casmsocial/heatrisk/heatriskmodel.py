@@ -21,7 +21,7 @@ from repast4py.space import ContinuousPoint as cpt  # noqa: F401
 
 from casmsocial.activities import Act
 from casmsocial.calendar import Calendar
-from casmsocial.datautility import get_attribute_names_from_data
+from casmsocial.data_utilities import get_attribute_names_from_data
 
 # model factory
 from casmsocial.factory import Models
@@ -32,7 +32,7 @@ from casmsocial.model import Model
 from casmsocial.person import BehaviorEngine, Person, PersonConfig, PersonData
 from casmsocial.place import Place, PlaceConfig, PlaceData, RemotePlace, find_closest_location
 from casmsocial.school import School
-from casmsocial.socialmodel import SimEnvironment, SIModel, update_activities_data
+from casmsocial.social_model import SimEnvironment, SIModel, update_activities_data
 from casmsocial.workplace import Workplace
 
 

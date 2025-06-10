@@ -16,7 +16,7 @@ from casmsocial.household import Household
 from casmsocial.person import BehaviorEngine, Person, PersonConfig, PersonData
 from casmsocial.place import PlaceConfig, PlaceData, RemotePlace
 from casmsocial.school import School
-from casmsocial.socialmodel import SIModel
+from casmsocial.social_model import SIModel
 from casmsocial.workplace import Workplace
 
 

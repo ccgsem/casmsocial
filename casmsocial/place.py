@@ -10,7 +10,7 @@ from repast4py.core import SharedProjection
 from repast4py.space import ContinuousPoint as cpt
 
 # from casmsocial.person import Person
-from casmsocial.datautility import create_dataclass_record_from_dict
+from casmsocial.data_utilities import create_dataclass_record_from_dict
 
 
 # 1. Define a PlaceData Class
