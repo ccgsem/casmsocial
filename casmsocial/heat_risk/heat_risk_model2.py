@@ -10,10 +10,9 @@ from collections import deque, namedtuple
 from dataclasses import dataclass, field
 
 import numpy as np
-import pandas as pd
 import polars as pl
+import pyarrow.dataset as ds
 import repast4py.context as ctx
-from icecream import ic
 from loguru import logger
 from mpi4py import MPI
 from repast4py import logging
@@ -30,7 +29,7 @@ from casmsocial.factory import Models
 from casmsocial.model import Model
 from casmsocial.person import BehaviorEngine, Person, PersonConfig, PersonData
 from casmsocial.place import Place, PlaceConfig, PlaceData, RemotePlace, find_closest_location
-from casmsocial.social_model import SimEnvironment, SIModel, update_activities_data
+from casmsocial.social_model import MissingRequiredParameterError, SimEnvironment, SIModel, update_activities_data
 
 
 # utility functions for heat-related computations
@@ -64,6 +63,13 @@ def filter_heat_indices(heat_indices: list[float], threshold: float) -> list[flo
     return [t for t in heat_indices if (exceeded := exceeded and t > threshold)]
 
 
+class MissingEnvironmentFile(Exception):
+    def __init__(self, value):
+        """Constructor for the MissingEnvironmentFile exception."""
+        super().__init__(f"Missing environment file: {value}")
+        self.value = value
+
+
 # 1. define the environment
 class HeatRiskEnvironment(SimEnvironment):
     """HeatRiskEnvironment class"""
@@ -71,7 +77,43 @@ class HeatRiskEnvironment(SimEnvironment):
     def __init__(self, name: str):
         """Constructor for the HeatRiskEnvironment class."""
         super().__init__(name)
+
+        # initialize the environment
+        required_keys = ["environment.file"]
+        if not all(key in Model.get_model().params for key in required_keys):
+            logger.error(f"Error: Missing required parameters in model: {required_keys}")
+            raise MissingRequiredParameterError(required_keys)
+        self.microweather_arrow_file_path = (
+            Model.get_model().data_input_path / Model.get_model().params["environment.file"]
+        )
+        if not self.microweather_arrow_file_path.exists():
+            logger.error(f"Error: Environment file {self.microweather_arrow_file_path} not found.")
+            raise MissingEnvironmentFile(self.microweather_arrow_file_path)
+        logger.info(f"Loading environment data from {self.microweather_arrow_file_path}")
+        microweather_dataset = ds.dataset(self.microweather_arrow_file_path, format="parquet", partitioning="hive")
+        microweather_table = microweather_dataset.to_table()
+        self.microweather_df = pl.from_arrow(microweather_table)
+
+        # convert the time column to datetime
+        self.microweather_df = self.microweather_df.with_columns(
+            [
+                pl.col("time").str.strptime(pl.Datetime, format="%Y-%m-%dT%H:%M:%S")  # or include time if needed
+            ]
+        )
+        current_time = Model.get_model().cal.datetime
+        logger.info(f"Initializing microweather snapshot at {current_time}")
+        self.microweather_snapshot = self.get_environment().microweather_df.filter(
+            pl.col("time") == current_time.replace(tzinfo=None)
+        )
+        if self.microweather_snapshot.is_empty():
+            logger.error(f"No microweather data found for time {current_time}.")
+            # raise ValueError(f"No microweather data found for time {current_time}.")
+        else:
+            logger.info(f"Microweather data for {current_time}:\n{ self.microweather_snapshot.shape[0]} rows")
+
+        # set default heat threshold (deprecated)
         self.__heat_threshold = 90.0  # default heat threshold in Fahrenheit
+
         return
 
         # load the heat index data
@@ -112,31 +154,14 @@ class HeatRiskEnvironment(SimEnvironment):
         super().step(context, cal)  # updates the social environment
 
         # now update the physical environment
-        logger.debug(f"Updating the environment for hour {cal.hour_of_day}")
-        return
-
-        # update the heat indices
-        heatindex_by_hour_place = (
-            pd.read_parquet(
-                self.heatindex_by_hour_place_file_path,
-                engine="pyarrow",
-                filters=[("time_hour", "=", cal.hour_of_day)],
-            )
-            .loc[:, ["sp_id", "heatIndex"]]
-            .dropna()
-        )
-
-        # logger.debug(f"size of heatindex_by_hour_place = {len(heatindex_by_hour_place)}")
-        minheatindex = heatindex_by_hour_place["heatIndex"].min()
-        maxheatindex = heatindex_by_hour_place["heatIndex"].max()
-        self.meanheatindex = heatindex_by_hour_place["heatIndex"].mean()
-        logger.debug(
-            f"min heat index = {minheatindex}, "
-            f"max heat index = {maxheatindex}, "
-            f"mean heat index = {self.meanheatindex}"
-        )
-
-        self.heatIndex_map = heatindex_by_hour_place.set_index("sp_id")["heatIndex"].to_dict()
+        current_time = cal.datetime
+        logger.info(f"Updating microweather snapshot at {current_time}")
+        self.microweather_snapshot = self.microweather_df.filter(pl.col("time") == current_time.replace(tzinfo=None))
+        if self.microweather_snapshot.is_empty():
+            logger.error(f"No microweather data found for time {current_time}.")
+            # raise ValueError(f"No microweather data found for time {current_time}.")
+        else:
+            logger.info(f"Microweather data for {current_time}:\n{ self.microweather_snapshot.shape[0]} rows")
 
     def get_values_at_place(self, place: Place) -> namedtuple:
         """Get the value at a place.
@@ -417,7 +442,7 @@ class HeatRiskModel2(SIModel):
         """Initialize population"""
 
         # register the environment
-        # SIModel.register_environment(HeatRiskEnvironment("HeatRiskEnvironment"))
+        SIModel.register_environment(HeatRiskEnvironment("HeatRiskEnvironment"))
 
         # register the place types
         SIModel.register_place_config(PlaceConfig(name="Places", place_type=Place, dataType=PlaceDataWithClimate))
@@ -449,12 +474,14 @@ class HeatRiskModel2(SIModel):
 
         super().initialize_population()
 
+        # set up the environment
+
         self._heat_threshold = 90.0
         # self._heat_threshold = float(self.params['heat_threshold'])
 
         # check the first agent
         person = next(self.context.agents())
-        ic(person)
+        logger.info(person)
         # test_person_serialization(person)
         # test_activities(person)
         # test_add_move_to_cooling_center(person)

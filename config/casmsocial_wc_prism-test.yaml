@@ -1,4 +1,4 @@
-model.name: 'casmsocial.heatrisk.heatriskmodel.HeatRiskModel'
+model.name: 'casmsocial.heat_risk.heat_risk_model.HeatRiskModel'
 random.seed: 42
 stop.at: 24
 world.width: 2

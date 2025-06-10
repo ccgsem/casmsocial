@@ -1,7 +1,11 @@
 """Top-level package for casmsocial."""
 # import models for export
 import casmsocial.dcsim.dcsocialmodel
-import casmsocial.heatrisk.heatriskmodel
-import casmsocial.heatrisk.heatriskmodel2  # noqa: F401 (imported but unused - needed for model registration)
+import casmsocial.heat_risk.heat_risk_model
+import casmsocial.heat_risk.heat_risk_model2  # noqa: F401 (imported but unused - needed for model registration)
 
-__all__ = ["casmsocial.dcsim.dcsocialmodel", "casmsocial.heatrisk.heatriskmodel", "casmsocial.heatrisk.heatriskmodel2"]
+__all__ = [
+    "casmsocial.dcsim.dcsocialmodel",
+    "casmsocial.heat_risk.heat_risk_model",
+    "casmsocial.heat_risk.heat_risk_model2",
+]

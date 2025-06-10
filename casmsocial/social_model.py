@@ -753,6 +753,7 @@ class SIModel(Model):
         """Step the model forward one time step."""
 
         self.cal.increment(self.time_step_minutes)
+
         # log the current step
         logger.info(
             "Step on "
