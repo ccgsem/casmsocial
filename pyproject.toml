@@ -1,6 +1,6 @@
 [project]
 name = "casmsocial"
-version = "0.42.0"
+version = "0.43.0"
 description = "casmsocial is a Python framework for implementing agent-based models that simulate the dynamics of a synthetic population"
 authors = [{ name = "Jon C. Cline", email = "jon.c.cline@gmail.com" }]
 readme = "README.md"
