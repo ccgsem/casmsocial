@@ -13,6 +13,7 @@ from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 import duckdb
+import polars as pl
 import pyarrow.parquet as pq
 import repast4py
 from dotenv import load_dotenv
@@ -22,7 +23,6 @@ from repast4py import context as ctx
 from repast4py import schedule
 
 from casmsocial.activities import Act, Activities, Schedules
-from casmsocial.calendar import Calendar
 from casmsocial.data_utilities import convert_to_int
 from casmsocial.date_utilities import get_closest_monday, get_midnight
 from casmsocial.environment import Environment
@@ -80,7 +80,7 @@ class SimEnvironment(Environment):
         """Tear down the environment."""
         pass
 
-    def movePersons(self, context: ctx.SharedContext, cal: Calendar) -> None:
+    def movePersons(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Move all persons"""
         # to_move = []
         # next_place = Place()
@@ -94,7 +94,7 @@ class SimEnvironment(Environment):
 
         logger.debug(f"number of bad moves = {countOfBadMoves}")
 
-    def step(self, context: ctx.SharedContext, cal: Calendar) -> None:
+    def step(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Update the environment."""
         # theModel = Model.get_model()
         # tick = self.runner.schedule.tick
@@ -352,7 +352,18 @@ class SIModel(Model):
                 UNION BY NAME
                 SELECT * FROM sch;
                 """,
+            "create_person_last_known_location": """
+                CREATE TABLE person_last_known_location (
+                    person_id INTEGER PRIMARY KEY, -- PRIMARY KEY implies UNIQUE
+                    place_id INTEGER,
+                    minute_last_updated INTEGER
+                )
+                """,
         }
+
+        # create the DuckDB tables for current locations of all persons
+        # This table will be used to store the last known location of each person
+        self.conn.execute(self.queries["create_person_last_known_location"])
 
     def _validate_and_set_required_params(self):
         """Validate and set required parameters."""
@@ -485,7 +496,6 @@ class SIModel(Model):
             logger.error("Error: activities file is empty or not found.")
             raise MissingRequiredParameterError("activities.file")
         logger.info(f"rank {self.rank}: weekday activitiesMap size={len(schedulesList[0])}")
-        logger.info(f"rank {self.rank}: weekday activitiesMap number of keys={len(schedulesList[0].keys())}")
         # contact_map is a dict of personID->{placeID->[personID]}
         # i.e. it is a map of personIDs to a list of contacted persons at each
         # place
@@ -504,6 +514,25 @@ class SIModel(Model):
         # agent_id_map is a map of personID->repast4py.Agent.uid
         # self.person_id_map = {}
         self.create_persons(self.data_input_path / self.params["persons.file"], schedulesList, self.rng)
+
+        # initialize the table for person last known locations
+        # person_last_known_location_df is a polars DataFrame with columns:
+        person_last_known_location_df = pl.DataFrame(
+            [person.last_known_place for person in self.context.agents(agent_type=0)]
+        )
+        # write the person locations to the DuckDB table
+        self.conn.execute(
+            """
+            INSERT INTO person_last_known_location SELECT * FROM person_last_known_location_df
+            """
+        )
+        logger.info(
+            "person_last_known_location_df:\n"
+            f"number of rows: {person_last_known_location_df.shape[0]}\n"
+            f"{person_last_known_location_df.head}"
+        )
+        result = self.conn.execute(self.queries["get_tables"]).fetchall()
+        logger.info(f"rank {self.rank}: DuckDB tables after initialization: {result}")
 
     def create_persons(
         self,
@@ -636,6 +665,9 @@ class SIModel(Model):
         placeDataType = placeConfig.dataType
 
         table_names = ["hh", "work", "sch"]
+        if placeConfig.name == "Places":
+            table_names = [placeConfig.name.lower()]
+
         table_name = table_names[placeTypeIndex]
         print(
             f"Creating places of type {placeConfig.name} from {placesFile}:"

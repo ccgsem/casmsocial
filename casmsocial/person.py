@@ -13,10 +13,10 @@ from repast4py import core
 from repast4py.space import ContinuousPoint as cpt
 
 from casmsocial.activities import Schedules
-from casmsocial.calendar import Calendar
 from casmsocial.data_utilities import create_dataclass_record_from_dict
 from casmsocial.message import Message
 from casmsocial.place import PlacesProjection
+from casmsocial.sim_time import SimTime
 
 rank = MPI.COMM_WORLD.Get_rank()
 
@@ -31,7 +31,7 @@ class BehaviorEngine:
         # self.social_network = social_network
         # self.environment = environment
 
-    def decide(self, context: ctx.SharedContext, cal: Calendar):
+    def decide(self, context: ctx.SharedContext, cal: SimTime):
         """
         Simulate decision-making based on the agent's attributes, social network, and environment.
         """
@@ -60,6 +60,18 @@ class PersonData:
     activity_id: int
     places: namedtuple
     activities_idx: int
+    minute_last_moved: int = 0
+
+
+@dataclass(slots=True)
+class PersonLastKnownPlace:
+    """Data for a Person's last known place.
+    This is used to store the last known place of a person.
+    """
+
+    person_id: int
+    place_id: int
+    minute_last_updated: int = 0
 
 
 @dataclass
@@ -173,6 +185,15 @@ class Person(core.Agent):
     def places(self) -> list[int]:
         return list(self.state.places)
 
+    @property
+    def last_known_place(self) -> PersonLastKnownPlace:
+        """Returns the last known location of this person."""
+        return PersonLastKnownPlace(
+            person_id=self.state.person_id,
+            place_id=self.state.place_id,
+            minute_last_updated=self.state.minute_last_moved,
+        )
+
     def save(self) -> tuple:
         """Saves the state of this Person as a Tuple.
 
@@ -186,29 +207,29 @@ class Person(core.Agent):
             astuple(self.state),  # 3: state is a PersonData object
         )
 
-    def move(self, cal: Calendar, places_proj: PlacesProjection) -> bool:
+    def move(self, cal: SimTime, places_proj: PlacesProjection) -> bool:
         """Move to the place indicated by the schedule for this tick.
         Args:
             cal: The calendar for the current time.
             places_proj: The PlacesProjection to use for moving the agent.
         Returns:
-            True if the agent successfully moved to the next place, False otherwise.
+            True if the agent moved to the next place, False otherwise.
         """
         success = False
         next_activity_id = self.selectNextPlace(cal)
         next_place_id = self.places[next_activity_id]
-
-        if next_place_id == self.currentPlaceID:
-            # already at the place
-            # logger.debug(
-            #     f"Agent {self.id} is already at place {self.currentPlaceID}")
-            return True
 
         if not next_place_id:
             logger.debug(f"Agent {self.id} has no place to go - going remote.")
             logger.debug(f"places = {self.places}")
             logger.debug(f"schedule = {self.schedules}")
             next_place_id = 0  # reset to home
+
+        if next_place_id == self.currentPlaceID:
+            # already at the place
+            # logger.debug(
+            #     f"Agent {self.id} is already at place {self.currentPlaceID}")
+            return False
 
         place = places_proj.lookup_place(next_place_id)  # place_map.get(next_place_id)
         if place is None:
@@ -221,6 +242,7 @@ class Person(core.Agent):
             self.state.place_id = next_place_id
             logger.debug(f"Rank {rank}: " f"Agent {self.id} is moving to place {self.state.place_id}")
             places_proj.move_agent_to_place(self, place)
+            self.state.minute_last_moved = cal.minute_of_day
         else:
             logger.debug(f"move for act {next_activity_id} to place {next_place_id} failed.")
             logger.debug(f"places = {self.places}")
@@ -228,7 +250,7 @@ class Person(core.Agent):
 
         return success
 
-    def selectActivities(self, cal: Calendar) -> int:
+    def selectActivities(self, cal: SimTime) -> int:
         """Select the activities for the time of day and day of week.
         Args:
             cal: The calendar for the current time.
@@ -253,7 +275,7 @@ class Person(core.Agent):
 
         return activities_idx
 
-    def selectNextPlace(self, cal: Calendar) -> int:
+    def selectNextPlace(self, cal: SimTime) -> int:
         """Select the next place to go to based on the schedule for time of
         day and day of week.
         Args:
@@ -337,7 +359,7 @@ class Person(core.Agent):
         self.messages_incoming = []
         self.messages_outgoing = []
 
-    def step(self, context: ctx.SharedContext, cal: Calendar) -> None:
+    def step(self, context: ctx.SharedContext, cal: SimTime) -> None:
         self.behavior_engine.decide(context, cal)
         # self.move(cal, context.get_projection("places"))
 

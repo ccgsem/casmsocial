@@ -2,7 +2,7 @@ from collections import namedtuple
 
 from repast4py.context import SharedContext
 
-from casmsocial.calendar import Calendar
+from casmsocial.sim_time import SimTime
 
 
 class Environment:
@@ -22,7 +22,7 @@ class Environment:
     def teardown(self) -> None:
         raise NotImplementedError("Subclasses should implement this method")
 
-    def step(self, context: SharedContext, cal: Calendar) -> None:
+    def step(self, context: SharedContext, cal: SimTime) -> None:
         raise NotImplementedError("Subclasses should implement this method")
 
     def get_values_at(self, x: float, y: float, z: float = 0.0) -> namedtuple:

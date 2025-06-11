@@ -12,26 +12,23 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 import polars as pl
+import pyarrow as pa
+import pyarrow.dataset as ds
 import repast4py.context as ctx
-from icecream import ic
 from loguru import logger
 from mpi4py import MPI
-from repast4py import logging
+from pyarrow.dataset import HivePartitioning
 from repast4py.space import ContinuousPoint as cpt  # noqa: F401
 
 from casmsocial.activities import Act
-from casmsocial.calendar import Calendar
 from casmsocial.data_utilities import get_attribute_names_from_data
-
-# model factory
 from casmsocial.factory import Models
-
-# place types
 from casmsocial.household import Household
 from casmsocial.model import Model
 from casmsocial.person import BehaviorEngine, Person, PersonConfig, PersonData
 from casmsocial.place import Place, PlaceConfig, PlaceData, RemotePlace, find_closest_location
 from casmsocial.school import School
+from casmsocial.sim_time import SimTime
 from casmsocial.social_model import SimEnvironment, SIModel, update_activities_data
 from casmsocial.workplace import Workplace
 
@@ -108,7 +105,7 @@ class HeatRiskEnvironment(SimEnvironment):
         """Teardown the environment."""
         pass
 
-    def step(self, context: ctx.SharedContext, cal: Calendar) -> None:
+    def step(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Update the environment."""
         super().step(context, cal)  # updates the social environment
 
@@ -231,14 +228,14 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         prob_heat_event = 1 - (1 - ((heat_index - threshold) / 80.0) ** 2) ** (3 * hours_above_threshold)
         return prob_heat_event
 
-    def decide_to_seek_cooling(self, context: ctx.SharedContext, cal: Calendar) -> bool:
+    def decide_to_seek_cooling(self, context: ctx.SharedContext, cal: SimTime) -> bool:
         """Decide to seek cooling.
 
         Probability of a heat event has already been computed and the person has not experienced a heat event.
 
         Arguments:
             context: ctx.SharedContext: The shared context.
-            cal: Calendar: The calendar.
+            cal: SimTime: The calendar.
 
         Returns:
             bool: True if the person decides to seek cooling, False otherwise.
@@ -341,7 +338,7 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         person.state.activities_idx = schedule_idx
         logger.debug(f"Person {person.id} moved to schedule {schedule_idx} from {previous_schedule}")
 
-    def decide(self, context: ctx.SharedContext, cal: Calendar) -> None:
+    def decide(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Decide what to do."""
         # TODO (2025-02-26 jcline): implement this method
         #   - This is where the person decides what to do
@@ -397,7 +394,26 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
             logger.debug(f"Person {self.agent.id} is not seeking cooling at hour {cal.hour_of_day}")
 
 
-# 6. Define the HeatRiskModel class
+# 6a. Define agent log data
+@dataclass
+class PersonLogData:
+    """Data for logging person agent information."""
+
+    minute_of_day: int
+    rank: int  # rank of the agent in the MPI communicator
+    agent_id: int
+    x: float
+    y: float
+    heatIndex: float
+    hrsAboveHeatThreshold: int
+    probHeatEvent: float
+    experiencedHeatEvent: bool
+    movedToCoolingCenter: bool
+    heatEventPlaceId: int
+    coolingCenterId: int
+
+
+# 6b. Define the HeatRiskModel class
 class HeatRiskModel(SIModel):
     """HeatRiskModel class"""
 
@@ -452,67 +468,66 @@ class HeatRiskModel(SIModel):
 
         # check the first agent
         person = next(self.context.agents())
-        ic(person)
+        logger.info(person)
         # test_person_serialization(person)
         # test_activities(person)
         # test_add_move_to_cooling_center(person)
         # test_activities(person)
         # set up polars table for the agents
-        self.agent_data = pl.DataFrame()
-
-        # initialize the logging
-        self.agent_logger = logging.TabularLogger(
-            self.comm,
-            self.params["agent_log_file"],
-            [
-                "tick",
-                "agent_id",
-                "x",
-                "y",
-                "heatIndex",
-                "hrsAboveHeatThreshold",
-                "probHeatEvent",
-                "experiencedHeatEvent",
-                "movedToCoolingCenter",
-                "heatEventPlaceId",
-                "coolingCenterId",
-            ],
-        )
-        self.log_agents()
 
     def step(self) -> None:
         """Step the model."""
         super().step()
         logger.info("Running step for HeatRiskModel")
 
-    def log_agents(self) -> None:
-        # tick = self.runner.schedule.tick
-        tick = self.cal.hour_of_day
-
+    def get_person_log_data(self, person: Person) -> PersonLogData:
+        """Get the agent data for logging."""
         heat_threshold = self.get_environment().heat_threshold
+        heat = filter_heat_indices(person.state.heat_indices, heat_threshold)
 
-        for person in self.context.agents():
-            heat = filter_heat_indices(person.state.heat_indices, heat_threshold)
-            self.agent_logger.log_row(
-                tick,
-                person.id,
-                person.pt.x,
-                person.pt.y,
-                person.state.heat_indices[0],
-                len(heat),
-                person.state.prob_heat_event,
-                person.state.experienced_heat_event,
-                person.state.moved_to_cooling_center,
-                person.state.heat_event_place_id,
-                person.state.cooling_center_id,
-            )
-            # person.uid_rank, person.meet_count)
+        return PersonLogData(
+            minute_of_day=self.cal.minute_of_day,
+            rank=self.comm.Get_rank(),
+            agent_id=person.id,
+            x=person.pt.x,
+            y=person.pt.y,
+            heatIndex=person.state.heat_indices[0],
+            hrsAboveHeatThreshold=len(heat),
+            probHeatEvent=person.state.prob_heat_event,
+            experiencedHeatEvent=person.state.experienced_heat_event,
+            movedToCoolingCenter=person.state.moved_to_cooling_center,
+            heatEventPlaceId=person.state.heat_event_place_id,
+            coolingCenterId=person.state.cooling_center_id,
+        )
 
-        self.agent_logger.write()
+    def log_agents(self) -> None:
+        """Log the agents' data."""
+        # create a DataFrame for the agent logs
+        logger.info("Logging agents' data...")
+        agent_log_df = pl.DataFrame([self.get_person_log_data(person) for person in self.context.agents(agent_type=0)])
 
-    def at_end(self) -> None:
-        # self.data_set.close()
-        self.agent_logger.close()
+        # convert the DataFrame to an Arrow Table
+        agent_log_table = agent_log_df.to_arrow()
+
+        # Define partition schema
+        partition_schema = pa.schema(
+            [
+                pa.field("minute_of_day", pa.int32()),
+                pa.field("rank", pa.int32()),
+            ]
+        )
+
+        # Set Hive-style partitioning
+        partitioning = HivePartitioning(partition_schema)
+
+        # Write dataset
+        ds.write_dataset(
+            data=agent_log_table,
+            base_dir=self.params["agent_log_file"],
+            format="parquet",
+            partitioning=partitioning,
+            existing_data_behavior="overwrite_or_ignore",
+        )
 
 
 # Register HeatRiskModel

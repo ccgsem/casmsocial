@@ -11,24 +11,21 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import polars as pl
+import pyarrow as pa
 import pyarrow.dataset as ds
 import repast4py.context as ctx
 from loguru import logger
 from mpi4py import MPI
-from repast4py import logging
+from pyarrow.dataset import HivePartitioning
 from repast4py.space import ContinuousPoint as cpt  # noqa: F401
 
 from casmsocial.activities import Act
-from casmsocial.calendar import Calendar
 from casmsocial.data_utilities import get_attribute_names_from_data
-
-# model factory
 from casmsocial.factory import Models
-
-# place types
 from casmsocial.model import Model
 from casmsocial.person import BehaviorEngine, Person, PersonConfig, PersonData
 from casmsocial.place import Place, PlaceConfig, PlaceData, RemotePlace, find_closest_location
+from casmsocial.sim_time import SimTime
 from casmsocial.social_model import MissingRequiredParameterError, SimEnvironment, SIModel, update_activities_data
 
 
@@ -79,7 +76,7 @@ class HeatRiskEnvironment(SimEnvironment):
         super().__init__(name)
 
         # initialize the environment
-        required_keys = ["environment.file"]
+        required_keys = ["environment.file", "person_weather.file"]
         if not all(key in Model.get_model().params for key in required_keys):
             logger.error(f"Error: Missing required parameters in model: {required_keys}")
             raise MissingRequiredParameterError(required_keys)
@@ -89,6 +86,14 @@ class HeatRiskEnvironment(SimEnvironment):
         if not self.microweather_arrow_file_path.exists():
             logger.error(f"Error: Environment file {self.microweather_arrow_file_path} not found.")
             raise MissingEnvironmentFile(self.microweather_arrow_file_path)
+        self.person_weather_arrow_file_path = (
+            Model.get_model().data_input_path / Model.get_model().params["person_weather.file"]
+        )
+        if not self.person_weather_arrow_file_path.parent.exists():
+            logger.error(
+                f"Error: Person weather file path {self.person_weather_arrow_file_path.parent} does not exist."
+            )
+            raise MissingEnvironmentFile(self.person_weather_arrow_file_path.parent)
         logger.info(f"Loading environment data from {self.microweather_arrow_file_path}")
         microweather_dataset = ds.dataset(self.microweather_arrow_file_path, format="parquet", partitioning="hive")
         microweather_table = microweather_dataset.to_table()
@@ -100,42 +105,10 @@ class HeatRiskEnvironment(SimEnvironment):
                 pl.col("time").str.strptime(pl.Datetime, format="%Y-%m-%dT%H:%M:%S")  # or include time if needed
             ]
         )
-        current_time = Model.get_model().cal.datetime
-        logger.info(f"Initializing microweather snapshot at {current_time}")
-        self.microweather_snapshot = self.get_environment().microweather_df.filter(
-            pl.col("time") == current_time.replace(tzinfo=None)
-        )
-        if self.microweather_snapshot.is_empty():
-            logger.error(f"No microweather data found for time {current_time}.")
-            # raise ValueError(f"No microweather data found for time {current_time}.")
-        else:
-            logger.info(f"Microweather data for {current_time}:\n{ self.microweather_snapshot.shape[0]} rows")
 
         # set default heat threshold (deprecated)
         self.__heat_threshold = 90.0  # default heat threshold in Fahrenheit
-
-        return
-
-        # load the heat index data
-        theModel = Model.get_model()
-        self.heatindex_by_hour_place_file_path = theModel.data_input_path / theModel.params["heatIndex.file"]
-        if self.heatindex_by_hour_place_file_path.exists():
-            logger.debug(f"Loading heat map places from {self.heatindex_by_hour_place_file_path}")
-        else:
-            logger.error(f"Error: Heat map places file {self.heatindex_by_hour_place_file_path} not found.")
-            exit(1)
-
-        # initialize the heat threshold
-        self._heat_threshold = 90.0
-        # self._heat_threshold = float(theModel.params['heat_threshold'])
-        # self.heat_indices = deque([float("nan")])
-
         self.environment_tuple = namedtuple("HeatRiskEnvironment", ["heatIndex", "heatIndexIndoors"])
-        self.heatIndex_map: dict[int, float] = {}
-        self.meanheatindex: float = float("nan")
-
-        self.closest_cooling_station = dict[int, list[tuple[Place, float]]]
-        self.cooling_stations = dict[int, list[tuple[Place, float]]]
 
     @property
     def heat_threshold(self) -> float:
@@ -143,25 +116,122 @@ class HeatRiskEnvironment(SimEnvironment):
 
     def setup(self) -> None:
         """Setup the environment."""
-        pass
+        logger.info("Setting up the HeatRiskEnvironment")
+
+        context = Model.get_model().context
+        cal = Model.get_model().cal
+
+        self.update_snapshot(context, cal)
+
+    def update_snapshot(self, context: ctx.SharedContext, cal: SimTime) -> None:
+        """Update the microweather snapshot."""
+        current_time = cal.datetime
+
+        logger.info(f"Updating microweather snapshot at {current_time}")
+        weather_snapshot = self.microweather_df.filter(pl.col("time") == current_time.replace(tzinfo=None))
+        if weather_snapshot.is_empty() or weather_snapshot.shape[0] == 0:
+            logger.error(f"No microweather data found for time {current_time}.")
+            # raise ValueError(f"No microweather data found for time {current_time}.")
+            return
+        logger.info(f"Microweather data for {current_time}:\n{weather_snapshot.shape[0]} rows")
+
+        conn_duckdb = Model.get_model().conn
+
+        if cal.minute_of_day > 0:
+            person_last_known_location_df = pl.DataFrame(
+                [person.last_known_place for person in context.agents(agent_type=0)]
+            )
+            logger.info(f"Updating person last known location with {len(person_last_known_location_df)} persons")
+            if person_last_known_location_df.is_empty():
+                logger.warning("No person last known location data found. Skipping update.")
+                return
+
+            # Create or replace the person_last_known_location table
+            conn_duckdb.execute(
+                "CREATE OR REPLACE TABLE person_last_known_location AS SELECT * FROM person_last_known_location_df"
+            )
+
+            # if not person_last_known_location_df.is_empty():
+            #     logger.info(f"Updating environment for {len(person_last_known_location_df)} persons")
+            #     upsert_query = """
+            #         INSERT INTO person_last_known_location (person_id, place_id, minute_last_updated)
+            #         SELECT person_id, place_id, minute_last_updated
+            #         FROM person_last_known_location_df -- DuckDB can directly read from this Polars DataFrame
+            #         ON CONFLICT (person_id) DO UPDATE SET
+            #             place_id = EXCLUDED.place_id,
+            #             price = EXCLUDED.price,
+            #             minute_last_updated = EXCLUDED.minute_last_updated;
+            #         """
+            #     conn_duckdb.execute(upsert_query)
+            #     logger.info(
+            #         f"Upserted {len(person_last_known_location_df)} rows into person_last_known_location table"
+            #     )
+        query = """
+            CREATE OR REPLACE TABLE 'weather'
+            AS SELECT * FROM weather_snapshot;
+            CREATE OR REPLACE TABLE 'places_linked_to_weather'
+            AS SELECT sp_id, gridindex FROM places;
+            CREATE OR REPLACE TABLE 'person_locations'
+            AS SELECT person_id, place_id FROM person_last_known_location;
+            """
+        conn_duckdb.execute(query)
+
+        logger.info("Microweather snapshot updated successfully.")
+
+        query = """
+            CREATE OR REPLACE TABLE person_weather AS
+            SELECT
+                w.time,
+                p.person_id,
+                p.place_id,
+                w.T_xy,
+                w.heat_index,
+                w.dew_point,
+                w.wbgt
+            FROM
+                weather w
+            JOIN
+                places_linked_to_weather pl ON w.gridindex = pl.gridindex
+            JOIN
+                person_locations p ON pl.sp_id = CAST(p.place_id AS VARCHAR);
+            """
+        conn_duckdb.execute(query)
+        person_weather_df = conn_duckdb.execute("SELECT * FROM person_weather").pl()
+        logger.info(f"Person weather data updated with {person_weather_df.shape[0]} rows")
+        logger.info(f"\n{person_weather_df.head(5)}")
+
+        # replace 'time' column with string version
+        person_weather_df = person_weather_df.with_columns(
+            [pl.col("time").dt.strftime("%Y-%m-%dT%H:%M:%S").alias("time")]
+        )
+
+        person_weather_table = person_weather_df.to_arrow()
+
+        # Define partition schema
+        partition_schema = pa.schema([pa.field("time", pa.string())])
+
+        # Set Hive-style partitioning
+        partitioning = HivePartitioning(partition_schema)
+
+        # Write dataset
+        ds.write_dataset(
+            data=person_weather_table,
+            base_dir=self.person_weather_arrow_file_path,
+            format="parquet",
+            partitioning=partitioning,
+            existing_data_behavior="overwrite_or_ignore",
+        )
 
     def teardown(self) -> None:
         """Teardown the environment."""
         pass
 
-    def step(self, context: ctx.SharedContext, cal: Calendar) -> None:
+    def step(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Update the environment."""
         super().step(context, cal)  # updates the social environment
 
         # now update the physical environment
-        current_time = cal.datetime
-        logger.info(f"Updating microweather snapshot at {current_time}")
-        self.microweather_snapshot = self.microweather_df.filter(pl.col("time") == current_time.replace(tzinfo=None))
-        if self.microweather_snapshot.is_empty():
-            logger.error(f"No microweather data found for time {current_time}.")
-            # raise ValueError(f"No microweather data found for time {current_time}.")
-        else:
-            logger.info(f"Microweather data for {current_time}:\n{ self.microweather_snapshot.shape[0]} rows")
+        self.update_snapshot(context, cal)
 
     def get_values_at_place(self, place: Place) -> namedtuple:
         """Get the value at a place.
@@ -259,14 +329,14 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         prob_heat_event = 1 - (1 - ((heat_index - threshold) / 80.0) ** 2) ** (3 * hours_above_threshold)
         return prob_heat_event
 
-    def decide_to_seek_cooling(self, context: ctx.SharedContext, cal: Calendar) -> bool:
+    def decide_to_seek_cooling(self, context: ctx.SharedContext, cal: SimTime) -> bool:
         """Decide to seek cooling.
 
         Probability of a heat event has already been computed and the person has not experienced a heat event.
 
         Arguments:
             context: ctx.SharedContext: The shared context.
-            cal: Calendar: The calendar.
+            cal: SimTime: The calendar.
 
         Returns:
             bool: True if the person decides to seek cooling, False otherwise.
@@ -369,7 +439,7 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         person.state.activities_idx = schedule_idx
         logger.debug(f"Person {person.id} moved to schedule {schedule_idx} from {previous_schedule}")
 
-    def decide(self, context: ctx.SharedContext, cal: Calendar) -> None:
+    def decide(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Decide what to do."""
         # TODO (2025-02-26 jcline): implement this method
         #   - This is where the person decides what to do
@@ -442,6 +512,7 @@ class HeatRiskModel2(SIModel):
         """Initialize population"""
 
         # register the environment
+        logger.info("Registering HeatRiskEnvironment...")
         SIModel.register_environment(HeatRiskEnvironment("HeatRiskEnvironment"))
 
         # register the place types
@@ -473,6 +544,9 @@ class HeatRiskModel2(SIModel):
         logger.debug("Now running initialize population for SIModel...")
 
         super().initialize_population()
+        logger.info("Population initialized for HeatRiskModel2")
+        # set up the environment
+        self.get_environment().setup()  # create the environment - setup does not do anything
 
         # set up the environment
 
@@ -489,24 +563,24 @@ class HeatRiskModel2(SIModel):
         # set up polars table for the agents
         self.agent_data = pl.DataFrame()
 
-        # initialize the logging
-        self.agent_logger = logging.TabularLogger(
-            self.comm,
-            self.params["agent_log_file"],
-            [
-                "tick",
-                "agent_id",
-                "x",
-                "y",
-                "heatIndex",
-                "hrsAboveHeatThreshold",
-                "probHeatEvent",
-                "experiencedHeatEvent",
-                "movedToCoolingCenter",
-                "heatEventPlaceId",
-                "coolingCenterId",
-            ],
-        )
+        # # initialize the logging
+        # self.agent_logger = logging.TabularLogger(
+        #     self.comm,
+        #     self.params["agent_log_file"],
+        #     [
+        #         "tick",
+        #         "agent_id",
+        #         "x",
+        #         "y",
+        #         "heatIndex",
+        #         "hrsAboveHeatThreshold",
+        #         "probHeatEvent",
+        #         "experiencedHeatEvent",
+        #         "movedToCoolingCenter",
+        #         "heatEventPlaceId",
+        #         "coolingCenterId",
+        #     ],
+        # )
         self.log_agents()
 
     def step(self) -> None:
@@ -516,8 +590,19 @@ class HeatRiskModel2(SIModel):
 
     def log_agents(self) -> None:
         # tick = self.runner.schedule.tick
-        tick = self.cal.hour_of_day
+        tick = self.cal.minute_of_day
 
+        logger.info(f"Logging agents at tick {tick}")
+        # get the current state of the agents
+        # persons_data_df = pl.DataFrame([person.state for person in self.context.agents(agent_type=0)])
+        # logger.info(f"Logging {len(persons_data_df)} agents at tick {tick}")
+        # persons_data_df = persons_data_df.with_columns(
+        #     [
+        #         pl.col("tick").fill_null(tick),
+        #         pl.col("heat_indices").apply(lambda x: x[0], return_dtype=pl.Float64),
+        #         pl.col("heat_indices").apply(lambda x: len(filter_heat_indices(x, self.get_environment().heat_threshold))),
+        #     ]
+        # )
         return
 
         heat_threshold = self.get_environment().heat_threshold
@@ -543,7 +628,8 @@ class HeatRiskModel2(SIModel):
 
     def at_end(self) -> None:
         # self.data_set.close()
-        self.agent_logger.close()
+        # self.agent_logger.close()
+        pass
 
 
 # Register HeatRiskModel
