@@ -6,6 +6,7 @@ Defining the heat risk model for the CASMSOCIAL/PRSIM project
 """
 
 
+import time
 from collections import deque, namedtuple
 from dataclasses import dataclass, field
 
@@ -75,26 +76,40 @@ class HeatRiskEnvironment(SimEnvironment):
         """Constructor for the HeatRiskEnvironment class."""
         super().__init__(name)
 
-        # initialize the environment
-        required_keys = ["environment.file", "person_weather.file"]
+        logger.info("Initializing HeatRiskEnvironment...")
+
+        # 1. check if the required parameters are present
+        # and if the files exist
+        required_keys = ["environment.file", "weather_at_places.file"]
         if not all(key in Model.get_model().params for key in required_keys):
             logger.error(f"Error: Missing required parameters in model: {required_keys}")
             raise MissingRequiredParameterError(required_keys)
+
+        # 2. establish the connection to the database
+        # this will be used to query the microweather data
+        # and to update the microweather snapshot
+        self.conn = Model.get_model().conn
+        if self.conn is None:
+            logger.error("Database connection is not set. Cannot update microweather snapshot.")
+            return
+
+        # 3. initialize the environment: microweather and person weather data
         self.microweather_arrow_file_path = (
             Model.get_model().data_input_path / Model.get_model().params["environment.file"]
         )
         if not self.microweather_arrow_file_path.exists():
             logger.error(f"Error: Environment file {self.microweather_arrow_file_path} not found.")
             raise MissingEnvironmentFile(self.microweather_arrow_file_path)
-        self.person_weather_arrow_file_path = (
-            Model.get_model().data_input_path / Model.get_model().params["person_weather.file"]
+        self.weather_at_places_arrow_file_path = (
+            Model.get_model().data_input_path / Model.get_model().params["weather_at_places.file"]
         )
-        if not self.person_weather_arrow_file_path.parent.exists():
+        if not self.weather_at_places_arrow_file_path.parent.exists():
             logger.error(
-                f"Error: Person weather file path {self.person_weather_arrow_file_path.parent} does not exist."
+                f"Error: Person weather file path {self.weather_at_places_arrow_file_path.parent} does not exist."
             )
-            raise MissingEnvironmentFile(self.person_weather_arrow_file_path.parent)
-        logger.info(f"Loading environment data from {self.microweather_arrow_file_path}")
+            raise MissingEnvironmentFile(self.weather_at_places_arrow_file_path.parent)
+
+        logger.info(f"Loading environment data from {self.microweather_arrow_file_path}...")
         microweather_dataset = ds.dataset(self.microweather_arrow_file_path, format="parquet", partitioning="hive")
         microweather_table = microweather_dataset.to_table()
         self.microweather_df = pl.from_arrow(microweather_table)
@@ -105,6 +120,10 @@ class HeatRiskEnvironment(SimEnvironment):
                 pl.col("time").str.strptime(pl.Datetime, format="%Y-%m-%dT%H:%M:%S")  # or include time if needed
             ]
         )
+        logger.info(f"Loaded microweather data with {self.microweather_df.shape[0]} rows")
+
+        # dataframe for weather data for each place
+        self.local_weather_df = pl.DataFrame()  # local weather data for the environment
 
         # set default heat threshold (deprecated)
         self.__heat_threshold = 90.0  # default heat threshold in Fahrenheit
@@ -112,7 +131,7 @@ class HeatRiskEnvironment(SimEnvironment):
 
     @property
     def heat_threshold(self) -> float:
-        return self._heat_threshold
+        return self.__heat_threshold
 
     def setup(self) -> None:
         """Setup the environment."""
@@ -125,8 +144,17 @@ class HeatRiskEnvironment(SimEnvironment):
 
     def update_snapshot(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Update the microweather snapshot."""
+        # check if the database connection is set
+        if self.conn is None:
+            self.conn = Model.get_model().conn
+            if self.conn is None:
+                logger.error("Database connection is not set. Cannot update microweather snapshot.")
+                return
+
+        # get the current time from the calendar: needed to filter the microweather data
         current_time = cal.datetime
 
+        # check if the microweather data is available for the current time
         logger.info(f"Updating microweather snapshot at {current_time}")
         weather_snapshot = self.microweather_df.filter(pl.col("time") == current_time.replace(tzinfo=None))
         if weather_snapshot.is_empty() or weather_snapshot.shape[0] == 0:
@@ -135,55 +163,24 @@ class HeatRiskEnvironment(SimEnvironment):
             return
         logger.info(f"Microweather data for {current_time}:\n{weather_snapshot.shape[0]} rows")
 
-        conn_duckdb = Model.get_model().conn
-
-        if cal.minute_of_day > 0:
-            person_last_known_location_df = pl.DataFrame(
-                [person.last_known_place for person in context.agents(agent_type=0)]
-            )
-            logger.info(f"Updating person last known location with {len(person_last_known_location_df)} persons")
-            if person_last_known_location_df.is_empty():
-                logger.warning("No person last known location data found. Skipping update.")
-                return
-
-            # Create or replace the person_last_known_location table
-            conn_duckdb.execute(
-                "CREATE OR REPLACE TABLE person_last_known_location AS SELECT * FROM person_last_known_location_df"
-            )
-
-            # if not person_last_known_location_df.is_empty():
-            #     logger.info(f"Updating environment for {len(person_last_known_location_df)} persons")
-            #     upsert_query = """
-            #         INSERT INTO person_last_known_location (person_id, place_id, minute_last_updated)
-            #         SELECT person_id, place_id, minute_last_updated
-            #         FROM person_last_known_location_df -- DuckDB can directly read from this Polars DataFrame
-            #         ON CONFLICT (person_id) DO UPDATE SET
-            #             place_id = EXCLUDED.place_id,
-            #             price = EXCLUDED.price,
-            #             minute_last_updated = EXCLUDED.minute_last_updated;
-            #         """
-            #     conn_duckdb.execute(upsert_query)
-            #     logger.info(
-            #         f"Upserted {len(person_last_known_location_df)} rows into person_last_known_location table"
-            #     )
+        # convert the weather snapshot to a DuckDB table
         query = """
             CREATE OR REPLACE TABLE 'weather'
             AS SELECT * FROM weather_snapshot;
             CREATE OR REPLACE TABLE 'places_linked_to_weather'
-            AS SELECT sp_id, gridindex FROM places;
-            CREATE OR REPLACE TABLE 'person_locations'
-            AS SELECT person_id, place_id FROM person_last_known_location;
+            AS SELECT sp_id AS place_id, gridindex FROM places;
+            -- CREATE OR REPLACE TABLE 'person_locations'
+            -- AS SELECT person_id, place_id FROM person_last_known_location;
             """
-        conn_duckdb.execute(query)
+        self.conn.execute(query)
 
         logger.info("Microweather snapshot updated successfully.")
 
         query = """
-            CREATE OR REPLACE TABLE person_weather AS
+            CREATE OR REPLACE TABLE weather_at_places AS
             SELECT
                 w.time,
-                p.person_id,
-                p.place_id,
+                pl.place_id,
                 w.T_xy,
                 w.heat_index,
                 w.dew_point,
@@ -192,20 +189,20 @@ class HeatRiskEnvironment(SimEnvironment):
                 weather w
             JOIN
                 places_linked_to_weather pl ON w.gridindex = pl.gridindex
-            JOIN
-                person_locations p ON pl.sp_id = CAST(p.place_id AS VARCHAR);
             """
-        conn_duckdb.execute(query)
-        person_weather_df = conn_duckdb.execute("SELECT * FROM person_weather").pl()
-        logger.info(f"Person weather data updated with {person_weather_df.shape[0]} rows")
-        logger.info(f"\n{person_weather_df.head(5)}")
+        self.conn.execute(query)
+        self.weather_at_places_df = self.conn.execute("SELECT * FROM weather_at_places").pl()
+        logger.info(f"weather at all places data updated with {self.weather_at_places_df.shape[0]} rows")
+        logger.info(f"\n{self.weather_at_places_df.head(5)}")
 
         # replace 'time' column with string version
-        person_weather_df = person_weather_df.with_columns(
+        self.weather_at_places_df = self.weather_at_places_df.with_columns(
             [pl.col("time").dt.strftime("%Y-%m-%dT%H:%M:%S").alias("time")]
         )
+        return
 
-        person_weather_table = person_weather_df.to_arrow()
+        # convert the DataFrame to an Arrow table
+        weather_at_places_table = self.weather_at_places_df.to_arrow()
 
         # Define partition schema
         partition_schema = pa.schema([pa.field("time", pa.string())])
@@ -215,8 +212,8 @@ class HeatRiskEnvironment(SimEnvironment):
 
         # Write dataset
         ds.write_dataset(
-            data=person_weather_table,
-            base_dir=self.person_weather_arrow_file_path,
+            data=weather_at_places_table,
+            base_dir=self.weather_at_places_arrow_file_path,
             format="parquet",
             partitioning=partitioning,
             existing_data_behavior="overwrite_or_ignore",
@@ -445,7 +442,6 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         #   - This is where the person decides what to do
         #   - This could be based on the heat index, probability of a heat event,
         #     or other factors
-        return
 
         # check if the person has already experienced a heat event
         if self.agent.state.experienced_heat_event:
@@ -504,6 +500,45 @@ class HeatRiskModel2(SIModel):
         """Constructor for the HeatRiskModel class"""
         super().__init__(comm, params)
 
+        # add queries for the model
+        self.queries["create_closest_cooling_station"] = """
+            load spatial;
+            CREATE OR REPLACE TABLE closest_cooling_center AS
+            SELECT
+                p.sp_id,
+                p.location,
+                p.cooling_center, -- Include original cooling_center status for completeness
+                cc.sp_id AS closest_cooling_center_id,
+                ST_Distance(p.location, cc.location) AS distance_to_closest_cooling_center_m
+            FROM
+                places AS p
+            CROSS JOIN -- Use CROSS JOIN to get all combinations initially
+                places AS cc
+            WHERE
+                cc.cooling_center = TRUE -- Filter for only cooling centers in the right side of the join
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY p.sp_id ORDER BY ST_Distance(p.location, cc.location) ASC) = 1;
+            """
+        self.queries["update_weather_places"] = """
+            CREATE OR REPLACE TABLE weather_at_places AS
+            SELECT
+                w.time,
+                p.place_id,
+                w.T_xy,
+                w.heat_index,
+                w.dew_point,
+                w.wbgt
+            FROM
+                weather w
+            JOIN
+                places pl ON w.gridindex = pl.gridindex;
+            """
+
+        # show
+        logger.info(f"HeatRiskModel2 initialized at time={time.time() - self.start_time} seconds")
+
+        # initialize the environment
+        self._heat_threshold = 90.0
+
     @property
     def heat_threshold(self) -> float:
         return self._heat_threshold
@@ -512,15 +547,12 @@ class HeatRiskModel2(SIModel):
         """Initialize population"""
 
         # register the environment
-        logger.info("Registering HeatRiskEnvironment...")
+        logger.info(f"Registering HeatRiskEnvironment at time={time.time()-self.start_time} seconds...")
         SIModel.register_environment(HeatRiskEnvironment("HeatRiskEnvironment"))
+        logger.info("HeatRiskEnvironment registered at time={time.time()-self.start_time} seconds. ")
 
         # register the place types
         SIModel.register_place_config(PlaceConfig(name="Places", place_type=Place, dataType=PlaceDataWithClimate))
-        # SIModel.register_place_config(
-        #     PlaceConfig(name="Workplace", place_type=Workplace, dataType=PlaceDataWithClimate)
-        # )
-        # SIModel.register_place_config(PlaceConfig(name="School", place_type=School, dataType=PlaceDataWithClimate))
 
         # register the remote place type
         SIModel.register_remote_place_config(
@@ -545,13 +577,27 @@ class HeatRiskModel2(SIModel):
 
         super().initialize_population()
         logger.info("Population initialized for HeatRiskModel2")
-        # set up the environment
-        self.get_environment().setup()  # create the environment - setup does not do anything
 
         # set up the environment
-
         self._heat_threshold = 90.0
         # self._heat_threshold = float(self.params['heat_threshold'])
+
+        # create table for closest cooling centers
+        logger.info("Creating table for closest cooling centers...")
+        self.conn.execute(self.queries["create_closest_cooling_station"])
+        logger.info("Created table for closest cooling centers.")
+
+        query = """
+        SELECT * FROM closest_cooling_center;
+        """
+        closest_cooling_station = self.conn.execute(query).pl()
+        if closest_cooling_station.is_empty():
+            logger.warning("No cooling stations found in the environment data.")
+        else:
+            logger.info(f"Found {closest_cooling_station.shape[0]} cooling stations in the environment data.")
+            logger.info(f"Cooling stations:\n{closest_cooling_station.head(5)}")
+        # self.closest_cooling_station = closest_cooling_station  # store the closest cooling stations in a DataFrame
+        # self.closest_cooling_station = {}  # cache for closest cooling stations
 
         # check the first agent
         person = next(self.context.agents())

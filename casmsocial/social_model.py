@@ -13,7 +13,6 @@ from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 import duckdb
-import polars as pl
 import pyarrow.parquet as pq
 import repast4py
 from dotenv import load_dotenv
@@ -352,18 +351,21 @@ class SIModel(Model):
                 UNION BY NAME
                 SELECT * FROM sch;
                 """,
-            "create_person_last_known_location": """
-                CREATE TABLE person_last_known_location (
-                    person_id INTEGER PRIMARY KEY, -- PRIMARY KEY implies UNIQUE
-                    place_id INTEGER,
-                    minute_last_updated INTEGER
-                )
+            "add_geometries": """
+                -- 1. Load the spatial extension
+                -- This is necessary to use ST_Point and other geospatial functions.
+                INSTALL spatial;
+                LOAD spatial;
+                -- 2. Add the 'location' column of type GEOMETRY
+                -- GEOMETRY is a generic spatial type that can store points, lines, polygons, etc.
+                ALTER TABLE places ADD COLUMN location GEOMETRY;
+                -- 3. Populate the 'location' column
+                -- ST_Point expects (X, Y) which translates to (longitude, latitude) for geographic points.
+                UPDATE places
+                -- Ensure that longitude and latitude are in the correct order for ST_Point
+                SET location = ST_Point(longitude, latitude);
                 """,
         }
-
-        # create the DuckDB tables for current locations of all persons
-        # This table will be used to store the last known location of each person
-        self.conn.execute(self.queries["create_person_last_known_location"])
 
     def _validate_and_set_required_params(self):
         """Validate and set required parameters."""
@@ -477,9 +479,6 @@ class SIModel(Model):
             if "places.files" not in self.params:
                 logger.error("Error: places.files parameter not specified.")
                 raise MissingRequiredParameterError("places.files")
-                logger.error("Error: places.files must be a list of filenames.")
-                raise InvalidPlacesFilesError(self.params["places.files"])
-                self.params["places.files"] = [self.params["places.files"]]
             elif not isinstance(self.params["places.files"], list):
                 logger.error("Error: places.files must be a list of filenames.")
                 raise InvalidPlacesFilesError(self.params["places.files"])
@@ -489,6 +488,8 @@ class SIModel(Model):
 
         local_places = self.places_proj.get_local_places()
         logger.info(f"rank {self.rank}: number of local places={len(local_places)}")
+        # add geometry to the places table
+        self.conn.execute(self.queries["add_geometries"])
 
         # schedulesList is a list of dict of personID->Schedule object
         schedulesList = self.create_activities(self.data_input_path / self.params["activities.file"])
@@ -515,22 +516,6 @@ class SIModel(Model):
         # self.person_id_map = {}
         self.create_persons(self.data_input_path / self.params["persons.file"], schedulesList, self.rng)
 
-        # initialize the table for person last known locations
-        # person_last_known_location_df is a polars DataFrame with columns:
-        person_last_known_location_df = pl.DataFrame(
-            [person.last_known_place for person in self.context.agents(agent_type=0)]
-        )
-        # write the person locations to the DuckDB table
-        self.conn.execute(
-            """
-            INSERT INTO person_last_known_location SELECT * FROM person_last_known_location_df
-            """
-        )
-        logger.info(
-            "person_last_known_location_df:\n"
-            f"number of rows: {person_last_known_location_df.shape[0]}\n"
-            f"{person_last_known_location_df.head}"
-        )
         result = self.conn.execute(self.queries["get_tables"]).fetchall()
         logger.info(f"rank {self.rank}: DuckDB tables after initialization: {result}")
 
