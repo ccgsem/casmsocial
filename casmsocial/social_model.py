@@ -489,7 +489,7 @@ class SIModel(Model):
         local_places = self.places_proj.get_local_places()
         logger.info(f"rank {self.rank}: number of local places={len(local_places)}")
         # add geometry to the places table
-        self.conn.execute(self.queries["add_geometries"])
+        # self.conn.execute(self.queries["add_geometries"])
 
         # schedulesList is a list of dict of personID->Schedule object
         schedulesList = self.create_activities(self.data_input_path / self.params["activities.file"])
@@ -506,7 +506,7 @@ class SIModel(Model):
 
             self.contact_map = self.create_contacts(self.data_input_path / self.params["contact.file"])
         else:
-            logger.error("Error: contact file not specified.")
+            logger.warning("Warning: contact file not specified.")
 
         logger.debug(f"rank {self.rank}: contacts size={len(self.contact_map)}")
 
