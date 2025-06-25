@@ -247,44 +247,6 @@ class HeatRiskEnvironment(SimEnvironment):
         # now update the physical environment
         self.update_snapshot(context, cal)
 
-    def get_values_at_place(self, place: Place) -> namedtuple:
-        """Get the value at a place.
-
-        Arguments:
-            place: Place: The place to get the value for.
-        Returns:
-            namedtuple: The value at the place.
-        """
-
-        # heatIndex = self.heatIndex_map.get(place.id, self.meanheatindex)
-        # heatIndexIndoors = heatIndex
-
-        # if "AIR" in get_attribute_names_from_data(place.data) and place.data.AIR:
-        #     heatIndexIndoors = 72
-        result = self.conn.execute(
-            f"""
-            SELECT * FROM weather
-            WHERE place_id = {place.id}
-            """  # noqa: S608
-        ).fetchall()
-
-        if not result or len(result) != 1 or len(result[0]) != len(self.fields) + 2:  # +2 for time and place_id
-            # no weather data found for the place
-            logger.error(f"No weather data found for place {place.id}.")
-            # raise ValueError(f"No weather data found for place {place.id}.")
-            missing_values = [float("nan")] * len(self.fields)
-            return self.environment_tuple._make(missing_values)
-
-        # unpack the result
-        # result[0] is a tuple with the first two columns being time and place_id
-        # and the rest being the values we want
-        values_at_place = self.environment_tuple._make(result[0][2:])  # skip the first two columns (time and place_id)
-        logger.debug(f"Query result for place {place.id}: values_at_place={values_at_place}")
-
-        # heatIndex = 72.0
-        # heatIndexIndoors = 72.0
-        return values_at_place
-
     def get_closest_cooling_center(self, place_id: int, n: int = 3) -> list[tuple[int, float]]:
         """Get the closest cooling station.
 
@@ -530,13 +492,39 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
             logger.debug(f"Person {self.agent.id} is not seeking cooling at hour {cal.hour_of_day}")
 
 
-# 6. Define the HeatRiskModel class
+# 6a. Define agent log data
+@dataclass
+class PersonLogData:
+    """Data for logging person agent information."""
+
+    minute_of_day: int
+    rank: int  # rank of the agent in the MPI communicator
+    agent_id: int
+    x: float
+    y: float
+    heatIndex: float
+    hrsAboveHeatThreshold: int
+    probHeatEvent: float
+    experiencedHeatEvent: bool
+    movedToCoolingCenter: bool
+    heatEventPlaceId: int
+    coolingCenterId: int
+
+
+# 6b. Define the HeatRiskModel class
 class HeatRiskModel2(SIModel):
     """HeatRiskModel class"""
 
     def __init__(self, comm: MPI.Intracomm, params: dict):
         """Constructor for the HeatRiskModel class"""
         super().__init__(comm, params)
+
+        # create the agent log file path
+        if "agent_log_file" not in self.params:
+            raise MissingRequiredParameterError(["agent_log_file"])
+        self.agent_log_file = self.data_input_path / self.params["agent_log_file"]
+        if not self.agent_log_file.parent.exists():
+            self.agent_log_file.parent.mkdir(parents=True, exist_ok=True)
 
         # show the initialization time
         logger.info(f"HeatRiskModel2 initialized at time={time.time() - self.start_time} seconds")
@@ -587,12 +575,6 @@ class HeatRiskModel2(SIModel):
         environment = self.get_environment()
         self._heat_threshold = environment.heat_threshold
         logger.info(f"Heat threshold set to {self._heat_threshold}C")
-        # self._heat_threshold = float(self.params['heat_threshold'])
-
-        # create the output data path
-        self.output_data_path = environment.microweather_arrow_file_path.parent / "output"
-        if not self.output_data_path.exists():
-            self.output_data_path.mkdir(parents=True, exist_ok=True)
 
         # check the first agent
         person = next(self.context.agents())
@@ -605,10 +587,6 @@ class HeatRiskModel2(SIModel):
             for row in candidates:
                 logger.info(f"  Cooling station {row[0]} at {row[1]} with distance {row[1]} meters")
 
-        # test_person_serialization(person)
-        # test_activities(person)
-        # test_add_move_to_cooling_center(person)
-
         # log the agents
         logger.info("Logging agents after population initialization")
         self.log_agents()
@@ -618,54 +596,54 @@ class HeatRiskModel2(SIModel):
         super().step()
         logger.info("Running step for HeatRiskModel")
 
-    def log_agents(self) -> None:
-        # tick = self.runner.schedule.tick
-        tick = self.cal.minute_of_day
+    def get_person_log_data(self, person: Person) -> PersonLogData:
+        """Get the agent data for logging."""
+        heat_threshold = self.get_environment().heat_threshold
+        heat = filter_heat_indices(person.state.heat_indices, heat_threshold)
 
-        logger.info(f"Logging agents at tick {tick}")
-
-        # get the current state of the agents
-        person_data_df = pl.DataFrame([person.state for person in self.context.agents(agent_type=0)])
-        logger.info(f"Logging {len(person_data_df)} agents at tick {tick}")
-        if person_data_df.is_empty():
-            logger.warning("No agents to log.")
-            return
-        # add the rank and tick to the data
-        # also add the heat index and hours above heat threshold
-        # the values are stored in the heat_indices deque
-        # note: heat_indices is a deque of heat indices, where the first element is the most recent
-        # the length of the deque is the number of hours above the heat threshold
-
-        person_data_df = person_data_df.with_columns(
-            [
-                pl.lit(self.rank).alias("rank"),  # add rank to the data
-                pl.lit(tick).alias("tick"),  # add tick to the data
-                # pl.col("heat_indices").apply(lambda x: x[0], return_dtype=pl.Float64).alias("heat_index"),
-                # pl.col("heat_indices").apply(lambda x: len(filter_heat_indices(x, self.get_environment().heat_threshold))).alias("hours_above_heat_threshold"),
-            ]
+        return PersonLogData(
+            minute_of_day=self.cal.minute_of_day,
+            rank=self.comm.Get_rank(),
+            agent_id=person.id,
+            x=person.pt.x,
+            y=person.pt.y,
+            heatIndex=person.state.heat_indices[0],
+            hrsAboveHeatThreshold=len(heat),
+            probHeatEvent=person.state.prob_heat_event,
+            experiencedHeatEvent=person.state.experienced_heat_event,
+            movedToCoolingCenter=person.state.moved_to_cooling_center,
+            heatEventPlaceId=person.state.heat_event_place_id,
+            coolingCenterId=person.state.cooling_center_id,
         )
-        logger.info(f"Person data at tick {tick}:\n{person_data_df.head(5)}")
-        return  # skip the rest of the logging for now: remove this line to enable writing to parquet
-        person_data_table = person_data_df.to_arrow()
+
+    def log_agents(self) -> None:
+        """Log the agents' data."""
+        # create a DataFrame for the agent logs
+        logger.info("Logging agents' data...")
+        agent_log_df = pl.DataFrame([self.get_person_log_data(person) for person in self.context.agents(agent_type=0)])
+
+        # convert the DataFrame to an Arrow Table
+        agent_log_table = agent_log_df.to_arrow()
+
+        # Define partition schema
         partition_schema = pa.schema(
             [
-                pa.field("rank", pa.int64()),
-                pa.field("tick", pa.int64()),
+                pa.field("minute_of_day", pa.int32()),
+                pa.field("rank", pa.int32()),
             ]
         )
+
+        # Set Hive-style partitioning
         partitioning = HivePartitioning(partition_schema)
-        ds.dataset(
-            person_data_table,
-            base_dir=self.data_output_path / "agents.parquet",  # specify the output directory
+
+        # Write dataset
+        ds.write_dataset(
+            data=agent_log_table,
+            base_dir=self.agent_log_file,
             format="parquet",
             partitioning=partitioning,
-            existing_dataset_behavior="overwrite_or_ignore",
+            existing_data_behavior="overwrite_or_ignore",
         )
-
-    def at_end(self) -> None:
-        # self.data_set.close()
-        # self.agent_logger.close()
-        pass
 
 
 # Register HeatRiskModel

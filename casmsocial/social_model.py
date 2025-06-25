@@ -104,6 +104,7 @@ class SimEnvironment(Environment):
 
         # theModel.make_contacts(tick)
 
+    @DeprecationWarning
     def get_values_at_place(self, place: Place) -> namedtuple:
         """Get the values at the given coordinates."""
         return None

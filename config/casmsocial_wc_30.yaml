@@ -10,3 +10,4 @@ persons.file: 'data/processed/apache_flight/wake_county_30/persons.parquet'
 environment.file: 'data/processed/apache_flight/wake_county_30/weather_at_places.parquet'
 heat_threshold: 90
 closest_cooling_center.file: 'data/processed/apache_flight/wake_county_30/closest_cooling_center.parquet'
+agent_log_file: 'data/processed/apache_flight/wake_county_30/output/agent_log.parquet'
