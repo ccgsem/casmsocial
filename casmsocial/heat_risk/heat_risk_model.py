@@ -425,7 +425,7 @@ class HeatRiskModel(SIModel):
     def heat_threshold(self) -> float:
         return self._heat_threshold
 
-    def initialize_population(self) -> None:
+    def build_context(self) -> None:
         """Initialize population"""
 
         # register the environment
@@ -461,7 +461,7 @@ class HeatRiskModel(SIModel):
 
         logger.debug("Now running initialize population for SIModel...")
 
-        super().initialize_population()
+        super().build_context()
 
         self._heat_threshold = 90.0
         # self._heat_threshold = float(self.params['heat_threshold'])

@@ -19,6 +19,7 @@ def run(params: dict):
 
     for model in Models.get_models():
         logger.info(model)
+    print(f"Model name: {model_name}")
 
     try:
         ModelCreator = Models.create_model(params["model.name"])  # get_casmsocial_model(params['model.name'])

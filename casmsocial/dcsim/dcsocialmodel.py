@@ -28,7 +28,7 @@ class ArtSocModel(SIModel):
         """Constructor for the ArtSocModel class"""
         super().__init__(comm, params)
 
-    def initialize_population(self) -> None:
+    def build_context(self) -> None:
         """Initialize population"""
         # register the place types
         logger.info("Registering place types...")
@@ -53,7 +53,7 @@ class ArtSocModel(SIModel):
         SIModel.register_activity_names(["home", "work", "school"])
 
         logger.info("Now running initialize population for SIModel...")
-        super().initialize_population()
+        super().build_context()
 
         # initialize the logging
         self.agent_logger = logging.TabularLogger(

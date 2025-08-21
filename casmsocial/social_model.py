@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import duckdb
 import pyarrow.parquet as pq
 import repast4py
+from attr import dataclass
 from dotenv import load_dotenv
 from loguru import logger
 from mpi4py import MPI
@@ -52,6 +53,11 @@ class InvalidPlacesFilesError(Exception):
 class InvalidTableNameError(Exception):
     def __init__(self, table_name):
         super().__init__(f"Invalid table name: {table_name}")
+
+
+class MissingDataPathError(Exception):
+    def __init__(self, data_path):
+        super().__init__(f"Missing or invalid data path: {data_path}")
 
 
 # note: place types are set by derived Model classes
@@ -110,6 +116,15 @@ class SimEnvironment(Environment):
         return None
 
 
+@dataclass
+class AgentTypeConfig:
+    """Configuration class for agents."""
+
+    name: str
+    agent_type: type
+    agent_data_type: type
+
+
 class SIModel(Model):
     """
     The SIModel class encapsulates the simulation, and is
@@ -133,6 +148,8 @@ class SIModel(Model):
     """
 
     # class variables
+    # list of agent type configurations
+    __agent_type_configs: ClassVar[list[AgentTypeConfig]] = []
 
     # list of places configurations (deprecated)
     __placeConfigs: ClassVar[list[PlaceConfig]] = []
@@ -310,7 +327,7 @@ class SIModel(Model):
 
         # create the schedule
         self.runner = schedule.init_schedule_runner(self.comm)
-        self.runner.schedule_event(0, self.initialize_population)
+        self.runner.schedule_event(0, self.build_context)
         self.runner.schedule_repeating_event(1, 1, self.step)
         self.runner.schedule_stop(self.params["ticks"])
         self.runner.schedule_end_event(self.at_end)
@@ -330,11 +347,8 @@ class SIModel(Model):
         # synchronization
         self.context = ctx.SharedContext(self.comm)
 
-        # the data input path should be defined by $CASMSOCIAL_DATA_PATH
-        load_dotenv()
-        data_input_path = os.environ.get("CASMSOCIAL_DATA_PATH")
-        data_input_path = pathlib.Path.cwd() if not data_input_path else pathlib.Path(data_input_path)
-        self.data_input_path = data_input_path
+        # set the data path
+        self._set_data_path()
 
         # create a DuckDB connection for in-memory operations
         self.conn = duckdb.connect(database=":memory:", read_only=False)
@@ -367,6 +381,14 @@ class SIModel(Model):
                 SET location = ST_Point(longitude, latitude);
                 """,
         }
+
+    def _set_data_path(self) -> None:
+        # the data input path should be defined by $CASMSOCIAL_DATA_PATH
+        load_dotenv()
+        data_path = os.environ.get("CASMSOCIAL_DATA_PATH")
+        if not data_path or not pathlib.Path(data_path).exists():
+            raise MissingDataPathError(data_path)
+        self.data_path = pathlib.Path(data_path)
 
     def _validate_and_set_required_params(self):
         """Validate and set required parameters."""
@@ -457,7 +479,7 @@ class SIModel(Model):
             raise MissingRequiredParameterError(["time.step.minutes", "duration.hours"])
         self.params["ticks"] = int(self.params["duration.hours"] * 60 / self.params["time.step.minutes"])
 
-    def initialize_population(self) -> None:
+    def build_context(self) -> None:
         """
         Initialize population
 
@@ -474,7 +496,7 @@ class SIModel(Model):
         # initialize the places
         if "places.file" in self.params and self.params["places.file"] is not None:
             logger.debug("Loading places from single file...")
-            self.create_places_from_file(0, self.data_input_path / self.params["places.file"])
+            self.create_places_from_file(0, self.data_path / self.params["places.file"])
         else:
             logger.debug("Loading places from multiple files...")
             if "places.files" not in self.params:
@@ -484,7 +506,7 @@ class SIModel(Model):
                 logger.error("Error: places.files must be a list of filenames.")
                 raise InvalidPlacesFilesError(self.params["places.files"])
 
-            place_filenames = [self.data_input_path / filename for filename in self.params["places.files"]]
+            place_filenames = [self.data_path / filename for filename in self.params["places.files"]]
             self.create_places_from_files(place_filenames)
 
         local_places = self.places_proj.get_local_places()
@@ -493,7 +515,7 @@ class SIModel(Model):
         # self.conn.execute(self.queries["add_geometries"])
 
         # schedulesList is a list of dict of personID->Schedule object
-        schedulesList = self.create_activities(self.data_input_path / self.params["activities.file"])
+        schedulesList = self.create_activities(self.data_path / self.params["activities.file"])
         if not schedulesList or len(schedulesList) == 0:
             logger.error("Error: activities file is empty or not found.")
             raise MissingRequiredParameterError("activities.file")
@@ -505,7 +527,7 @@ class SIModel(Model):
         if "contact.file" in self.params:
             logger.debug("Loading contact file...")
 
-            self.contact_map = self.create_contacts(self.data_input_path / self.params["contact.file"])
+            self.contact_map = self.create_contacts(self.data_path / self.params["contact.file"])
         else:
             logger.warning("Warning: contact file not specified.")
 
@@ -515,7 +537,7 @@ class SIModel(Model):
 
         # agent_id_map is a map of personID->repast4py.Agent.uid
         # self.person_id_map = {}
-        self.create_persons(self.data_input_path / self.params["persons.file"], schedulesList, self.rng)
+        self.create_persons(self.data_path / self.params["persons.file"], schedulesList, self.rng)
 
         result = self.conn.execute(self.queries["get_tables"]).fetchall()
         logger.info(f"rank {self.rank}: DuckDB tables after initialization: {result}")
@@ -649,6 +671,7 @@ class SIModel(Model):
         placeConfig = self.get_place_config(placeTypeIndex)
         placeType = placeConfig.place_type
         placeDataType = placeConfig.dataType
+        logger.info(f"Creating places of type {placeType.__name__} from {placesFile}...")
 
         table_names = ["hh", "work", "sch"]
         if placeConfig.name == "Places":

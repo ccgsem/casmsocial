@@ -265,7 +265,7 @@ class Person(core.Agent):
         if activities_idx < 2:  # if sticking to planned activities
             if cal.is_weekday():
                 activities_idx = 0
-            elif len(self.schedule[1]) > 0:  # if there is a weekend schedule
+            elif len(self.schedules) > 0:  # if there is a weekend schedule
                 activities_idx = 1
             else:  # if unplanned activities
                 activities_idx = 0  # default to weekday activities
