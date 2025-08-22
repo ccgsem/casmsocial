@@ -89,36 +89,32 @@ class Person(core.Agent):
 
     # class variables
     TYPE = 0  # class variable
-    __personDataClass: dataclass  # class variable
-    __behaviorEngine: BehaviorEngine  # class variable
-
-    # class methods
-    @classmethod
-    def registerPersonDataClass(cls, persondataclass: type[dataclass]) -> None:
-        """Register Person dataclass."""
-        cls.__personDataClass = persondataclass
+    __behavior_engine: BehaviorEngine = BehaviorEngine
 
     @classmethod
-    def getPersonDataClass(cls) -> type[dataclass]:
-        """Returns Person dataclass."""
-        return cls.__personDataClass
-
-    @classmethod
-    def registerBehaviorEngine(cls, behaviorEngine: BehaviorEngine) -> None:
-        """Register Person behavior engine."""
-        cls.__behaviorEngine = behaviorEngine
+    def registerBehaviorEngine(cls, behavior_engine: BehaviorEngine) -> None:
+        """Register a behavior engine for the person."""
+        cls.__behavior_engine = behavior_engine
 
     @classmethod
     def getBehaviorEngine(cls) -> BehaviorEngine:
-        """Returns Person behavior engine."""
-        return cls.__behaviorEngine
+        """Get the behavior engine for the person."""
+        return cls.__behavior_engine
 
     # schedules: Optional[Schedules] = \
     #     field(default=tuple[Activities(0, tuple[0, 0, 0])])
     # places: Optional[list[int]] = field(default_factory=list)
     # currentPlaceID: Optional[str] = field(default=None)
 
-    def __init__(self, local_id: int, rank: int, schedules: Schedules, places: namedtuple, initDict: dict):
+    def __init__(
+        self,
+        local_id: int,
+        rank: int,
+        schedules: Schedules,
+        places: namedtuple,
+        initDict: dict,
+        personDataClass: type[dataclass],
+    ):
         """Constructor for the Person class.
 
         Arguments:
@@ -137,6 +133,7 @@ class Person(core.Agent):
                 the schedule. e.g. if the schedule returns "0", this Person will
                 try to go to the place with the ID of places[0]
             initDict: A dictionary of initial values for the person
+            personDataClass: The dataclass type to use for the person's state.
         """
         super().__init__(id=local_id, type=Person.TYPE, rank=rank)
 
@@ -161,16 +158,15 @@ class Person(core.Agent):
         # initDict['location'] = starting_location
         initDict["places"] = places
 
-        self.state = create_dataclass_record_from_dict(Person.getPersonDataClass(), initDict)
+        self.state = create_dataclass_record_from_dict(personDataClass, initDict)
 
         self.messages_outgoing: list[Message] = []
         self.messages_sent: list[Message] = []
         self.messages_incoming: list[Message] = []
 
-        # create the behavior engine
-        self.behavior_engine = Person.getBehaviorEngine()(self)
-
-        # logger.debug(f"Person {self.id} is ready!")
+        # create the default behavior engine
+        self.behavior_engine_type = self.getBehaviorEngine()
+        self.behavior_engine = self.getBehaviorEngine()(self)
 
     @property
     def pt(self) -> cpt:
@@ -193,6 +189,11 @@ class Person(core.Agent):
             place_id=self.state.place_id,
             minute_last_updated=self.state.minute_last_moved,
         )
+
+    def setBehaviorEngine(self, behaviorEngine: type[BehaviorEngine]):
+        """Sets the behavior engine for this person."""
+        self.behavior_engine_type = behaviorEngine
+        self.behavior_engine = behaviorEngine()(self)
 
     def save(self) -> tuple:
         """Saves the state of this Person as a Tuple.

@@ -29,8 +29,8 @@ from casmsocial.environment import Environment
 from casmsocial.factory import Models
 from casmsocial.message import Message
 from casmsocial.model import Model
-from casmsocial.person import Person, PersonConfig, person_cache
-from casmsocial.place import Place, PlaceConfig, PlacesProjection
+from casmsocial.person import Person, person_cache
+from casmsocial.place import Place, PlacesProjection
 from casmsocial.sim_time import SimTime
 
 
@@ -43,11 +43,6 @@ class MissingRequiredParameterError(Exception):
 class InvalidTimeStepError(Exception):
     def __init__(self, value):
         super().__init__(f"Invalid time step value: {value}. Time step must be an integer.")
-
-
-class InvalidPlacesFilesError(Exception):
-    def __init__(self, value):
-        super().__init__(f"places.files must be a list of filenames, got: {value}")
 
 
 class InvalidTableNameError(Exception):
@@ -151,18 +146,6 @@ class SIModel(Model):
     # list of agent type configurations
     __agent_type_configs: ClassVar[list[AgentTypeConfig]] = []
 
-    # list of places configurations (deprecated)
-    __placeConfigs: ClassVar[list[PlaceConfig]] = []
-
-    # remote place configuration (deprecated)
-    __remote_place_config: PlaceConfig = None
-
-    # list of place_types names (replaces __placeConfigs)
-    __place_type_names: ClassVar[list[str]] = []
-
-    # person configuration
-    __person_config: ClassVar[PersonConfig] = None
-
     # list of planned activities (column names in the person file for activities)
     __planned_activity_names: ClassVar[list[str]] = []
 
@@ -176,88 +159,17 @@ class SIModel(Model):
     __environment: Environment = None
 
     # class methods
-
-    # Register a place configuration. (deprecated)
+    # Register a new agent type configuration.
     @classmethod
-    def register_place_config(cls, config: PlaceConfig) -> None:
-        """Register a place configuration."""
-        cls.__placeConfigs.append(config)
-
-    # Get the list of place configurations. (deprecated)
-    @classmethod
-    def get_place_configs(cls) -> list[PlaceConfig]:
-        """Get the list of place configurations."""
-        return cls.__placeConfigs
-
-    # Get a specific place configuration by index. (deprecated)
-    @classmethod
-    def get_place_config(cls, idx: int) -> PlaceConfig:
-        """Get a PlacesConfig from the list of configs."""
-        return cls.__placeConfigs[idx]
-
-    # Get a specific place configuration by name. (deprecated)
-    @classmethod
-    def get_place_config_idx(cls, name: str) -> int:
-        """Get the index of a PlacesConfig in the list of configs."""
-        for idx, config in enumerate(cls.__placeConfigs):
-            if config.name == name:
-                return idx
-        return -1
-
-    # Get the name of a specific place configuration by index. (deprecated)
-    @classmethod
-    def get_place_config_name(cls, idx: int) -> str:
-        """Get the name of a PlacesConfig in the list of configs."""
-        return cls.__placeConfigs[idx].name
-
-    # Get the names of all place configurations. (deprecated)
-    @classmethod
-    def get_all_place_config_names(cls) -> list[str]:
-        """Get the names of all PlacesConfig in the list of configs."""
-        return [config.name for config in cls.__placeConfigs]
-
-    # Register a remote place configuration. (deprecated)
-    @classmethod
-    def register_remote_place_config(cls, config: PlaceConfig) -> None:
-        """Register a remote place configuration."""
-        cls.__remote_place_config = config
-
-    # Get the remote place configuration. (deprecated)
-    @classmethod
-    def get_remote_place_config(cls) -> PlaceConfig:
-        """Get the remote place configuration."""
-        return cls.__remote_place_config
+    def register_agent_type_config(cls, config: AgentTypeConfig) -> None:
+        """Register a new agent type configuration."""
+        cls.__agent_type_configs.append(config)
+        logger.info(f"Registered agent type config: {config}")
 
     @classmethod
-    def register_place_names(cls, place_names: list[str]) -> None:
-        """Register place names.
-
-        Args:
-            place_names (list[str]): The list of place type names.
-        """
-        cls.__place_type_names = place_names
-
-    @classmethod
-    def get_places_names(cls) -> list[str]:
-        """Get the names of all registered place types.
-        Returns:
-            list[str]: The list of place type names.
-        """
-        if not cls.__place_type_names:
-            cls.__place_type_names = [config.name for config in cls.__placeConfigs]
-        return cls.__place_type_names
-
-    @classmethod
-    def register_person_config(cls, config: PersonConfig) -> None:
-        """Register a person configuration."""
-        Person.registerPersonDataClass(config.dataType)
-        Person.registerBehaviorEngine(config.behaviorEngine)
-        cls.__person_config = config
-
-    @classmethod
-    def get_person_config(cls) -> PersonConfig:
-        """Get the person configuration."""
-        return cls.__person_config
+    def get_agent_type_configs(cls) -> list[AgentTypeConfig]:
+        """Get the list of agent type configurations."""
+        return cls.__agent_type_configs
 
     @classmethod
     def register_planned_activity_names(cls, planned_activity_names: list[str]) -> None:
@@ -355,17 +267,6 @@ class SIModel(Model):
         self.queries = {
             "get_tables": "SHOW TABLES",
             "get_table_schema": "DESCRIBE {table_name}",
-            "hh": "SELECT SELECT sp_id, 'Household' as place_type, latitude, longitude  FROM hh",
-            "work": "SELECT SELECT sp_id, 'Workplace' as place_type, latitude, longitude FROM work",
-            "sch": "SELECT SELECT sp_id, 'School' as place_type, latitude, longitude FROM sch",
-            "create_places": """
-                CREATE TABLE places AS
-                SELECT * FROM hh
-                UNION BY NAME
-                SELECT * FROM work
-                UNION BY NAME
-                SELECT * FROM sch;
-                """,
             "add_geometries": """
                 -- 1. Load the spatial extension
                 -- This is necessary to use ST_Point and other geospatial functions.
@@ -392,7 +293,7 @@ class SIModel(Model):
 
     def _validate_and_set_required_params(self):
         """Validate and set required parameters."""
-        required_keys = ["persons.file", "activities.file"]
+        required_keys = ["places.file", "persons.file", "activities.file"]
         for key in required_keys:
             if key not in self.params:
                 logger.error(f"Missing required parameter: {key}")
@@ -405,8 +306,6 @@ class SIModel(Model):
             "duration.hours",
             "timezone",
             "time.step.minutes",
-            "places.file",
-            "places.files",
             "contacts.file",
         ]
         for key in optional_keys:
@@ -418,10 +317,6 @@ class SIModel(Model):
         self._set_default_duration_hours()
         self._set_default_timezone()
         self._parse_time_step_minutes()
-
-        if self.params["places.file"] is None and "places.files" not in self.params:
-            logger.error("No places file specified. Please provide 'places.file' or 'places.files'.")
-            raise MissingRequiredParameterError(["places.file", "places.files"])
 
     def _set_default_start_datetime(self):
         if self.params["start.datetime"] is None:
@@ -493,21 +388,10 @@ class SIModel(Model):
         self.places_proj = PlacesProjection("places_projection", self.comm)
         self.context.add_projection(self.places_proj)
 
-        # initialize the places
-        if "places.file" in self.params and self.params["places.file"] is not None:
+        # initialize the places (note: already checked if "places.file" is in params)
+        if "places.file" in self.params:
             logger.debug("Loading places from single file...")
             self.create_places_from_file(0, self.data_path / self.params["places.file"])
-        else:
-            logger.debug("Loading places from multiple files...")
-            if "places.files" not in self.params:
-                logger.error("Error: places.files parameter not specified.")
-                raise MissingRequiredParameterError("places.files")
-            elif not isinstance(self.params["places.files"], list):
-                logger.error("Error: places.files must be a list of filenames.")
-                raise InvalidPlacesFilesError(self.params["places.files"])
-
-            place_filenames = [self.data_path / filename for filename in self.params["places.files"]]
-            self.create_places_from_files(place_filenames)
 
         local_places = self.places_proj.get_local_places()
         logger.info(f"rank {self.rank}: number of local places={len(local_places)}")
@@ -524,12 +408,12 @@ class SIModel(Model):
         # i.e. it is a map of personIDs to a list of contacted persons at each
         # place
         self.contact_map = {}
-        if "contact.file" in self.params:
+        if "contacts.file" in self.params:
             logger.debug("Loading contact file...")
 
-            self.contact_map = self.create_contacts(self.data_path / self.params["contact.file"])
+            self.contact_map = self.create_contacts(self.data_path / self.params["contacts.file"])
         else:
-            logger.warning("Warning: contact file not specified.")
+            logger.warning("Warning: contacts file not specified.")
 
         logger.debug(f"rank {self.rank}: contacts size={len(self.contact_map)}")
 
@@ -556,7 +440,8 @@ class SIModel(Model):
             rng: The random number generator.
         """
         # get the person type and data type
-        personType = self.get_person_config().person_type
+        personType = self.get_agent_type_configs()[Person.TYPE].agent_type
+        personDataType = self.get_agent_type_configs()[Person.TYPE].agent_data_type
 
         # get the activities map, which is a dict of personID->Activities object
         # Currently, we assume that there is only one schedule in the list,
@@ -652,6 +537,7 @@ class SIModel(Model):
                     schedules,
                     places,
                     p,  # initDict for additional data
+                    personDataType,
                 )
 
                 self.context.add(person)
@@ -668,19 +554,14 @@ class SIModel(Model):
         """
 
         # get the place type
-        placeConfig = self.get_place_config(placeTypeIndex)
-        placeType = placeConfig.place_type
-        placeDataType = placeConfig.dataType
-        logger.info(f"Creating places of type {placeType.__name__} from {placesFile}...")
+        logger.info(f"Creating places from {placesFile}...")
 
-        table_names = ["hh", "work", "sch"]
-        if placeConfig.name == "Places":
-            table_names = [placeConfig.name.lower()]
-
-        table_name = table_names[placeTypeIndex]
+        placeType = self.get_agent_type_configs()[Place.TYPE].agent_type
+        placeDataType = self.get_agent_type_configs()[Place.TYPE].agent_data_type
+        table_name = "places"
         print(
-            f"Creating places of type {placeConfig.name} from {placesFile}:"
-            f" {placeType.__name__} with data type {placeDataType.__name__}"
+            f"Creating places from {placesFile}:"
+            f" with data type {placeDataType.__name__}"
             f" and table name {table_name}"
         )
         table = pq.read_table(placesFile)
@@ -703,37 +584,6 @@ class SIModel(Model):
                     place_record["rank"] = 0
                 place = placeType(place_record, placeDataType)
                 self.places_proj.add_place(place)
-
-    def create_places_from_files(self, places_files: list[pathlib.Path]) -> None:
-        """
-        Create places from the given files.
-
-        Args:
-            places_files (list[pathlib.Path]): The list of place files.
-        """
-        for placeTypeIndex, placesFile in enumerate(places_files):
-            self.create_places_from_file(placeTypeIndex, placesFile)
-
-        # create the places table
-        logger.info("Creating places table...")
-        self.conn.execute(self.queries["create_places"])
-        # verify the places table was created
-        # if not self.conn.table("places").exists():
-        # logger.error("Error: places table was not created.")
-        # raise InvalidTableNameError("places")
-        # show the tables to verify creation
-        logger.info("Showing tables after creating places...")
-        result = self.conn.execute("SHOW TABLES").fetchall()  # Show tables to verify creation
-        logger.info(f"Created tables: {result}")
-
-        places_df = self.conn.query("SELECT * FROM places").pl()
-        logger.info(f"Number of places created: {len(places_df)}")
-
-        # add a remote place
-        remote_place = self.get_remote_place_config().place_type(
-            {"sp_id": 0, "rank": 0}, self.get_remote_place_config().dataType
-        )
-        self.places_proj.add_place(remote_place)
 
     def create_activities(self, activitiesFile: pathlib.Path) -> list[dict[int, list[int]]]:
         """Create activities from the given file.

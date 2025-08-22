@@ -8,16 +8,10 @@ from loguru import logger
 from mpi4py import MPI
 from repast4py import logging
 
-# model factory
 from casmsocial.factory import Models
-
-# place types
-from casmsocial.household import Household
-from casmsocial.person import BehaviorEngine, Person, PersonConfig, PersonData
-from casmsocial.place import PlaceConfig, PlaceData, RemotePlace
-from casmsocial.school import School
-from casmsocial.social_model import SIModel
-from casmsocial.workplace import Workplace
+from casmsocial.person import Person, PersonData
+from casmsocial.place import Place, PlaceData
+from casmsocial.social_model import AgentTypeConfig, SIModel
 
 
 # 1. Define a SIModel-derived Class
@@ -30,23 +24,15 @@ class ArtSocModel(SIModel):
 
     def build_context(self) -> None:
         """Initialize population"""
-        # register the place types
-        logger.info("Registering place types...")
 
-        SIModel.register_place_config(PlaceConfig(name="Household", place_type=Household, dataType=PlaceData))
-        SIModel.register_place_config(PlaceConfig(name="School", place_type=School, dataType=PlaceData))
-        SIModel.register_place_config(PlaceConfig(name="Workplace", place_type=Workplace, dataType=PlaceData))
-
-        # register the remote place type
-        SIModel.register_remote_place_config(
-            PlaceConfig(name="RemotePlace", place_type=RemotePlace, dataType=PlaceData)
+        # register the person and place agent types
+        logger.info(f"Registering person type (TYPE={Person.TYPE})...")
+        SIModel.register_agent_type_config(
+            AgentTypeConfig(name="Person", agent_type=Person, agent_data_type=PersonData)
         )
 
-        # register the person types
-        logger.info("Registering person type...")
-        SIModel.register_person_config(
-            PersonConfig(name="Person", person_type=Person, dataType=PersonData, behaviorEngine=BehaviorEngine)
-        )
+        logger.info(f"Registering place type (TYPE={Place.TYPE})...")
+        SIModel.register_agent_type_config(AgentTypeConfig(name="Place", agent_type=Place, agent_data_type=PlaceData))
 
         # register the activities
         SIModel.register_planned_activity_names(["sp_hh_id", "sp_work_id", "sp_school_id"])
