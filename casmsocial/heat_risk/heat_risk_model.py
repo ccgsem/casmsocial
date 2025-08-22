@@ -29,7 +29,7 @@ from casmsocial.person import BehaviorEngine, Person, PersonConfig, PersonData
 from casmsocial.place import Place, PlaceConfig, PlaceData, RemotePlace, find_closest_location
 from casmsocial.school import School
 from casmsocial.sim_time import SimTime
-from casmsocial.social_model import SimEnvironment, SIModel, update_activities_data
+from casmsocial.social_model import AgentTypeConfig, SimEnvironment, SIModel, update_activities_data
 from casmsocial.workplace import Workplace
 
 
@@ -430,6 +430,15 @@ class HeatRiskModel(SIModel):
 
         # register the environment
         SIModel.register_environment(HeatRiskEnvironment("HeatRiskEnvironment"))
+
+        # register the person and place agent types
+        logger.info(f"Registering person type (TYPE={Person.TYPE})...")
+        SIModel.register_agent_type_config(
+            AgentTypeConfig(name="Person", agent_type=Person, agent_data_type=PersonData)
+        )
+
+        logger.info(f"Registering place type (TYPE={Place.TYPE})...")
+        SIModel.register_agent_type_config(AgentTypeConfig(name="Place", agent_type=Place, agent_data_type=PlaceData))
 
         # register the place types
         SIModel.register_place_config(

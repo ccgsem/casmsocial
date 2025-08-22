@@ -13,9 +13,7 @@ from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 import duckdb
-import pyarrow.parquet as pq
 import repast4py
-from attr import dataclass
 from dotenv import load_dotenv
 from loguru import logger
 from mpi4py import MPI
@@ -53,9 +51,6 @@ class InvalidTableNameError(Exception):
 class MissingDataPathError(Exception):
     def __init__(self, data_path):
         super().__init__(f"Missing or invalid data path: {data_path}")
-
-
-# note: place types are set by derived Model classes
 
 
 class SimEnvironment(Environment):
@@ -111,15 +106,6 @@ class SimEnvironment(Environment):
         return None
 
 
-@dataclass
-class AgentTypeConfig:
-    """Configuration class for agents."""
-
-    name: str
-    agent_type: type
-    agent_data_type: type
-
-
 class SIModel(Model):
     """
     The SIModel class encapsulates the simulation, and is
@@ -143,8 +129,8 @@ class SIModel(Model):
     """
 
     # class variables
-    # list of agent type configurations
-    __agent_type_configs: ClassVar[list[AgentTypeConfig]] = []
+    __personClass: type[Person] = Person
+    __placeClass: type[Place] = Place
 
     # list of planned activities (column names in the person file for activities)
     __planned_activity_names: ClassVar[list[str]] = []
@@ -159,17 +145,27 @@ class SIModel(Model):
     __environment: Environment = None
 
     # class methods
-    # Register a new agent type configuration.
     @classmethod
-    def register_agent_type_config(cls, config: AgentTypeConfig) -> None:
-        """Register a new agent type configuration."""
-        cls.__agent_type_configs.append(config)
-        logger.info(f"Registered agent type config: {config}")
+    def getPersonClass(cls) -> type[Person]:
+        """Get the person class."""
+        return cls.__personClass
 
     @classmethod
-    def get_agent_type_configs(cls) -> list[AgentTypeConfig]:
-        """Get the list of agent type configurations."""
-        return cls.__agent_type_configs
+    def setPersonClass(cls, person_class: type[Person], person_data) -> None:
+        """Set the person class."""
+        person_class.setPersonDataClass(person_data)
+        cls.__personClass = person_class
+
+    @classmethod
+    def getPlaceClass(cls) -> type[Place]:
+        """Get the place class."""
+        return cls.__placeClass
+
+    @classmethod
+    def setPlaceClass(cls, place_class: type[Place], place_data) -> None:
+        """Set the place class."""
+        place_class.setPlaceDataClass(place_data)
+        cls.__placeClass = place_class
 
     @classmethod
     def register_planned_activity_names(cls, planned_activity_names: list[str]) -> None:
@@ -264,24 +260,9 @@ class SIModel(Model):
 
         # create a DuckDB connection for in-memory operations
         self.conn = duckdb.connect(database=":memory:", read_only=False)
-        self.queries = {
-            "get_tables": "SHOW TABLES",
-            "get_table_schema": "DESCRIBE {table_name}",
-            "add_geometries": """
-                -- 1. Load the spatial extension
-                -- This is necessary to use ST_Point and other geospatial functions.
-                INSTALL spatial;
-                LOAD spatial;
-                -- 2. Add the 'location' column of type GEOMETRY
-                -- GEOMETRY is a generic spatial type that can store points, lines, polygons, etc.
-                ALTER TABLE places ADD COLUMN location GEOMETRY;
-                -- 3. Populate the 'location' column
-                -- ST_Point expects (X, Y) which translates to (longitude, latitude) for geographic points.
-                UPDATE places
-                -- Ensure that longitude and latitude are in the correct order for ST_Point
-                SET location = ST_Point(longitude, latitude);
-                """,
-        }
+        self.queries = {}
+
+        self.contact_map = {}
 
     def _set_data_path(self) -> None:
         # the data input path should be defined by $CASMSOCIAL_DATA_PATH
@@ -382,36 +363,31 @@ class SIModel(Model):
         from the input data files.
 
         The method performs the following steps:"""
-        # register the place types (derived classes should set place types)
+
+        # register the agent types (derived classes should set agent types)
 
         # create SharedContext consisting of all of the places in this model
         self.places_proj = PlacesProjection("places_projection", self.comm)
         self.context.add_projection(self.places_proj)
 
+        # create the input tables
+        self.create_input_tables()
+
         # initialize the places (note: already checked if "places.file" is in params)
-        if "places.file" in self.params:
-            logger.debug("Loading places from single file...")
-            self.create_places_from_file(0, self.data_path / self.params["places.file"])
+        self.create_places()
 
         local_places = self.places_proj.get_local_places()
         logger.info(f"rank {self.rank}: number of local places={len(local_places)}")
         # add geometry to the places table
         # self.conn.execute(self.queries["add_geometries"])
 
-        # schedulesList is a list of dict of personID->Schedule object
-        schedulesList = self.create_activities(self.data_path / self.params["activities.file"])
-        if not schedulesList or len(schedulesList) == 0:
-            logger.error("Error: activities file is empty or not found.")
-            raise MissingRequiredParameterError("activities.file")
-        logger.info(f"rank {self.rank}: weekday activitiesMap size={len(schedulesList[0])}")
         # contact_map is a dict of personID->{placeID->[personID]}
         # i.e. it is a map of personIDs to a list of contacted persons at each
         # place
-        self.contact_map = {}
-        if "contacts.file" in self.params:
-            logger.debug("Loading contact file...")
+        if "contacts.file" in self.params and self.params.get("contacts.file"):
+            logger.info(f"Loading contact file {self.params['contacts.file']}...")
 
-            self.contact_map = self.create_contacts(self.data_path / self.params["contacts.file"])
+            self.contact_map = self.create_contacts()
         else:
             logger.warning("Warning: contacts file not specified.")
 
@@ -421,16 +397,67 @@ class SIModel(Model):
 
         # agent_id_map is a map of personID->repast4py.Agent.uid
         # self.person_id_map = {}
-        self.create_persons(self.data_path / self.params["persons.file"], schedulesList, self.rng)
+        self.create_persons(self.rng)
 
         result = self.conn.execute(self.queries["get_tables"]).fetchall()
         logger.info(f"rank {self.rank}: DuckDB tables after initialization: {result}")
 
+    def create_input_tables(self) -> None:
+        """Load tables from the database."""
+
+        # create the places table
+        places_file = self.data_path / self.params["places.file"]
+        if not places_file.exists():
+            raise MissingRequiredParameterError("places.file")
+        logger.info(f"Loading places file {places_file}...")
+        self.conn.execute("CREATE TABLE IF NOT EXISTS places AS SELECT * FROM read_parquet(?)", [str(places_file)])
+
+        # create the persons table
+        persons_file = self.data_path / self.params["persons.file"]
+        if not persons_file.exists():
+            raise MissingRequiredParameterError("persons.file")
+        logger.info(f"Loading persons file {persons_file}...")
+        self.conn.execute("CREATE TABLE IF NOT EXISTS persons AS SELECT * FROM read_parquet(?)", [str(persons_file)])
+
+        # create the activities table
+        activities_file = self.data_path / self.params["activities.file"]
+        if not activities_file.exists():
+            raise MissingRequiredParameterError("activities.file")
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS activities AS SELECT * FROM read_parquet(?)", [str(activities_file)]
+        )
+
+        self.queries = {
+            "get_tables": "SHOW TABLES",
+            "add_geometries": """
+                -- 1. Load the spatial extension
+                -- This is necessary to use ST_Point and other geospatial functions.
+                INSTALL spatial;
+                LOAD spatial;
+                -- 2. Add the 'location' column of type GEOMETRY
+                -- GEOMETRY is a generic spatial type that can store points, lines, polygons, etc.
+                ALTER TABLE places ADD COLUMN location GEOMETRY;
+                -- 3. Populate the 'location' column
+                -- ST_Point expects (X, Y) which translates to (longitude, latitude) for geographic points.
+                UPDATE places
+                -- Ensure that longitude and latitude are in the correct order for ST_Point
+                SET location = ST_Point(longitude, latitude);
+                """,
+        }
+
+        # create the contacts table if it exists
+        if "contacts.file" in self.params and self.params.get("contacts.file"):
+            contacts_file = self.data_path / self.params["contacts.file"]
+            if not contacts_file.exists():
+                raise MissingRequiredParameterError("contacts.file")
+            logger.info(f"Loading contacts file {contacts_file}...")
+            self.conn.execute(
+                "CREATE TABLE IF NOT EXISTS contacts AS SELECT * FROM read_parquet(?)", [str(contacts_file)]
+            )
+
     def create_persons(
         self,
-        personsFile: pathlib.Path,
-        schedulesList: list[dict[int, list[int]]],
-        rng,
+        rng: repast4py.random.default_rng,
     ) -> None:
         """Create persons from the given file.
 
@@ -439,9 +466,16 @@ class SIModel(Model):
             schedulesList (list[dict]): The list of activities maps.
             rng: The random number generator.
         """
-        # get the person type and data type
-        personType = self.get_agent_type_configs()[Person.TYPE].agent_type
-        personDataType = self.get_agent_type_configs()[Person.TYPE].agent_data_type
+        # get the person type
+        personType = self.getPersonClass()
+
+        # Create the activities
+        #  - schedulesList is a list of dict of personID->Schedule object
+        schedulesList = self.create_activities()
+        if not schedulesList or len(schedulesList) == 0:
+            logger.error("Error: no activities found.")
+            raise MissingRequiredParameterError("activities.file")
+        logger.info(f"rank {self.rank}: weekday activitiesMap size={len(schedulesList[0])}")
 
         # get the activities map, which is a dict of personID->Activities object
         # Currently, we assume that there is only one schedule in the list,
@@ -463,7 +497,8 @@ class SIModel(Model):
         alternate_activities_names = activity_names[len(planned_activity_names) :]
 
         # load the persons from the file
-        table = pq.read_table(personsFile)
+        # table = pq.read_table(personsFile)
+        table = self.conn.execute("SELECT * FROM persons").fetch_arrow_table()
 
         for batch in table.to_batches():
             for row in zip(*batch.columns):
@@ -537,12 +572,33 @@ class SIModel(Model):
                     schedules,
                     places,
                     p,  # initDict for additional data
-                    personDataType,
                 )
 
                 self.context.add(person)
                 self.places_proj.add(person)
                 self.places_proj.assign_agent_to_place(person, household)
+
+    def create_places(self) -> None:
+        """Create places in the project."""
+
+        logger.info("Creating places...")
+
+        # Get the place type and data type
+        placeType = self.getPlaceClass()
+        placeDataType = placeType.getPlaceDataClass()
+
+        # Create the places table
+        table = self.conn.execute("SELECT * FROM places").fetch_arrow_table()
+
+        for batch in table.to_batches():
+            for row in zip(*batch.columns):
+                # convert arrow scalars to python
+                row = [x.as_py() for x in row]
+                place_record = dict(zip(table.column_names, row))
+                if "rank" not in place_record:
+                    place_record["rank"] = 0
+                place = placeType(place_record, placeDataType)
+                self.places_proj.add_place(place)
 
     def create_places_from_file(self, placeTypeIndex: int, placesFile: pathlib.Path) -> None:
         """
@@ -564,13 +620,15 @@ class SIModel(Model):
             f" with data type {placeDataType.__name__}"
             f" and table name {table_name}"
         )
-        table = pq.read_table(placesFile)
+        # table = pq.read_table(placesFile)
+        table = self.conn.execute("SELECT * FROM places").fetch_arrow_table()
+
         # Register the PyArrow table as a DuckDB view
         self.conn.register("my_temp_view", table)
 
         # Use that view in your CREATE TABLE AS query
-        query = f'CREATE OR REPLACE TABLE "{table_name}" AS SELECT * FROM my_temp_view'  # noqa: S608
-        self.conn.execute(query)
+        # query = f'CREATE OR REPLACE TABLE "{table_name}" AS SELECT * FROM my_temp_view'
+        # self.conn.execute(query)
 
         # Optionally fetch the result (if needed)
         # result = self.conn.table(table_name).arrow()
@@ -585,14 +643,12 @@ class SIModel(Model):
                 place = placeType(place_record, placeDataType)
                 self.places_proj.add_place(place)
 
-    def create_activities(self, activitiesFile: pathlib.Path) -> list[dict[int, list[int]]]:
+    def create_activities(self) -> list[dict[int, list[int]]]:
         """Create activities from the given file.
         This method reads the activities file and creates a mapping of person IDs
         to their activities. Activities are grouped in schedules for each person.
         The default schedule is for weekdays, but weekend activities can be added later.
 
-        Args:
-            activitiesFile (pathlib.Path): The activities file.
         Returns:
             list[dict[int, list[int]]]: A list containing a single dictionary
             mapping person IDs to their activities for a weekday.
@@ -603,7 +659,7 @@ class SIModel(Model):
 
         # This should be the most eficient way to extract the data via pyarrow
         # See https://stackoverflow.com/questions/53157495/fastest-way-to-iterate-pyarrow-table/55633193#55633193
-        table = pq.read_table(activitiesFile)
+        table = self.conn.execute("SELECT * FROM activities").fetch_arrow_table()
 
         for batch in table.to_batches():
             d = batch.to_pydict()
@@ -617,7 +673,7 @@ class SIModel(Model):
 
         return [act_map]
 
-    def create_contacts(self, contactFile: pathlib.Path) -> dict[int, dict[int, int]]:
+    def create_contacts(self) -> dict[int, dict[int, int]]:
         # contactMap looks like:
         # personID -> { hour_of_day -> [ otherPersonIDs ] }
         # dict
@@ -625,7 +681,8 @@ class SIModel(Model):
 
         # with open(contactFile, 'r', newline='') as f:
         #     contacts = DictReader(f)
-        table = pq.read_table(contactFile)
+        # table = pq.read_table(contactFile)
+        table = self.conn.execute("SELECT * FROM contacts").fetch_arrow_table()
 
         for batch in table.to_batches():
             d = batch.to_pydict()

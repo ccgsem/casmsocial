@@ -89,7 +89,18 @@ class Person(core.Agent):
 
     # class variables
     TYPE = 0  # class variable
+    __person_data_class: type[dataclass] = PersonData
     __behavior_engine: BehaviorEngine = BehaviorEngine
+
+    @classmethod
+    def setPersonDataClass(cls, person_data_class: type[dataclass]) -> None:
+        """Register a person data class for the person."""
+        cls.__person_data_class = person_data_class
+
+    @classmethod
+    def getPersonDataClass(cls) -> type[dataclass]:
+        """Get the person data class for the person."""
+        return cls.__person_data_class
 
     @classmethod
     def registerBehaviorEngine(cls, behavior_engine: BehaviorEngine) -> None:
@@ -106,15 +117,7 @@ class Person(core.Agent):
     # places: Optional[list[int]] = field(default_factory=list)
     # currentPlaceID: Optional[str] = field(default=None)
 
-    def __init__(
-        self,
-        local_id: int,
-        rank: int,
-        schedules: Schedules,
-        places: namedtuple,
-        initDict: dict,
-        personDataClass: type[dataclass],
-    ):
+    def __init__(self, local_id: int, rank: int, schedules: Schedules, places: namedtuple, initDict: dict):
         """Constructor for the Person class.
 
         Arguments:
@@ -133,7 +136,6 @@ class Person(core.Agent):
                 the schedule. e.g. if the schedule returns "0", this Person will
                 try to go to the place with the ID of places[0]
             initDict: A dictionary of initial values for the person
-            personDataClass: The dataclass type to use for the person's state.
         """
         super().__init__(id=local_id, type=Person.TYPE, rank=rank)
 
@@ -158,15 +160,14 @@ class Person(core.Agent):
         # initDict['location'] = starting_location
         initDict["places"] = places
 
-        self.state = create_dataclass_record_from_dict(personDataClass, initDict)
+        self.state = create_dataclass_record_from_dict(Person.getPersonDataClass(), initDict)
 
         self.messages_outgoing: list[Message] = []
         self.messages_sent: list[Message] = []
         self.messages_incoming: list[Message] = []
 
         # create the default behavior engine
-        self.behavior_engine_type = self.getBehaviorEngine()
-        self.behavior_engine = self.getBehaviorEngine()(self)
+        self.behavior_engine = Person.getBehaviorEngine()(self)
 
     @property
     def pt(self) -> cpt:
@@ -192,7 +193,6 @@ class Person(core.Agent):
 
     def setBehaviorEngine(self, behaviorEngine: type[BehaviorEngine]):
         """Sets the behavior engine for this person."""
-        self.behavior_engine_type = behaviorEngine
         self.behavior_engine = behaviorEngine()(self)
 
     def save(self) -> tuple:
