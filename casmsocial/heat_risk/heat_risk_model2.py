@@ -20,18 +20,18 @@ from mpi4py import MPI
 from pyarrow.dataset import HivePartitioning
 
 from casmsocial.activities import Act
+from casmsocial.casmpop import (
+    CasmPop,
+    MissingRequiredParameterError,
+    SimEnvironment,
+    update_activities_data,
+)
 from casmsocial.data_utilities import get_attribute_names_from_data
 from casmsocial.factory import Models
 from casmsocial.model import Model
 from casmsocial.person import BehaviorEngine, Person, PersonData
 from casmsocial.place import Place, PlaceData
 from casmsocial.sim_time import SimTime
-from casmsocial.social_model import (
-    MissingRequiredParameterError,
-    SimEnvironment,
-    SIModel,
-    update_activities_data,
-)
 
 
 # utility functions for heat-related computations
@@ -378,7 +378,7 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         end_time = 1440  # 24 hours
 
         # find the activity and schedule indices
-        activity_names = SIModel.get_activity_names()
+        activity_names = CasmPop.get_activity_names()
         activity_id = activity_names.index("cooling_center")
 
         person = self.agent
@@ -498,7 +498,7 @@ class PersonLogData:
 
 
 # 6b. Define the HeatRiskModel class
-class HeatRiskModel2(SIModel):
+class HeatRiskModel2(CasmPop):
     """HeatRiskModel class"""
 
     def __init__(self, comm: MPI.Intracomm, params: dict):
@@ -527,24 +527,24 @@ class HeatRiskModel2(SIModel):
 
         # register the environment
         logger.info(f"Registering HeatRiskEnvironment at time={time.time()-self.start_time} seconds...")
-        SIModel.register_environment(HeatRiskEnvironment("HeatRiskEnvironment"))
+        CasmPop.register_environment(HeatRiskEnvironment("HeatRiskEnvironment"))
         logger.info("HeatRiskEnvironment registered at time={time.time()-self.start_time} seconds. ")
 
         # register the person and place agent types
         logger.info(f"Registering person type (TYPE={Person.TYPE})...")
-        SIModel.setPersonClass(Person, PersonDataWithHeatRisk)
+        CasmPop.setPersonClass(Person, PersonDataWithHeatRisk)
 
         logger.info(f"Registering place type (TYPE={Place.TYPE})...")
-        SIModel.setPlaceClass(Place, PlaceDataWithClimate)
+        CasmPop.setPlaceClass(Place, PlaceDataWithClimate)
 
         # register the person behavior engine
         Person.registerBehaviorEngine(HeatRiskBehaviorEngine)
 
         # register the activities
-        SIModel.register_planned_activity_names(["sp_hh_id", "sp_work_id", "sp_school_id"])
-        SIModel.register_activity_names(["home", "work", "school", "cooling_center"])
+        CasmPop.register_planned_activity_names(["sp_hh_id", "sp_work_id", "sp_school_id"])
+        CasmPop.register_activity_names(["home", "work", "school", "cooling_center"])
 
-        logger.debug("Now running initialize population for SIModel...")
+        logger.debug("Now running initialize population for CasmPop...")
 
         super().build_context()
         logger.info("Population initialized for HeatRiskModel2")

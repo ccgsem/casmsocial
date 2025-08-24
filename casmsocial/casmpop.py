@@ -2,7 +2,7 @@
 Author: Jon Cline
 Created: 02 Dec 2024
 
-Defining the SIModel
+Defining the CasmPop
 """
 import os
 import pathlib
@@ -106,22 +106,22 @@ class SimEnvironment(Environment):
         return None
 
 
-class SIModel(Model):
+class CasmPop(Model):
     """
-    The SIModel class encapsulates the simulation, and is
+    The CasmPop class encapsulates the simulation, and is
     responsible for initialization (scheduling events, creating agents,
     and the grid the agents inhabit), and the overall iterating
     behavior of the model.
 
-    The SIModel class is a subclass of the Model class, which is an abstract
+    The CasmPop class is a subclass of the Model class, which is an abstract
     base class that defines the interface for all models in the casmsocial.
-    The SIModel class implements the start and step methods, which are called
+    The CasmPop class implements the start and step methods, which are called
     by the run function in the casmsocial module to start and run the model.
 
-    The SIModel class adds the following functionality to the Model class:
+    The CasmPop class adds the following functionality to the Model class:
 
-    - The SIModel class initializes geographic places and agents.
-    - The SIModel class updates the  environment for the current time step.
+    - The CasmPop class initializes geographic places and agents.
+    - The CasmPop class updates the  environment for the current time step.
 
     Args:
         comm: the mpi communicator over which the model is distributed.
@@ -209,7 +209,7 @@ class SIModel(Model):
 
     # instance variables
     def __init__(self, comm: MPI.Intracomm, params: dict):
-        """Constructor for the SIModel class
+        """Constructor for the CasmPop class
 
         Args:
             comm: the mpi communicator over which the model is distributed.
@@ -217,7 +217,7 @@ class SIModel(Model):
         """
         Model.set_model(self)
 
-        logger.info("Creating SIModel...")
+        logger.info("Creating CasmPop...")
         self.comm = comm
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
@@ -231,7 +231,7 @@ class SIModel(Model):
         self._remove_deprecated_params()
         self._compute_ticks()
 
-        logger.info(f"Rank {self.rank} starting SIModel with params: {self.params}")
+        logger.info(f"Rank {self.rank} starting CasmPop with params: {self.params}")
 
         # create the schedule
         self.runner = schedule.init_schedule_runner(self.comm)
@@ -910,8 +910,8 @@ class SIModel(Model):
         logger.info(f"Simulation took {end_time - self.start_time} seconds.")
 
 
-# Register SIModel
-Models.add_model(SIModel.__module__ + "." + SIModel.__name__, SIModel)
+# Register CasmPop
+Models.add_model(CasmPop.__module__ + "." + CasmPop.__name__, CasmPop)
 
 
 # utility functions

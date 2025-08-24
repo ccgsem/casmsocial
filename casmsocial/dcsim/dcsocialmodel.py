@@ -8,14 +8,14 @@ from loguru import logger
 from mpi4py import MPI
 from repast4py import logging
 
+from casmsocial.casmpop import CasmPop
 from casmsocial.factory import Models
 from casmsocial.person import Person, PersonData
 from casmsocial.place import Place, PlaceData
-from casmsocial.social_model import SIModel
 
 
-# 1. Define a SIModel-derived Class
-class ArtSocModel(SIModel):
+# 1. Define a CasmPop-derived Class
+class ArtSocModel(CasmPop):
     """ArtSocModel class"""
 
     def __init__(self, comm: MPI.Intracomm, params: dict):
@@ -27,22 +27,22 @@ class ArtSocModel(SIModel):
 
         # register the person and place agent types
         logger.info(f"Registering person type (TYPE={Person.TYPE})...")
-        SIModel.setPersonClass(Person, PersonData)
-        # SIModel.register_agent_type_config(
+        CasmPop.setPersonClass(Person, PersonData)
+        # CasmPop.register_agent_type_config(
         #     AgentTypeConfig(name="Person", agent_type=Person, agent_data_type=PersonData)
         # )
 
         logger.info(f"Registering place type (TYPE={Place.TYPE})...")
-        SIModel.setPlaceClass(Place, PlaceData)
-        # SIModel.register_agent_type_config(
+        CasmPop.setPlaceClass(Place, PlaceData)
+        # CasmPop.register_agent_type_config(
         #     AgentTypeConfig(name="Place", agent_type=Place, agent_data_type=PlaceData)
         # )
 
         # register the activities
-        SIModel.register_planned_activity_names(["sp_hh_id", "sp_work_id", "sp_school_id"])
-        SIModel.register_activity_names(["home", "work", "school"])
+        CasmPop.register_planned_activity_names(["sp_hh_id", "sp_work_id", "sp_school_id"])
+        CasmPop.register_activity_names(["home", "work", "school"])
 
-        logger.info("Now running initialize population for SIModel...")
+        logger.info("Now running initialize population for CasmPop...")
         super().build_context()
 
         # initialize the logging
