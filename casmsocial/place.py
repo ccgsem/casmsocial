@@ -27,13 +27,28 @@ class PlaceData:
 
 
 # 2. Define a Place Class
-class Place:
+class Place(core.Agent):
     """Generic Place Class"""
+
+    TYPE = 1
+    __place_data_class: type[dataclass] = PlaceData
+
+    @classmethod
+    def getPlaceDataClass(cls) -> type[dataclass]:
+        """Get the place data class."""
+        return cls.__place_data_class
+
+    @classmethod
+    def setPlaceDataClass(cls, place_data_class: type[dataclass]) -> None:
+        """Set the place data class."""
+        cls.__place_data_class = place_data_class
 
     def __init__(self, initDict: dict, placeDataClass: type[dataclass]):
         """Constructor for the Place class."""
+        local_id = initDict.get("sp_id")
+        rank = initDict.get("rank", 0)
 
-        placeId = initDict["sp_id"]
+        super().__init__(local_id, rank)
 
         # `location` is currently referenced required but not used
         if "x" not in initDict:
@@ -46,7 +61,6 @@ class Place:
 
         self.location = cpt(x=int(initDict["x"]), y=int(initDict["y"]), z=0)
 
-        self.id = placeId
         if "rank" not in initDict:
             initDict["rank"] = 0
         self.rank = initDict["rank"]
@@ -54,9 +68,24 @@ class Place:
         # create data from initDict
         self.data = create_dataclass_record_from_dict(placeDataClass, initDict)
 
+        # Initialize occupants set
+        self.occupants = set()
+
     @property
     def pt(self) -> cpt:
         return self.location
+
+    def add_occupant(self, person) -> None:
+        """Add an occupant to the place."""
+        self.occupants.add(person)
+
+    def remove_occupant(self, person) -> None:
+        """Remove an occupant from the place."""
+        self.occupants.discard(person)
+
+    def get_occupants(self) -> set:
+        """Get the occupants of the place."""
+        return self.occupants
 
 
 # 3. Define a PlaceConfig NamedTuple

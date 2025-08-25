@@ -89,29 +89,28 @@ class Person(core.Agent):
 
     # class variables
     TYPE = 0  # class variable
-    __personDataClass: dataclass  # class variable
-    __behaviorEngine: BehaviorEngine  # class variable
+    __person_data_class: type[dataclass] = PersonData
+    __behavior_engine: BehaviorEngine = BehaviorEngine
 
-    # class methods
     @classmethod
-    def registerPersonDataClass(cls, persondataclass: type[dataclass]) -> None:
-        """Register Person dataclass."""
-        cls.__personDataClass = persondataclass
+    def setPersonDataClass(cls, person_data_class: type[dataclass]) -> None:
+        """Register a person data class for the person."""
+        cls.__person_data_class = person_data_class
 
     @classmethod
     def getPersonDataClass(cls) -> type[dataclass]:
-        """Returns Person dataclass."""
-        return cls.__personDataClass
+        """Get the person data class for the person."""
+        return cls.__person_data_class
 
     @classmethod
-    def registerBehaviorEngine(cls, behaviorEngine: BehaviorEngine) -> None:
-        """Register Person behavior engine."""
-        cls.__behaviorEngine = behaviorEngine
+    def registerBehaviorEngine(cls, behavior_engine: BehaviorEngine) -> None:
+        """Register a behavior engine for the person."""
+        cls.__behavior_engine = behavior_engine
 
     @classmethod
     def getBehaviorEngine(cls) -> BehaviorEngine:
-        """Returns Person behavior engine."""
-        return cls.__behaviorEngine
+        """Get the behavior engine for the person."""
+        return cls.__behavior_engine
 
     # schedules: Optional[Schedules] = \
     #     field(default=tuple[Activities(0, tuple[0, 0, 0])])
@@ -167,10 +166,8 @@ class Person(core.Agent):
         self.messages_sent: list[Message] = []
         self.messages_incoming: list[Message] = []
 
-        # create the behavior engine
+        # create the default behavior engine
         self.behavior_engine = Person.getBehaviorEngine()(self)
-
-        # logger.debug(f"Person {self.id} is ready!")
 
     @property
     def pt(self) -> cpt:
@@ -193,6 +190,10 @@ class Person(core.Agent):
             place_id=self.state.place_id,
             minute_last_updated=self.state.minute_last_moved,
         )
+
+    def setBehaviorEngine(self, behaviorEngine: type[BehaviorEngine]):
+        """Sets the behavior engine for this person."""
+        self.behavior_engine = behaviorEngine()(self)
 
     def save(self) -> tuple:
         """Saves the state of this Person as a Tuple.
@@ -265,7 +266,7 @@ class Person(core.Agent):
         if activities_idx < 2:  # if sticking to planned activities
             if cal.is_weekday():
                 activities_idx = 0
-            elif len(self.schedule[1]) > 0:  # if there is a weekend schedule
+            elif len(self.schedules) > 0:  # if there is a weekend schedule
                 activities_idx = 1
             else:  # if unplanned activities
                 activities_idx = 0  # default to weekday activities

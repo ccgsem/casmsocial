@@ -21,6 +21,7 @@ from pyarrow.dataset import HivePartitioning
 from repast4py.space import ContinuousPoint as cpt  # noqa: F401
 
 from casmsocial.activities import Act
+from casmsocial.casmpop import AgentTypeConfig, CasmPop, SimEnvironment, update_activities_data
 from casmsocial.data_utilities import get_attribute_names_from_data
 from casmsocial.factory import Models
 from casmsocial.household import Household
@@ -29,7 +30,6 @@ from casmsocial.person import BehaviorEngine, Person, PersonConfig, PersonData
 from casmsocial.place import Place, PlaceConfig, PlaceData, RemotePlace, find_closest_location
 from casmsocial.school import School
 from casmsocial.sim_time import SimTime
-from casmsocial.social_model import SimEnvironment, SIModel, update_activities_data
 from casmsocial.workplace import Workplace
 
 
@@ -307,7 +307,7 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         end_time = 1440  # 24 hours
 
         # find the activity and schedule indices
-        activity_names = SIModel.get_activity_names()
+        activity_names = CasmPop.get_activity_names()
         activity_id = activity_names.index("cooling_center")
 
         person = self.agent
@@ -414,7 +414,7 @@ class PersonLogData:
 
 
 # 6b. Define the HeatRiskModel class
-class HeatRiskModel(SIModel):
+class HeatRiskModel(CasmPop):
     """HeatRiskModel class"""
 
     def __init__(self, comm: MPI.Intracomm, params: dict):
@@ -425,28 +425,37 @@ class HeatRiskModel(SIModel):
     def heat_threshold(self) -> float:
         return self._heat_threshold
 
-    def initialize_population(self) -> None:
+    def build_context(self) -> None:
         """Initialize population"""
 
         # register the environment
-        SIModel.register_environment(HeatRiskEnvironment("HeatRiskEnvironment"))
+        CasmPop.register_environment(HeatRiskEnvironment("HeatRiskEnvironment"))
+
+        # register the person and place agent types
+        logger.info(f"Registering person type (TYPE={Person.TYPE})...")
+        CasmPop.register_agent_type_config(
+            AgentTypeConfig(name="Person", agent_type=Person, agent_data_type=PersonData)
+        )
+
+        logger.info(f"Registering place type (TYPE={Place.TYPE})...")
+        CasmPop.register_agent_type_config(AgentTypeConfig(name="Place", agent_type=Place, agent_data_type=PlaceData))
 
         # register the place types
-        SIModel.register_place_config(
+        CasmPop.register_place_config(
             PlaceConfig(name="Household", place_type=Household, dataType=PlaceDataWithClimate)
         )
-        SIModel.register_place_config(
+        CasmPop.register_place_config(
             PlaceConfig(name="Workplace", place_type=Workplace, dataType=PlaceDataWithClimate)
         )
-        SIModel.register_place_config(PlaceConfig(name="School", place_type=School, dataType=PlaceDataWithClimate))
+        CasmPop.register_place_config(PlaceConfig(name="School", place_type=School, dataType=PlaceDataWithClimate))
 
         # register the remote place type
-        SIModel.register_remote_place_config(
+        CasmPop.register_remote_place_config(
             PlaceConfig(name="RemotePlace", place_type=RemotePlace, dataType=PlaceData)
         )
 
         # register the person type
-        SIModel.register_person_config(
+        CasmPop.register_person_config(
             PersonConfig(
                 name="Person",
                 person_type=Person,
@@ -456,12 +465,12 @@ class HeatRiskModel(SIModel):
         )
 
         # register the activities
-        SIModel.register_planned_activity_names(["sp_hh_id", "sp_work_id", "sp_school_id"])
-        SIModel.register_activity_names(["home", "work", "school", "cooling_center"])
+        CasmPop.register_planned_activity_names(["sp_hh_id", "sp_work_id", "sp_school_id"])
+        CasmPop.register_activity_names(["home", "work", "school", "cooling_center"])
 
-        logger.debug("Now running initialize population for SIModel...")
+        logger.debug("Now running initialize population for CasmPop...")
 
-        super().initialize_population()
+        super().build_context()
 
         self._heat_threshold = 90.0
         # self._heat_threshold = float(self.params['heat_threshold'])
@@ -547,7 +556,7 @@ def test_add_move_to_cooling_center(person: Person):
     start_time = next_hour * 60
     end_time = 1440  # 24 hours
 
-    activity_names = SIModel.get_activity_names()
+    activity_names = CasmPop.get_activity_names()
     activity_id = activity_names.index("cooling_center")
 
     schedule_names = [schedule.name for schedule in person.schedules.schedules]

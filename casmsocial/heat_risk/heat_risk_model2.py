@@ -17,16 +17,20 @@ import repast4py.context as ctx
 from loguru import logger
 from mpi4py import MPI
 from pyarrow.dataset import HivePartitioning
-from repast4py.space import ContinuousPoint as cpt  # noqa: F401
 
 from casmsocial.activities import Act
+from casmsocial.casmpop import (
+    CasmPop,
+    MissingRequiredParameterError,
+    SimEnvironment,
+    update_activities_data,
+)
 from casmsocial.data_utilities import get_attribute_names_from_data
 from casmsocial.factory import Models
 from casmsocial.model import Model
-from casmsocial.person import BehaviorEngine, Person, PersonConfig, PersonData
-from casmsocial.place import Place, PlaceConfig, PlaceData, RemotePlace
+from casmsocial.person import BehaviorEngine, Person, PersonData
+from casmsocial.place import Place, PlaceData
 from casmsocial.sim_time import SimTime
-from casmsocial.social_model import MissingRequiredParameterError, SimEnvironment, SIModel, update_activities_data
 
 
 # utility functions for heat-related computations
@@ -108,13 +112,10 @@ class HeatRiskEnvironment(SimEnvironment):
         # 3. initialize the environment: microweather data
         #    - this is the data that will be used to compute the heat index and other
         #      heat-related values for each place
-        self.microweather_arrow_file_path = (
-            Model.get_model().data_input_path / Model.get_model().params["environment.file"]
-        )
+        self.microweather_arrow_file_path = Model.get_model().data_path / Model.get_model().params["environment.file"]
         if not self.microweather_arrow_file_path.exists():
             logger.error(f"Error: Environment file {self.microweather_arrow_file_path} not found.")
             raise MissingEnvironmentFile(self.microweather_arrow_file_path)
-
         logger.info(f"Loading environment data from {self.microweather_arrow_file_path}...")
         microweather_dataset = ds.dataset(self.microweather_arrow_file_path, format="parquet", partitioning="hive")
         microweather_table = microweather_dataset.to_table()
@@ -127,22 +128,7 @@ class HeatRiskEnvironment(SimEnvironment):
             ]
         )
         logger.info(f"Loaded microweather data with {self.microweather_df.shape[0]} rows")
-
-        # 4. load the closest cooling stations data
-        closest_cooling_center_arrow_file_path = (
-            Model.get_model().data_input_path / Model.get_model().params["closest_cooling_center.file"]
-        )
-        if not closest_cooling_center_arrow_file_path.exists():
-            logger.error(f"Error: Closest cooling station file {closest_cooling_center_arrow_file_path} not found.")
-            raise MissingEnvironmentFile(closest_cooling_center_arrow_file_path)
-        closest_cooling_center_df = pl.read_parquet(closest_cooling_center_arrow_file_path)
-        logger.info(f"Loaded closest cooling centers data with {closest_cooling_center_df.shape[0]} rows")
-        self.conn.execute(
-            """
-            CREATE OR REPLACE TABLE closest_cooling_center AS
-            SELECT * FROM closest_cooling_center_df;
-            """
-        )
+        logger.info(f"Microweather data schema is {self.microweather_df.schema}")
 
         # 5. load 1-day and 2-day hourly lagged heat index data
         lagged_weather_arrow_file_path = (
@@ -161,17 +147,11 @@ class HeatRiskEnvironment(SimEnvironment):
         )
 
         # set default heat threshold (deprecated)
-        self.__heat_threshold_cooling_center = (
-            Model.get_model().params["heat_threshold_cooling_center"]
-            if "heat_threshold_cooling_center" in Model.get_model().params
-            else 32.2222
+        self.__heat_threshold_cooling_center = Model.get_model().params.get(
+            "heat_threshold_cooling_center", 32.2222
         )  # default heat threshold in Celsius 32.2222 (90.0 Fahrenheit)
 
-        self.__heat_threshold_health_effect = (
-            Model.get_model().params["heat_threshold_health_effect"]
-            if "heat_threshold_health_effect" in Model.get_model().params
-            else 32.2222
-        )
+        self.__heat_threshold_health_effect = Model.get_model().params.get("heat_threshold_health_effect", 32.2222)
 
         # values from the microweather data
         self.fields = [
@@ -555,7 +535,7 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         end_time = 1440  # 24 hours
 
         # find the activity and schedule indices
-        activity_names = SIModel.get_activity_names()
+        activity_names = CasmPop.get_activity_names()
         activity_id = activity_names.index("cooling_center")
 
         person = self.agent
@@ -626,7 +606,7 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         # local_heat_index = place.data.T_xy  # or should this be heat_index
         # check if person is an outside worker that is currently at work
         # find the activity and schedule indices
-        activity_names = SIModel.get_activity_names()
+        activity_names = CasmPop.get_activity_names()
         activity_id = activity_names.index("work")
         time = cal.minute_of_day
         act = person.schedules[person.state.activities_idx].activityAt(time)
@@ -754,7 +734,7 @@ class PersonLogData:
 
 
 # 6b. Define the HeatRiskModel class
-class HeatRiskModel2(SIModel):
+class HeatRiskModel2(CasmPop):
     """HeatRiskModel class"""
 
     def __init__(self, comm: MPI.Intracomm, params: dict):
@@ -764,7 +744,7 @@ class HeatRiskModel2(SIModel):
         # create the agent log file path
         if "agent_log_file" not in self.params:
             raise MissingRequiredParameterError(["agent_log_file"])
-        self.agent_log_file = self.data_input_path / self.params["agent_log_file"]
+        self.agent_log_file = self.data_path / self.params["agent_log_file"]
         if not self.agent_log_file.parent.exists():
             self.agent_log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -781,39 +761,31 @@ class HeatRiskModel2(SIModel):
     def heat_threshold_health_effect(self) -> float:
         return self._heat_threshold_health_effect
 
-    def initialize_population(self) -> None:
+    def build_context(self) -> None:
         """Initialize population"""
 
         # register the environment
         logger.info(f"Registering HeatRiskEnvironment at time={time.time()-self.start_time} seconds...")
-        SIModel.register_environment(HeatRiskEnvironment("HeatRiskEnvironment"))
+        CasmPop.register_environment(HeatRiskEnvironment("HeatRiskEnvironment"))
         logger.info("HeatRiskEnvironment registered at time={time.time()-self.start_time} seconds. ")
 
-        # register the place types
-        SIModel.register_place_config(PlaceConfig(name="Places", place_type=Place, dataType=PlaceDataWithClimate))
+        # register the person and place agent types
+        logger.info(f"Registering person type (TYPE={Person.TYPE})...")
+        CasmPop.setPersonClass(Person, PersonDataWithHeatRisk)
 
-        # register the remote place type
-        SIModel.register_remote_place_config(
-            PlaceConfig(name="RemotePlace", place_type=RemotePlace, dataType=PlaceData)
-        )
+        logger.info(f"Registering place type (TYPE={Place.TYPE})...")
+        CasmPop.setPlaceClass(Place, PlaceDataWithClimate)
 
-        # register the person type
-        SIModel.register_person_config(
-            PersonConfig(
-                name="Person",
-                person_type=Person,
-                dataType=PersonDataWithHeatRisk,
-                behaviorEngine=HeatRiskBehaviorEngine,
-            )
-        )
+        # register the person behavior engine
+        Person.registerBehaviorEngine(HeatRiskBehaviorEngine)
 
         # register the activities
-        SIModel.register_planned_activity_names(["sp_hh_id", "sp_work_id", "sp_school_id"])
-        SIModel.register_activity_names(["home", "work", "school", "cooling_center"])
+        CasmPop.register_planned_activity_names(["sp_hh_id", "sp_work_id", "sp_school_id"])
+        CasmPop.register_activity_names(["home", "work", "school", "cooling_center"])
 
-        logger.debug("Now running initialize population for SIModel...")
+        logger.debug("Now running initialize population for CasmPop...")
 
-        super().initialize_population()
+        super().build_context()
         logger.info("Population initialized for HeatRiskModel2")
 
         # set up the environment
@@ -838,6 +810,26 @@ class HeatRiskModel2(SIModel):
         # log the agents
         logger.info("Logging agents after population initialization")
         self.log_agents()
+
+    def create_input_tables(self):
+        logger.info("Creating input tables for HeatRiskModel2...")
+        super().create_input_tables()
+
+        # load the closest cooling stations data
+        closest_cooling_center_arrow_file_path = (
+            Model.get_model().data_path / Model.get_model().params["closest_cooling_center.file"]
+        )
+        if not closest_cooling_center_arrow_file_path.exists():
+            logger.error(f"Error: Closest cooling station file {closest_cooling_center_arrow_file_path} not found.")
+            raise MissingEnvironmentFile(closest_cooling_center_arrow_file_path)
+        closest_cooling_center_df = pl.read_parquet(closest_cooling_center_arrow_file_path)
+        logger.info(f"Loaded closest cooling centers data with {closest_cooling_center_df.shape[0]} rows")
+        self.conn.execute(
+            """
+            CREATE OR REPLACE TABLE closest_cooling_center AS
+            SELECT * FROM closest_cooling_center_df;
+            """
+        )
 
     def step(self) -> None:
         """Step the model."""
