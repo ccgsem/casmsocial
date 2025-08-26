@@ -2,12 +2,11 @@
 import math
 from dataclasses import dataclass
 from heapq import nsmallest
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 import repast4py.core as core
 from loguru import logger
 from repast4py.core import SharedProjection
-from repast4py.space import ContinuousPoint as cpt
 
 # from casmsocial.person import Person
 from casmsocial.data_utilities import create_dataclass_record_from_dict
@@ -22,8 +21,6 @@ class PlaceData:
     place_name: str = ""
     latitude: float = float("nan")
     longitude: float = float("nan")
-    x: float = float("nan")
-    y: float = float("nan")
 
 
 # 2. Define a Place Class
@@ -48,18 +45,7 @@ class Place(core.Agent):
         local_id = initDict.get("sp_id")
         rank = initDict.get("rank", 0)
 
-        super().__init__(local_id, rank)
-
-        # `location` is currently referenced required but not used
-        if "x" not in initDict:
-            initDict["x"] = 0
-        if "y" not in initDict:
-            initDict["y"] = 0
-        if math.isinf(initDict["x"]) or math.isinf(initDict["y"]):
-            initDict["x"] = 0
-            initDict["y"] = 0
-
-        self.location = cpt(x=int(initDict["x"]), y=int(initDict["y"]), z=0)
+        super().__init__(local_id, Place.TYPE, rank)
 
         if "rank" not in initDict:
             initDict["rank"] = 0
@@ -71,10 +57,7 @@ class Place(core.Agent):
         # Initialize occupants set
         self.occupants = set()
 
-    @property
-    def pt(self) -> cpt:
-        return self.location
-
+    # Legacy methods - for compatibility with old projection
     def add_occupant(self, person) -> None:
         """Add an occupant to the place."""
         self.occupants.add(person)
@@ -87,6 +70,28 @@ class Place(core.Agent):
         """Get the occupants of the place."""
         return self.occupants
 
+    # New internal methods for enhanced projection
+    def _add_occupant_internal(self, agent: core.Agent) -> None:
+        """Internal method to add occupant - only called by enhanced projection."""
+        self.occupants.add(agent)
+
+    def _remove_occupant_internal(self, agent: core.Agent) -> None:
+        """Internal method to remove occupant - only called by enhanced projection."""
+        self.occupants.discard(agent)
+
+    # Enhanced convenience methods
+    def get_occupant_count(self) -> int:
+        """Get the number of occupants at this place."""
+        return len(self.occupants)
+
+    def has_occupant(self, agent: core.Agent) -> bool:
+        """Check if an agent is currently at this place."""
+        return agent in self.occupants
+
+    def get_occupants_by_type(self, agent_type: type) -> set[core.Agent]:
+        """Get occupants of a specific type."""
+        return {agent for agent in self.occupants if isinstance(agent, agent_type)}
+
 
 # 3. Define a PlaceConfig NamedTuple
 class PlaceConfig(NamedTuple):
@@ -95,7 +100,7 @@ class PlaceConfig(NamedTuple):
     dataType: PlaceData
 
 
-# 4. Define a Custom Projection for Agent-Place Association
+# 4. Define a Custom Projection for Agent-Place Association (DEPRECATED - Use EnhancedPlacesProjection)
 class PlacesProjection(SharedProjection):
     def __init__(self, name, comm):
         """Constructor for the PlacesProjection class.
@@ -208,6 +213,144 @@ class PlacesProjection(SharedProjection):
 
     def __repr__(self):
         return f"PlaceProjection(agent_place_map={self.agent_place_map})"
+
+
+# 4b. Enhanced PlacesProjection - New Implementation
+class EnhancedPlacesProjection(SharedProjection):
+    """Enhanced PlacesProjection with cleaner agent-place relationship management."""
+
+    def __init__(self, name: str, comm):
+        super().__init__(name, comm)
+        self.name = name
+        self.rank = comm.Get_rank()
+
+        # Core data structures - single source of truth
+        self._places: dict[int, Place] = {}  # place_id -> Place
+        self._agent_locations: dict[int, int] = {}  # agent_id -> place_id
+
+        # Indexes for efficient lookups (maintained automatically)
+        self._local_places: set[int] = set()  # place_ids on this rank
+
+    def add_place(self, place: "Place") -> None:
+        """Add a place to the projection."""
+        self._places[place.id] = place
+        if place.rank == self.rank:
+            self._local_places.add(place.id)
+        logger.debug(f"Added place {place.id} (rank {place.rank}) to projection")
+
+    def add(self, agent: core.Agent) -> None:
+        """Add an agent to the projection (without assigning to a place)."""
+        if agent.id in self._agent_locations:
+            logger.warning(f"Agent {agent.id} already in projection")
+            return
+        # Agent is added but not yet assigned to any place
+        logger.debug(f"Added agent {agent.id} to projection")
+
+    def assign_agent_to_place(self, agent: core.Agent, place: "Place") -> None:
+        """Assign an agent to a place, handling all synchronization automatically."""
+        old_place = self.get_place_for_agent(agent)
+
+        # Remove from old place if exists
+        if old_place is not None:
+            old_place._remove_occupant_internal(agent)
+
+        # Assign to new place
+        self._agent_locations[agent.id] = place.id
+        place._add_occupant_internal(agent)
+
+        logger.debug(f"Assigned agent {agent.id} to place {place.id}")
+
+    def move_agent_to_place(self, agent: core.Agent, new_place: "Place") -> None:
+        """Move an agent from current place to a new place."""
+        if agent.id not in self._agent_locations:
+            raise AgentNotInProjectionError(agent.id)
+
+        old_place_id = self._agent_locations.get(agent.id)
+
+        logger.debug(f"Moving agent {agent.id} from place {old_place_id} to {new_place.id}")
+        self.assign_agent_to_place(agent, new_place)
+
+    def remove(self, agent: core.Agent) -> None:
+        """Remove an agent from the projection entirely."""
+        if agent.id not in self._agent_locations:
+            return
+
+        # Remove from current place
+        place_id = self._agent_locations[agent.id]
+        place = self._places.get(place_id)
+        if place:
+            place._remove_occupant_internal(agent)
+
+        # Remove from projection
+        del self._agent_locations[agent.id]
+        logger.debug(f"Removed agent {agent.id} from projection")
+
+    # Efficient lookup methods
+    def get_place_for_agent(self, agent: core.Agent) -> Optional["Place"]:
+        """Get the place where an agent is currently located."""
+        place_id = self._agent_locations.get(agent.id)
+        return self._places.get(place_id) if place_id else None
+
+    def lookup_place(self, place_id: int) -> Optional["Place"]:
+        """Get a place by its ID (compatibility method)."""
+        return self._places.get(place_id)
+
+    def get_place_by_id(self, place_id: int) -> Optional["Place"]:
+        """Get a place by its ID."""
+        return self._places.get(place_id)
+
+    def get_agents_at_place(self, place: "Place") -> set[core.Agent]:
+        """Get all agents currently at a place."""
+        return place.get_occupants()  # Delegate to place's occupants
+
+    def get_local_places(self) -> list["Place"]:
+        """Get all places on the current rank."""
+        return [self._places[place_id] for place_id in self._local_places]
+
+    def get_all_places(self) -> list["Place"]:
+        """Get all places in the projection."""
+        return list(self._places.values())
+
+    # Validation and consistency checks
+    def validate_consistency(self) -> bool:
+        """Validate internal consistency between projection and place occupants."""
+        inconsistencies = []
+
+        for agent_id, place_id in self._agent_locations.items():
+            place = self._places.get(place_id)
+            if place is None:
+                inconsistencies.append(f"Agent {agent_id} assigned to non-existent place {place_id}")
+                continue
+
+            # Check if place knows about this agent
+            if not any(occupant.id == agent_id for occupant in place.get_occupants()):
+                inconsistencies.append(f"Agent {agent_id} in projection but not in place {place_id} occupants")
+
+        if inconsistencies:
+            logger.error(f"Projection inconsistencies found: {inconsistencies}")
+            return False
+        return True
+
+    def get_statistics(self) -> dict:
+        """Get projection statistics for monitoring."""
+        place_occupancy = {}
+        for place in self._places.values():
+            place_occupancy[place.id] = len(place.get_occupants())
+
+        return {
+            "total_places": len(self._places),
+            "local_places": len(self._local_places),
+            "total_agents": len(self._agent_locations),
+            "place_occupancy": place_occupancy,
+            "avg_occupancy": sum(place_occupancy.values()) / len(place_occupancy) if place_occupancy else 0,
+        }
+
+    def __repr__(self):
+        return f"EnhancedPlacesProjection(agents={len(self._agent_locations)}, places={len(self._places)})"
+
+
+# Convenience alias - makes migration easier
+PlacesProjectionV2 = EnhancedPlacesProjection
 
 
 # 5. Define a custom exception for agent not in projection

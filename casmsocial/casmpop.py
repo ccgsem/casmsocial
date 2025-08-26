@@ -28,7 +28,7 @@ from casmsocial.factory import Models
 from casmsocial.message import Message
 from casmsocial.model import Model
 from casmsocial.person import Person, person_cache
-from casmsocial.place import Place, PlacesProjection
+from casmsocial.place import Place, PlacesProjectionV2
 from casmsocial.sim_time import SimTime
 
 
@@ -367,7 +367,8 @@ class CasmPop(Model):
         # register the agent types (derived classes should set agent types)
 
         # create SharedContext consisting of all of the places in this model
-        self.places_proj = PlacesProjection("places_projection", self.comm)
+        # Use enhanced projection for better performance and consistency
+        self.places_proj = PlacesProjectionV2("places_projection", self.comm)
         self.context.add_projection(self.places_proj)
 
         # create the input tables

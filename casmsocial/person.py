@@ -15,7 +15,6 @@ from repast4py.space import ContinuousPoint as cpt
 from casmsocial.activities import Schedules
 from casmsocial.data_utilities import create_dataclass_record_from_dict
 from casmsocial.message import Message
-from casmsocial.place import PlacesProjection
 from casmsocial.sim_time import SimTime
 
 rank = MPI.COMM_WORLD.Get_rank()
@@ -208,11 +207,11 @@ class Person(core.Agent):
             astuple(self.state),  # 3: state is a PersonData object
         )
 
-    def move(self, cal: SimTime, places_proj: PlacesProjection) -> bool:
+    def move(self, cal: SimTime, places_proj) -> bool:
         """Move to the place indicated by the schedule for this tick.
         Args:
             cal: The calendar for the current time.
-            places_proj: The PlacesProjection to use for moving the agent.
+            places_proj: The PlacesProjection (or EnhancedPlacesProjection) to use for moving the agent.
         Returns:
             True if the agent moved to the next place, False otherwise.
         """
