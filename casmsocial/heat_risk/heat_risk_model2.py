@@ -733,6 +733,21 @@ class PersonLogData:
     coolingCenterId: int
 
 
+# 6a. Define run log data
+@dataclass
+class RunLogData:
+    # imputation: int
+    # experiment: int
+    countAgents: int
+    avgHeatIndex: float
+    totalHrsWithHEHCoolingCenter: int
+    totalHrsWithHEHHealthEffect: int
+    avgHrsWithHEHCoolingCenter: float
+    avgHrsWithHEHHealthEffect: float
+    countMovedToCoolingCenter: int
+    countExperiencedHealthEffect: int
+
+
 # 6b. Define the HeatRiskModel class
 class HeatRiskModel2(CasmPop):
     """HeatRiskModel class"""
@@ -836,6 +851,42 @@ class HeatRiskModel2(CasmPop):
         super().step()
         logger.info("Running step for HeatRiskModel")
 
+    def get_run_log_data(self) -> RunLogData:
+        """Aggregate agent data and return run-level summary statistics."""
+
+        # Collect all agents
+        agents = list(self.context.agents(agent_type=0))
+
+        # For millions of agents, you may want to use generators for memory efficiency
+        heat_indices = [person.state.heat_indices[0] for person in agents if person.state.heat_indices]
+        hrs_with_heh_cc = [person.state.hours_with_heh_cooling_center for person in agents]
+        hrs_with_heh_health = [person.state.hours_with_heh_health_effect for person in agents]
+        moved_to_cc = [person.state.moved_to_cooling_center for person in agents]
+        experienced_he = [person.state.experienced_heat_event for person in agents]
+
+        # Compute aggregates
+        countAgents = len(agents)
+        avgHeatIndex = float(sum(heat_indices)) / len(heat_indices) if heat_indices else float("nan")
+        totalHrsWithHEHCoolingCenter = sum(hrs_with_heh_cc)
+        totalHrsWithHEHHealthEffect = sum(hrs_with_heh_health)
+        avgHrsWithHEHCoolingCenter = float(totalHrsWithHEHCoolingCenter) / len(agents) if agents else float("nan")
+        avgHrsWithHEHHealthEffect = float(totalHrsWithHEHHealthEffect) / len(agents) if agents else float("nan")
+        countMovedToCoolingCenter = sum(1 for moved in moved_to_cc if moved)
+        countExperiencedHealthEffect = sum(1 for exp in experienced_he if exp)
+
+        return RunLogData(
+            # imputation,
+            # experiment,
+            countAgents,
+            avgHeatIndex,
+            totalHrsWithHEHCoolingCenter,
+            totalHrsWithHEHHealthEffect,
+            avgHrsWithHEHCoolingCenter,
+            avgHrsWithHEHHealthEffect,
+            countMovedToCoolingCenter,
+            countExperiencedHealthEffect,
+        )
+
     def get_person_log_data(self, person: Person) -> PersonLogData:
         """Get the agent data for logging."""
         # heat_threshold_cooling_center = self.get_environment().heat_threshold_cooling_center
@@ -863,6 +914,24 @@ class HeatRiskModel2(CasmPop):
             hasACAccess=person.state.has_ac_access,
             heatEventPlaceId=person.state.heat_event_place_id,
             coolingCenterId=person.state.cooling_center_id,
+        )
+
+    def log_run(self) -> None:
+        """Log the run's data."""
+        # create a DataFrame for the agent logs
+        logger.info("Logging run data...")
+        run_log_df = pl.DataFrame([self.get_run_log_data()])
+
+        # convert the DataFrame to an Arrow Table
+        run_log_table = run_log_df.to_arrow()
+
+        # Write dataset
+        ds.write_dataset(
+            data=run_log_table,
+            base_dir=self.agent_log_file,
+            format="parquet",
+            # partitioning=partitioning,
+            existing_data_behavior="overwrite_or_ignore",
         )
 
     def log_agents(self) -> None:
@@ -893,6 +962,10 @@ class HeatRiskModel2(CasmPop):
             partitioning=partitioning,
             existing_data_behavior="overwrite_or_ignore",
         )
+
+    def at_end(self) -> None:
+        logger.info("Logging final model run data...")
+        self.log_run()
 
 
 # Register HeatRiskModel
