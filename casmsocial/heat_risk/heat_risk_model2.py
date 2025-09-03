@@ -131,9 +131,7 @@ class HeatRiskEnvironment(SimEnvironment):
         logger.info(f"Microweather data schema is {self.microweather_df.schema}")
 
         # 5. load 1-day and 2-day hourly lagged heat index data
-        lagged_weather_arrow_file_path = (
-            Model.get_model().data_input_path / Model.get_model().params["lagged_weather.file"]
-        )
+        lagged_weather_arrow_file_path = Model.get_model().data_path / Model.get_model().params["lagged_weather.file"]
         if not lagged_weather_arrow_file_path.exists():
             logger.error(f"Error: Lagged weather file {lagged_weather_arrow_file_path} not found.")
             raise MissingEnvironmentFile(lagged_weather_arrow_file_path)
@@ -763,6 +761,13 @@ class HeatRiskModel2(CasmPop):
         if not self.agent_log_file.parent.exists():
             self.agent_log_file.parent.mkdir(parents=True, exist_ok=True)
 
+        # create the run log file path
+        if "run_log_file" not in self.params:
+            raise MissingRequiredParameterError(["run_log_file"])
+        self.run_log_file = self.data_path / self.params["run_log_file"]
+        if not self.run_log_file.parent.exists():
+            self.run_log_file.parent.mkdir(parents=True, exist_ok=True)
+
         # show the initialization time
         logger.info(f"HeatRiskModel2 initialized at time={time.time() - self.start_time} seconds")
 
@@ -928,7 +933,7 @@ class HeatRiskModel2(CasmPop):
         # Write dataset
         ds.write_dataset(
             data=run_log_table,
-            base_dir=self.agent_log_file,
+            base_dir=self.run_log_file,
             format="parquet",
             # partitioning=partitioning,
             existing_data_behavior="overwrite_or_ignore",
