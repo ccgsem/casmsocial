@@ -6,6 +6,7 @@ Defining the heat risk model for the CASMSOCIAL/PRSIM project
 """
 
 
+import math
 import time
 from collections import deque, namedtuple
 from dataclasses import dataclass, field
@@ -340,6 +341,8 @@ class PersonDataWithHeatRisk(PersonData):
     hourly_excess_heat_health_effect: deque = field(default_factory=lambda: deque([float("nan")]))
     hours_with_heh_cooling_center: int = 0
     hours_with_heh_health_effect: int = 0
+    max_hours_with_heh_cooling_center: int = 0
+    max_hours_with_heh_health_effect: int = 0
     prob_heat_event: float = 0.0
     experienced_heat_event: bool = False
     moved_to_cooling_center: bool = False
@@ -426,6 +429,14 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         all_heh_health = person.state.hourly_excess_heat_health_effect
         positive_heh_health = filter_hourly_excess_heat(all_heh_health, 0)
         hours_with_heh_health_effect = len(positive_heh_health)
+
+        # Update max values
+        person.state.max_hours_with_heh_cooling_center = max(
+            person.state.max_hours_with_heh_cooling_center, hours_with_heh_cooling_center
+        )
+        person.state.max_hours_with_heh_health_effect = max(
+            person.state.max_hours_with_heh_health_effect, hours_with_heh_health_effect
+        )
 
         return hours_with_heh_cooling_center, hours_with_heh_health_effect
 
@@ -737,11 +748,12 @@ class RunLogData:
     # imputation: int
     # experiment: int
     countAgents: int
-    avgHeatIndex: float
+    totalHeatIndex: float
+    # avgHeatIndex: float
     totalHrsWithHEHCoolingCenter: int
     totalHrsWithHEHHealthEffect: int
-    avgHrsWithHEHCoolingCenter: float
-    avgHrsWithHEHHealthEffect: float
+    # avgHrsWithHEHCoolingCenter: float
+    # avgHrsWithHEHHealthEffect: float
     countMovedToCoolingCenter: int
     countExperiencedHealthEffect: int
 
@@ -813,6 +825,9 @@ class HeatRiskModel2(CasmPop):
         self._heat_threshold_cooling_center = environment.heat_threshold_cooling_center
         self._heat_threshold_health_effect = environment.heat_threshold_health_effect
 
+        # Need to sum heat index across all ticks; initialize to 0
+        self.total_heat_index = 0
+
         logger.info(f"Heat threshold set to seek a cooling center is {self._heat_threshold_cooling_center}C")
         logger.info(f"Heat threshold set to to have a health effect is {self._heat_threshold_health_effect}C")
 
@@ -830,6 +845,9 @@ class HeatRiskModel2(CasmPop):
         # log the agents
         logger.info("Logging agents after population initialization")
         self.log_agents()
+        # self.total_heat_index = self.get_total_heat_index()
+        # print("total heat index is")
+        # print(self.total_heat_index)
 
     def create_input_tables(self):
         logger.info("Creating input tables for HeatRiskModel2...")
@@ -863,34 +881,64 @@ class HeatRiskModel2(CasmPop):
         agents = list(self.context.agents(agent_type=0))
 
         # For millions of agents, you may want to use generators for memory efficiency
-        heat_indices = [person.state.heat_indices[0] for person in agents if person.state.heat_indices]
-        hrs_with_heh_cc = [person.state.hours_with_heh_cooling_center for person in agents]
-        hrs_with_heh_health = [person.state.hours_with_heh_health_effect for person in agents]
+        # Flatten all heat_indices
+        all_heat_indices = [
+            val
+            for person in agents
+            for val in person.state.heat_indices
+            # if not isinstance(val, float) or not math.isnan(val)
+        ]
+        filtered_all_heat_indices = [x for x in all_heat_indices if not math.isnan(x)]
+        print("all_heat_indices[:10]")
+        print(list(filtered_all_heat_indices)[:10])
+        print(sum(list(filtered_all_heat_indices)[:10]))
+        # heat_indices = [person.state.heat_indices for person in agents if person.state.heat_indices]
+        hrs_with_heh_cc = [person.state.max_hours_with_heh_cooling_center for person in agents]
+        hrs_with_heh_health = [person.state.max_hours_with_heh_health_effect for person in agents]
         moved_to_cc = [person.state.moved_to_cooling_center for person in agents]
         experienced_he = [person.state.experienced_heat_event for person in agents]
 
         # Compute aggregates
         countAgents = len(agents)
-        avgHeatIndex = float(sum(heat_indices)) / len(heat_indices) if heat_indices else float("nan")
-        totalHrsWithHEHCoolingCenter = sum(hrs_with_heh_cc)
-        totalHrsWithHEHHealthEffect = sum(hrs_with_heh_health)
-        avgHrsWithHEHCoolingCenter = float(totalHrsWithHEHCoolingCenter) / len(agents) if agents else float("nan")
-        avgHrsWithHEHHealthEffect = float(totalHrsWithHEHHealthEffect) / len(agents) if agents else float("nan")
-        countMovedToCoolingCenter = sum(1 for moved in moved_to_cc if moved)
-        countExperiencedHealthEffect = sum(1 for exp in experienced_he if exp)
+        # totalHeatIndex = self.total_heat_index
+        totalHeatIndex = float(sum(list(filtered_all_heat_indices)))
+        # totalHeatIndex = float(sum(heat_indices))
+        # avgHeatIndex = float(self.total_heat_index / countAgents)
+        # avgHeatIndex = float(sum(heat_indices)) / len(heat_indices) if heat_indices else float("nan")
+        totalHrsWithHEHCoolingCenter = float(sum(hrs_with_heh_cc))
+        totalHrsWithHEHHealthEffect = float(sum(hrs_with_heh_health))
+        # avgHrsWithHEHCoolingCenter = float(totalHrsWithHEHCoolingCenter) / len(agents) if agents else float("nan")
+        # avgHrsWithHEHHealthEffect = float(totalHrsWithHEHHealthEffect) / len(agents) if agents else float("nan")
+        countMovedToCoolingCenter = float(sum(1 for moved in moved_to_cc if moved))
+        countExperiencedHealthEffect = float(sum(1 for exp in experienced_he if exp))
 
         return RunLogData(
             # imputation,
             # experiment,
             countAgents,
-            avgHeatIndex,
+            totalHeatIndex,
+            # avgHeatIndex,
             totalHrsWithHEHCoolingCenter,
             totalHrsWithHEHHealthEffect,
-            avgHrsWithHEHCoolingCenter,
-            avgHrsWithHEHHealthEffect,
+            # avgHrsWithHEHCoolingCenter,
+            # avgHrsWithHEHHealthEffect,
             countMovedToCoolingCenter,
             countExperiencedHealthEffect,
         )
+
+    # def get_total_heat_index(self) -> float:
+    #    # Collect all agents
+    #    agents = list(self.context.agents(agent_type=0))
+
+    #    # For millions of agents, you may want to use generators for memory efficiency
+    #    heat_indices = [person.state.heat_indices[0] for person in agents if person.state.heat_indices]
+    #    total_heat_index_for_tick = sum(heat_indices)
+    #    print("total_heat_index_for_tick")
+    #    print(total_heat_index_for_tick)
+    #    total_hi = self.total_heat_index + total_heat_index_for_tick
+    #    print("total_hi")
+    #    print(total_hi)
+    #    return total_hi
 
     def get_person_log_data(self, person: Person) -> PersonLogData:
         """Get the agent data for logging."""
