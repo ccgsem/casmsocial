@@ -523,6 +523,7 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         #    - for now, just move to the closest cooling center
         # seeking_cooling = np.random.rand() < self.agent.state.prob_heat_event
         seeking_cooling = consider_seeking_cooling
+        ##### COMMMENT OUT FOR NO COOLING CENTER RUNS #####
         if seeking_cooling:
             self.move_to_cooling_center(cooling_center_candidate_id, cal.hour_of_day)
             return True
@@ -614,6 +615,7 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
 
         # If person is at a cooling center, assume has AC access at current location
         # check if the person has already experienced a heat event
+        ##### COMMENT OUT FOR NO COOLING CENTER RUNS #####
         if self.agent.state.experienced_heat_event:
             logger.debug(f"Person {self.agent.id} has already experienced a heat event")
             local_heat_index_c = 23 + 0.1 * outdoor_heat_index_c
@@ -643,8 +645,6 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         activity_id = activity_names.index("work")
         time = cal.minute_of_day
         act = person.schedules[person.state.activities_idx].activityAt(time)
-        # print("ACT CURRENT")
-        # print(act)
         current_activity = int(act.activity_id)
 
         person.state.outdoors = current_activity == activity_id and person.state.outside_worker
@@ -724,10 +724,10 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
 
         if self.decide_to_seek_cooling(place, cal):
             person.state.heat_event_place_id = place.id
-            logger.info(f"Person {self.agent.id} is seeking cooling at hour {cal.hour_of_day}")
+            # logger.info(f"Person {self.agent.id} is seeking cooling at hour {cal.hour_of_day}")
             return
-        else:
-            logger.debug(f"Person {self.agent.id} is not seeking cooling at hour {cal.hour_of_day}")
+        # else:
+        # logger.debug(f"Person {self.agent.id} is not seeking cooling at hour {cal.hour_of_day}")
 
 
 # 6a. Define agent log data
@@ -741,6 +741,7 @@ class PersonLogData:
     agent_id: int
     x: float
     y: float
+    place_id: int
     outdoorHeatIndex: float
     outdoorWBGT: float
     outdoorDewPoint: float
@@ -905,10 +906,10 @@ class HeatRiskModel2(CasmPop):
             # if not isinstance(val, float) or not math.isnan(val)
         ]
         filtered_all_heat_indices = [x for x in all_heat_indices if not math.isnan(x)]
-        print("all_heat_indices[:10]")
-        print(list(filtered_all_heat_indices)[:10])
-        print(sum(list(filtered_all_heat_indices)[:10]))
-        print(sum(list(filtered_all_heat_indices)))
+        # print("all_heat_indices[:10]")
+        # print(list(filtered_all_heat_indices)[:10])
+        # print(sum(list(filtered_all_heat_indices)[:10]))
+        # print(sum(list(filtered_all_heat_indices)))
         # heat_indices = [person.state.heat_indices for person in agents if person.state.heat_indices]
         hrs_with_heh_cc = [person.state.max_hours_with_heh_cooling_center for person in agents]
         hrs_with_heh_health = [person.state.max_hours_with_heh_health_effect for person in agents]
@@ -946,8 +947,8 @@ class HeatRiskModel2(CasmPop):
     def get_total_heat_index(self) -> float:
         # Collect all agents
         agents = list(self.context.agents(agent_type=0))
-        print("len(agents)")
-        print(len(agents))
+        # print("len(agents)")
+        # print(len(agents))
 
         # For millions of agents, you may want to use generators for memory efficiency
         all_heat_indices = [
@@ -959,14 +960,14 @@ class HeatRiskModel2(CasmPop):
         filtered_all_heat_indices = [x for x in all_heat_indices if not math.isnan(x)]
         # heat_indices = [person.state.heat_indices[0] for person in agents if person.state.heat_indices]
         total_heat_index_for_tick = sum(list(filtered_all_heat_indices))
-        print("total_heat_index_for_tick")
-        print(total_heat_index_for_tick)
-        print("total before")
-        print(self.total_heat_index)
+        # print("total_heat_index_for_tick")
+        # print(total_heat_index_for_tick)
+        # print("total before")
+        # print(self.total_heat_index)
         # self.total_heat_index = self.total_heat_index + total_heat_index_for_tick
         self.total_heat_index = total_heat_index_for_tick
-        print("total_hi")
-        print(self.total_heat_index)
+        # print("total_hi")
+        # print(self.total_heat_index)
 
     def get_person_log_data(self, person: Person) -> PersonLogData:
         """Get the agent data for logging."""
@@ -980,6 +981,7 @@ class HeatRiskModel2(CasmPop):
             agent_id=person.id,
             x=person.pt.x,
             y=person.pt.y,
+            place_id=person.currentPlaceID,
             outdoorHeatIndex=person.state.outdoor_heat_indices[0],
             outdoorWBGT=person.state.outdoor_wbgt_indices[0],
             outdoorDewPoint=person.state.outdoor_dew_point_indices[0],
