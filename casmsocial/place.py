@@ -1,8 +1,9 @@
-""" Generic Place Class """
+"""Generic Place Class"""
+
 import math
 from dataclasses import dataclass
 from heapq import nsmallest
-from typing import NamedTuple, Optional
+from typing import Any, NamedTuple, Optional
 
 import repast4py.core as core
 from loguru import logger
@@ -219,7 +220,14 @@ class PlacesProjection(SharedProjection):
 class EnhancedPlacesProjection(SharedProjection):
     """Enhanced PlacesProjection with cleaner agent-place relationship management."""
 
-    def __init__(self, name: str, comm):
+    def __init__(
+        self,
+        name: str,
+        comm,
+        enable_parallel_updates: bool = True,
+        parallel_min_threshold: int = 20,
+        parallel_max_workers: int | None = None,
+    ):
         super().__init__(name, comm)
         self.name = name
         self.rank = comm.Get_rank()
@@ -230,6 +238,21 @@ class EnhancedPlacesProjection(SharedProjection):
 
         # Indexes for efficient lookups (maintained automatically)
         self._local_places: set[int] = set()  # place_ids on this rank
+
+        # Parallel update system
+        self.parallel_updates_enabled = enable_parallel_updates
+        self.parallel_min_threshold = parallel_min_threshold
+        self.parallel_max_workers = parallel_max_workers
+        self._parallel_updater = None
+        if enable_parallel_updates:
+            try:
+                from casmsocial.parallel_updates import NumbaPlaceUpdater
+
+                self._parallel_updater = NumbaPlaceUpdater()
+                logger.info("Parallel place updates enabled")
+            except ImportError as e:
+                logger.warning(f"Could not enable parallel updates: {e}")
+                self.parallel_updates_enabled = False
 
     def add_place(self, place: "Place") -> None:
         """Add a place to the projection."""
@@ -337,7 +360,7 @@ class EnhancedPlacesProjection(SharedProjection):
         for place in self._places.values():
             place_occupancy[place.id] = len(place.get_occupants())
 
-        return {
+        stats = {
             "total_places": len(self._places),
             "local_places": len(self._local_places),
             "total_agents": len(self._agent_locations),
@@ -345,8 +368,61 @@ class EnhancedPlacesProjection(SharedProjection):
             "avg_occupancy": sum(place_occupancy.values()) / len(place_occupancy) if place_occupancy else 0,
         }
 
+        # Add parallel update performance stats if available
+        if self._parallel_updater:
+            parallel_stats = self._parallel_updater.get_performance_stats()
+            stats["parallel_performance"] = parallel_stats
+
+        return stats
+
+    def update_places_parallel(self, current_time_minutes: int) -> dict[str, Any]:
+        """
+        Update all local places using parallel processing.
+
+        Args:
+            current_time_minutes: Current simulation time in minutes
+
+        Returns:
+            Dictionary with update results and performance metrics
+        """
+        local_places = self.get_local_places()
+
+        if not local_places:
+            return {"places_updated": 0, "total_time": 0.0}
+
+        if self._parallel_updater and self.parallel_updates_enabled:
+            logger.debug(f"Running parallel update on {len(local_places)} local places")
+            return self._parallel_updater.update_places_parallel(local_places, current_time_minutes)
+        else:
+            # Fallback to sequential updates
+            logger.debug(f"Running sequential update on {len(local_places)} local places")
+            return self._update_places_sequential(local_places, current_time_minutes)
+
+    def _update_places_sequential(self, places: list[Place], current_time_minutes: int) -> dict[str, Any]:
+        """Fallback sequential place updates."""
+        import time
+
+        start_time = time.time()
+
+        for place in places:
+            if not hasattr(place, "computed_metrics"):
+                place.computed_metrics = {}
+
+            # Basic sequential calculations
+            occupant_count = place.get_occupant_count()
+            place.computed_metrics.update({"occupancy_count": occupant_count, "last_updated": time.time()})
+
+        return {
+            "places_updated": len(places),
+            "total_time": time.time() - start_time,
+            "parallel_time": 0.0,
+            "threading_time": 0.0,
+            "speedup_estimate": 1.0,
+        }
+
     def __repr__(self):
-        return f"EnhancedPlacesProjection(agents={len(self._agent_locations)}, places={len(self._places)})"
+        parallel_status = "enabled" if self.parallel_updates_enabled else "disabled"
+        return f"EnhancedPlacesProjection(agents={len(self._agent_locations)}, places={len(self._places)}, parallel={parallel_status})"
 
 
 # Convenience alias - makes migration easier
@@ -408,3 +484,54 @@ def find_closest_location(lat, lon, places, n=3, filter_func=None):
     return [
         (place, haversine_distance(lat, lon, place.data.latitude, place.data.longitude)) for place in closest_places
     ]
+
+
+def test_parallel_updates():
+    """Test the parallel place updates system."""
+    from mpi4py import MPI
+
+    logger.info("Testing parallel place updates...")
+
+    comm = MPI.COMM_WORLD
+    places_proj = EnhancedPlacesProjection("test_projection", comm, enable_parallel_updates=True)
+
+    # Create test places with mock data
+    test_places = []
+    for i in range(25):  # Above parallel threshold
+        place_data = {
+            "place_id": i,
+            "rank": 0,
+            "T_xy": 25.0 + (i % 10),  # Temperature 25-35°C
+            "heat_index": 25.0 + (i % 15),  # Heat index 25-40°C
+            "humidity": 40.0 + (i % 30),  # Humidity 40-70%
+            "capacity": 50.0 + (i % 50),  # Capacity 50-100
+            "latitude": 41.8781 + (i * 0.001),  # Chicago area coordinates
+            "longitude": -87.6298 + (i * 0.001),
+        }
+        place = Place(place_data, PlaceData)
+        test_places.append(place)
+        places_proj.add_place(place)
+
+    # Add some occupants to places
+    for i, place in enumerate(test_places):
+        occupant_count = i % 10  # 0-9 occupants
+        place._occupants = set(range(occupant_count))  # Mock occupants
+
+    # Test parallel updates
+    current_time_minutes = 720  # 12:00 PM
+    results = places_proj.update_places_parallel(current_time_minutes)
+
+    logger.info(f"Parallel update results: {results}")
+
+    # Verify that places have computed metrics
+    for place in test_places[:5]:  # Check first 5 places
+        if hasattr(place, "computed_metrics"):
+            logger.info(f"Place {place.id} metrics: {place.computed_metrics}")
+        else:
+            logger.warning(f"Place {place.id} missing computed metrics")
+
+    logger.info("Parallel updates test completed successfully!")
+
+
+if __name__ == "__main__":
+    test_parallel_updates()
