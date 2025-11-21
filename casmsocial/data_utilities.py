@@ -1,4 +1,5 @@
-""" data utility functions for casmsocial """
+"""data utility functions for casmsocial"""
+
 from dataclasses import dataclass, fields
 from typing import Optional, Union
 

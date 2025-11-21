@@ -82,6 +82,16 @@ docker run \
 root@d332db7567f5:/app# uv run mpirun -n 1 python -m casmsocial.runner config/casmsocial_wc.yaml
 ```
 
+## Code Quality
+
+The repository ships with dedicated helpers for the standard Python code-quality trio:
+
+- `make format` – runs `black` followed by `isort` so files stay auto-formatted.
+- `make lint` – runs `flake8` with the settings defined in `pyproject.toml`.
+- `make check` – executes the heavier-weight pipeline (`uv lock`, `pre-commit`, and `mypy`) when you need the full suite.
+
+All commands rely on `uv run` so they automatically use the project virtual environment. Running `make format` before committing is usually enough to clean up imports and spacing, and `make lint` provides a quick verification step without running the full check pipeline.
+
 ---
 
 Repository initiated with [fpgmaas/cookiecutter-uv](https://github.com/fpgmaas/cookiecutter-uv).

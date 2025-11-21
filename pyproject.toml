@@ -40,6 +40,9 @@ Documentation = "https://clinejc.github.io/casmsocial/"
 
 [dependency-groups]
 dev = [
+    "black>=24.4.0",
+    "flake8>=7.1.1",
+    "isort>=5.13.2",
     "pytest>=7.2.0",
     "pre-commit>=2.20.0",
     "tox-uv>=1.11.3",
@@ -56,6 +59,21 @@ build-backend = "hatchling.build"
 
 [tool.setuptools]
 py-modules = ["casmsocial"]
+
+[tool.black]
+line-length = 120
+target-version = ["py39", "py310", "py311", "py312", "py313"]
+extend-exclude = "/(dist|build|docs)/"
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["casmsocial"]
+combine_as_imports = true
+
+[tool.flake8]
+max-line-length = 120
+extend-ignore = ["E203", "W503"]
 
 [tool.mypy]
 files = ["casmsocial"]
@@ -120,5 +138,3 @@ ignore = [
 
 [tool.ruff.format]
 preview = true
-
-

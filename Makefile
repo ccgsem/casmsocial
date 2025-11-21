@@ -4,6 +4,18 @@ install: ## Install the virtual environment and install the pre-commit hooks
 	@uv sync
 	@uv run pre-commit install
 
+.PHONY: format
+format: ## Auto-format the code with black and isort
+	@echo "🚀 Formatting code with black"
+	@uv run black casmsocial tests
+	@echo "🚀 Sorting imports with isort"
+	@uv run isort casmsocial tests
+
+.PHONY: lint
+lint: ## Run flake8 lint checks
+	@echo "🚀 Linting code with flake8"
+	@uv run flake8 casmsocial tests
+
 .PHONY: check
 check: ## Run code quality tools.
 	@echo "🚀 Checking lock file consistency with 'pyproject.toml'"

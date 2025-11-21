@@ -4,6 +4,7 @@ Created: 02 Dec 2024
 
 Defining modelfactory interface
 """
+
 from typing import ClassVar
 
 from loguru import logger
