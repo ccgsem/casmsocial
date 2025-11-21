@@ -1,4 +1,5 @@
-""" Geo Utility functions """
+"""Geo Utility functions"""
+
 import pyproj
 from repast4py.space import BoundingBox as bb
 from repast4py.space import ContinuousPoint as cpt

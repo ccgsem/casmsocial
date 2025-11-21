@@ -4,7 +4,6 @@ Created: 02 Dec 2024
 
 Defining the CasmPop
 """
-
 import os
 import pathlib
 import time
@@ -231,7 +230,6 @@ class CasmPop(Model):
         self._set_optional_params_with_defaults()
         self._remove_deprecated_params()
         self._compute_ticks()
-        self._configure_parallel_processing()
 
         logger.info(f"Rank {self.rank} starting CasmPop with params: {self.params}")
 
@@ -262,13 +260,6 @@ class CasmPop(Model):
 
         # create a DuckDB connection for in-memory operations
         self.conn = duckdb.connect(database=":memory:", read_only=False)
-        self.conn.execute(f"PRAGMA threads={os.cpu_count()}")
-        self.conn.execute(
-            """
-            INSTALL spatial;
-            LOAD spatial;
-            """
-        )
         self.queries = {}
 
         self.contact_map = {}
@@ -364,27 +355,6 @@ class CasmPop(Model):
             raise MissingRequiredParameterError(["time.step.minutes", "duration.hours"])
         self.params["ticks"] = int(self.params["duration.hours"] * 60 / self.params["time.step.minutes"])
 
-    def _configure_parallel_processing(self):
-        """Configure parallel processing settings."""
-        # Default parallel processing settings
-        if "parallel.places.enabled" not in self.params:
-            self.params["parallel.places.enabled"] = True
-        if "parallel.places.min_threshold" not in self.params:
-            self.params["parallel.places.min_threshold"] = 50  # Increased threshold for better performance
-        if "parallel.places.max_workers" not in self.params:
-            self.params["parallel.places.max_workers"] = None  # Use CPU count
-
-        # Option to disable automatic place updates during simulation steps
-        if "parallel.places.auto_update" not in self.params:
-            self.params["parallel.places.auto_update"] = False  # Disabled by default to prevent overhead
-
-        # Agent processing: parallel processing disabled due to performance degradation
-        # Thread overhead (0.81x speedup) exceeded benefits for lightweight agent operations
-        if "parallel.agents.enabled" not in self.params:
-            self.params["parallel.agents.enabled"] = False  # Disabled due to measured performance loss
-        if "parallel.agents.min_threshold" not in self.params:
-            self.params["parallel.agents.min_threshold"] = 1000000  # Effectively disabled
-
     def build_context(self) -> None:
         """
         Initialize population
@@ -398,12 +368,7 @@ class CasmPop(Model):
 
         # create SharedContext consisting of all of the places in this model
         # Use enhanced projection for better performance and consistency
-        # Use simple projection instantiation to avoid parallel processing overhead
-        self.places_proj = PlacesProjectionV2(
-            "places_projection",
-            self.comm,
-            enable_parallel_updates=False,  # Disabled to prevent performance overhead
-        )
+        self.places_proj = PlacesProjectionV2("places_projection", self.comm)
         self.context.add_projection(self.places_proj)
 
         # create the input tables
@@ -449,11 +414,7 @@ class CasmPop(Model):
         self.conn.execute("CREATE TABLE IF NOT EXISTS places AS SELECT * FROM read_parquet(?)", [str(places_file)])
 
         # create the persons table
-        imputation = self.params.get("Imputation", None)
         persons_file = self.data_path / self.params["persons.file"]
-        if persons_file.is_dir() and imputation is not None:
-            persons_file = persons_file / f"Imputation={imputation}" / "part-0.parquet"
-            logger.info(f"Using imputation persons file {persons_file}...")
         if not persons_file.exists():
             raise MissingRequiredParameterError("persons.file")
         logger.info(f"Loading persons file {persons_file}...")
@@ -461,9 +422,6 @@ class CasmPop(Model):
 
         # create the activities table
         activities_file = self.data_path / self.params["activities.file"]
-        if activities_file.is_dir() and imputation is not None:
-            activities_file = activities_file / f"Imputation={imputation}" / "part-0.parquet"
-            logger.info(f"Using imputation activities file {activities_file}...")
         if not activities_file.exists():
             raise MissingRequiredParameterError("activities.file")
         self.conn.execute(
@@ -753,9 +711,6 @@ class CasmPop(Model):
             f"minute {self.cal.minute_of_day}"
         )
 
-        # Automatic place updates are disabled - they caused performance degradation
-        # The OptimizedHeatRiskModel handles its own optimizations more efficiently
-
         # 2025-02-26 jcline: this is a hack to get the person_id_map
         # self.get_local_ids()
 
@@ -772,28 +727,8 @@ class CasmPop(Model):
 
         # self.send_messages_between_agents()
 
-        # Process person agents (TYPE=0) with optimized sequential processing
-        # Parallel processing caused 19% performance degradation (0.81x speedup) due to
-        # thread overhead exceeding benefits for lightweight agent operations
-        person_agents = list(self.context.agents(agent_type=0))  # Only person agents
-
-        if len(person_agents) > 0:
-            agent_start_time = time.time()
-
-            # Optimized sequential processing with minimal overhead
-            for person in person_agents:
-                person.step(self.context, self.cal)
-
-            agent_processing_time = time.time() - agent_start_time
-
-            # Log performance for large datasets
-            if self.rank == 0 and len(person_agents) >= 1000:
-                agents_per_second = len(person_agents) / agent_processing_time if agent_processing_time > 0 else 0
-                logger.info(
-                    f"Person agent processing: {len(person_agents):,} agents, "
-                    f"{agent_processing_time:.2f}s, "
-                    f"rate: {agents_per_second:,.0f} agents/sec"
-                )
+        for person in self.context.agents():
+            person.step(self.context, self.cal)
 
         self.log_agents()
 
@@ -964,18 +899,8 @@ class CasmPop(Model):
         """Log the agents at the current time step."""
         pass
 
-    def get_parallel_performance_stats(self) -> dict:
-        """Get performance statistics from parallel place updates."""
-        if hasattr(self.places_proj, "get_parallel_performance_stats"):
-            return self.places_proj.get_parallel_performance_stats()
-        return {}
-
     def at_end(self) -> None:
         """Actions to take at the end of the simulation."""
-        # Log parallel processing performance if enabled
-        perf_stats = self.get_parallel_performance_stats()
-        if perf_stats and self.rank == 0:
-            logger.info(f"Parallel processing performance stats: {perf_stats}")
         pass
 
     def start(self) -> None:

@@ -4,6 +4,7 @@ Created: 02 Dec 2024
 
 Defining abstract Model interface
 """
+
 from abc import ABC, abstractmethod
 
 from mpi4py import MPI

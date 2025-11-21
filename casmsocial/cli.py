@@ -1,4 +1,5 @@
 """Console script for casmsocial."""
+
 import sys
 
 import click

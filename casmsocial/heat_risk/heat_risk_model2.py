@@ -11,6 +11,7 @@ import time
 from collections import deque, namedtuple
 from dataclasses import dataclass, field
 
+import duckdb
 import polars as pl
 import pyarrow as pa
 import pyarrow.dataset as ds
@@ -66,9 +67,69 @@ def filter_heat_indices(heat_indices: list[float], threshold: float) -> list[flo
 
 
 def filter_hourly_excess_heat(hourly_excess_heat: list[float], threshold: float) -> list[float]:
-    """Filter out all heat indices above the threshold."""
+    """Filter out all hourly excess heat values above the threshold."""
     exceeded = True
     return [t for t in hourly_excess_heat if (exceeded := exceeded and t > threshold)]
+
+
+def create_closest_cooling_centers(conn: duckdb.DuckDBPyConnection, experiment_id: int) -> None:
+    """ """
+
+    query = """
+    CREATE TABLE closest_cooling_center AS
+    WITH experiment AS (
+        SELECT cooling_center_ids
+        FROM experiments
+        WHERE experiment_id = ?
+    ),
+    cooling_centers AS (
+        SELECT
+            p.sp_id,
+            p.latitude,
+            p.longitude
+        FROM experiment e
+        CROSS JOIN UNNEST(e.cooling_center_ids) AS t(cooling_center_id)
+        JOIN places p
+          ON p.sp_id = t.cooling_center_id
+    ),
+    distances AS (
+        SELECT
+            p.sp_id,
+            p.location,
+            p.AIR,
+            p.cooling_center,
+            cc.sp_id AS cooling_center_id,
+
+            -- Great-circle distance in meters using DuckDB spatial
+            ST_Distance_Sphere(
+                ST_Point(p.latitude,  p.longitude),
+                ST_Point(cc.latitude, cc.longitude)
+            ) AS distance_to_cooling_center_m
+
+        FROM places p
+        CROSS JOIN cooling_centers cc
+    ),
+    ranked AS (
+        SELECT
+            *,
+            ROW_NUMBER() OVER (
+                PARTITION BY sp_id
+                ORDER BY distance_to_cooling_center_m
+            ) AS rn
+        FROM distances
+    )
+    SELECT
+        sp_id,
+        location,
+        AIR,
+        cooling_center,
+        cooling_center_id AS closest_cooling_center_id,
+        distance_to_cooling_center_m AS distance_to_closest_cooling_center_m
+    FROM ranked
+    WHERE rn = 1;
+    """
+
+    conn.execute(query, [experiment_id])
 
 
 class MissingEnvironmentFile(Exception):
@@ -94,9 +155,9 @@ class HeatRiskEnvironment(SimEnvironment):
         required_keys = [
             "environment.file",
             "closest_cooling_center.file",
-            "lagged_weather.file",
-            "heat_threshold_cooling_center",
-            "heat_threshold_health_effect",
+            "heat_threshold",
+            "cooling_centers_experiment.file",
+            "experiment_id",
         ]
         if not all(key in Model.get_model().params for key in required_keys):
             logger.error(f"Error: Missing required parameters in model: {required_keys}")
@@ -871,20 +932,40 @@ class HeatRiskModel2(CasmPop):
         super().create_input_tables()
 
         # load the closest cooling stations data
-        closest_cooling_center_arrow_file_path = (
-            Model.get_model().data_path / Model.get_model().params["closest_cooling_center.file"]
+        # closest_cooling_center_arrow_file_path = (
+        #     Model.get_model().data_path / Model.get_model().params["closest_cooling_center.file"]
+        # )
+        # if not closest_cooling_center_arrow_file_path.exists():
+        #     logger.error(f"Error: Closest cooling station file {closest_cooling_center_arrow_file_path} not found.")
+        #     raise MissingEnvironmentFile(closest_cooling_center_arrow_file_path)
+        # closest_cooling_center_df = pl.read_parquet(closest_cooling_center_arrow_file_path)
+        # logger.info(f"Loaded closest cooling centers data with {closest_cooling_center_df.shape[0]} rows")
+        # self.conn.execute(
+        #     """
+        #     CREATE OR REPLACE TABLE closest_cooling_center2 AS
+        #     SELECT * FROM closest_cooling_center_df;
+        #     """
+        # )
+
+        cooling_centers_experiment_file_path = (
+            Model.get_model().data_path / Model.get_model().params["cooling_centers_experiment.file"]
         )
-        if not closest_cooling_center_arrow_file_path.exists():
-            logger.error(f"Error: Closest cooling station file {closest_cooling_center_arrow_file_path} not found.")
-            raise MissingEnvironmentFile(closest_cooling_center_arrow_file_path)
-        closest_cooling_center_df = pl.read_parquet(closest_cooling_center_arrow_file_path)
-        logger.info(f"Loaded closest cooling centers data with {closest_cooling_center_df.shape[0]} rows")
+        if not cooling_centers_experiment_file_path.exists():
+            logger.error(f"Error: Cooling centers experiment file {cooling_centers_experiment_file_path} not found.")
+            raise MissingEnvironmentFile(cooling_centers_experiment_file_path)
+        cooling_centers_experiment_df = pl.read_parquet(cooling_centers_experiment_file_path)
+        logger.info(f"Loaded cooling centers experiment data with {cooling_centers_experiment_df.shape[0]} rows")
         self.conn.execute(
             """
-            CREATE OR REPLACE TABLE closest_cooling_center AS
-            SELECT * FROM closest_cooling_center_df;
+            CREATE OR REPLACE TABLE experiments AS
+            SELECT * FROM cooling_centers_experiment_df;
             """
         )
+        experiment_id = int(self.params["experiment_id"])
+        logger.info(f"Filtering experiment data for experiment_id={experiment_id}...")
+        create_closest_cooling_centers(self.conn, experiment_id)
+        closest_cooling_center_df2 = self.conn.execute("SELECT * FROM closest_cooling_center").pl()
+        logger.info(f"Filtered closest cooling centers data has {closest_cooling_center_df2.shape[0]} rows")
 
     def step(self) -> None:
         """Step the model."""

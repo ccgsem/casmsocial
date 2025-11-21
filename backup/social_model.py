@@ -2,9 +2,8 @@
 Author: Jon Cline
 Created: 02 Dec 2024
 
-Defining the CasmPop
+Defining the SIModel
 """
-
 import os
 import pathlib
 import time
@@ -14,6 +13,8 @@ from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 import duckdb
+import polars as pl
+import pyarrow.parquet as pq
 import repast4py
 from dotenv import load_dotenv
 from loguru import logger
@@ -28,8 +29,8 @@ from casmsocial.environment import Environment
 from casmsocial.factory import Models
 from casmsocial.message import Message
 from casmsocial.model import Model
-from casmsocial.person import Person, person_cache
-from casmsocial.place import Place, PlacesProjectionV2
+from casmsocial.person import Person, PersonConfig, person_cache
+from casmsocial.place import Place, PlaceConfig, PlacesProjection
 from casmsocial.sim_time import SimTime
 
 
@@ -44,14 +45,17 @@ class InvalidTimeStepError(Exception):
         super().__init__(f"Invalid time step value: {value}. Time step must be an integer.")
 
 
+class InvalidPlacesFilesError(Exception):
+    def __init__(self, value):
+        super().__init__(f"places.files must be a list of filenames, got: {value}")
+
+
 class InvalidTableNameError(Exception):
     def __init__(self, table_name):
         super().__init__(f"Invalid table name: {table_name}")
 
 
-class MissingDataPathError(Exception):
-    def __init__(self, data_path):
-        super().__init__(f"Missing or invalid data path: {data_path}")
+# note: place types are set by derived Model classes
 
 
 class SimEnvironment(Environment):
@@ -101,28 +105,27 @@ class SimEnvironment(Environment):
 
         # theModel.make_contacts(tick)
 
-    @DeprecationWarning
     def get_values_at_place(self, place: Place) -> namedtuple:
         """Get the values at the given coordinates."""
         return None
 
 
-class CasmPop(Model):
+class SIModel(Model):
     """
-    The CasmPop class encapsulates the simulation, and is
+    The SIModel class encapsulates the simulation, and is
     responsible for initialization (scheduling events, creating agents,
     and the grid the agents inhabit), and the overall iterating
     behavior of the model.
 
-    The CasmPop class is a subclass of the Model class, which is an abstract
+    The SIModel class is a subclass of the Model class, which is an abstract
     base class that defines the interface for all models in the casmsocial.
-    The CasmPop class implements the start and step methods, which are called
+    The SIModel class implements the start and step methods, which are called
     by the run function in the casmsocial module to start and run the model.
 
-    The CasmPop class adds the following functionality to the Model class:
+    The SIModel class adds the following functionality to the Model class:
 
-    - The CasmPop class initializes geographic places and agents.
-    - The CasmPop class updates the  environment for the current time step.
+    - The SIModel class initializes geographic places and agents.
+    - The SIModel class updates the  environment for the current time step.
 
     Args:
         comm: the mpi communicator over which the model is distributed.
@@ -130,8 +133,18 @@ class CasmPop(Model):
     """
 
     # class variables
-    __personClass: type[Person] = Person
-    __placeClass: type[Place] = Place
+
+    # list of places configurations (deprecated)
+    __placeConfigs: ClassVar[list[PlaceConfig]] = []
+
+    # remote place configuration (deprecated)
+    __remote_place_config: PlaceConfig = None
+
+    # list of place_types names (replaces __placeConfigs)
+    __place_type_names: ClassVar[list[str]] = []
+
+    # person configuration
+    __person_config: ClassVar[PersonConfig] = None
 
     # list of planned activities (column names in the person file for activities)
     __planned_activity_names: ClassVar[list[str]] = []
@@ -146,27 +159,88 @@ class CasmPop(Model):
     __environment: Environment = None
 
     # class methods
+
+    # Register a place configuration. (deprecated)
     @classmethod
-    def getPersonClass(cls) -> type[Person]:
-        """Get the person class."""
-        return cls.__personClass
+    def register_place_config(cls, config: PlaceConfig) -> None:
+        """Register a place configuration."""
+        cls.__placeConfigs.append(config)
+
+    # Get the list of place configurations. (deprecated)
+    @classmethod
+    def get_place_configs(cls) -> list[PlaceConfig]:
+        """Get the list of place configurations."""
+        return cls.__placeConfigs
+
+    # Get a specific place configuration by index. (deprecated)
+    @classmethod
+    def get_place_config(cls, idx: int) -> PlaceConfig:
+        """Get a PlacesConfig from the list of configs."""
+        return cls.__placeConfigs[idx]
+
+    # Get a specific place configuration by name. (deprecated)
+    @classmethod
+    def get_place_config_idx(cls, name: str) -> int:
+        """Get the index of a PlacesConfig in the list of configs."""
+        for idx, config in enumerate(cls.__placeConfigs):
+            if config.name == name:
+                return idx
+        return -1
+
+    # Get the name of a specific place configuration by index. (deprecated)
+    @classmethod
+    def get_place_config_name(cls, idx: int) -> str:
+        """Get the name of a PlacesConfig in the list of configs."""
+        return cls.__placeConfigs[idx].name
+
+    # Get the names of all place configurations. (deprecated)
+    @classmethod
+    def get_all_place_config_names(cls) -> list[str]:
+        """Get the names of all PlacesConfig in the list of configs."""
+        return [config.name for config in cls.__placeConfigs]
+
+    # Register a remote place configuration. (deprecated)
+    @classmethod
+    def register_remote_place_config(cls, config: PlaceConfig) -> None:
+        """Register a remote place configuration."""
+        cls.__remote_place_config = config
+
+    # Get the remote place configuration. (deprecated)
+    @classmethod
+    def get_remote_place_config(cls) -> PlaceConfig:
+        """Get the remote place configuration."""
+        return cls.__remote_place_config
 
     @classmethod
-    def setPersonClass(cls, person_class: type[Person], person_data) -> None:
-        """Set the person class."""
-        person_class.setPersonDataClass(person_data)
-        cls.__personClass = person_class
+    def register_place_names(cls, place_names: list[str]) -> None:
+        """Register place names.
+
+        Args:
+            place_names (list[str]): The list of place type names.
+        """
+        cls.__place_type_names = place_names
 
     @classmethod
-    def getPlaceClass(cls) -> type[Place]:
-        """Get the place class."""
-        return cls.__placeClass
+    def get_places_names(cls) -> list[str]:
+        """Get the names of all registered place types.
+        Returns:
+            list[str]: The list of place type names.
+        """
+        if not cls.__place_type_names:
+            cls.__place_type_names = [config.name for config in cls.__placeConfigs]
+        return cls.__place_type_names
 
     @classmethod
-    def setPlaceClass(cls, place_class: type[Place], place_data) -> None:
-        """Set the place class."""
-        place_class.setPlaceDataClass(place_data)
-        cls.__placeClass = place_class
+    def register_person_config(cls, config: PersonConfig) -> None:
+        """Register a person configuration."""
+        Person.registerPersonDataClass(config.dataType)
+        Person.registerBehaviorEngine(config.behaviorEngine)
+        cls.__person_config = config
+
+    @classmethod
+    def get_person_config(cls) -> PersonConfig:
+        """Get the person configuration."""
+        return cls.__person_config
 
     @classmethod
     def register_planned_activity_names(cls, planned_activity_names: list[str]) -> None:
@@ -210,7 +284,7 @@ class CasmPop(Model):
 
     # instance variables
     def __init__(self, comm: MPI.Intracomm, params: dict):
-        """Constructor for the CasmPop class
+        """Constructor for the SIModel class
 
         Args:
             comm: the mpi communicator over which the model is distributed.
@@ -218,7 +292,7 @@ class CasmPop(Model):
         """
         Model.set_model(self)
 
-        logger.info("Creating CasmPop...")
+        logger.info("Creating SIModel...")
         self.comm = comm
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
@@ -231,13 +305,12 @@ class CasmPop(Model):
         self._set_optional_params_with_defaults()
         self._remove_deprecated_params()
         self._compute_ticks()
-        self._configure_parallel_processing()
 
-        logger.info(f"Rank {self.rank} starting CasmPop with params: {self.params}")
+        logger.info(f"Rank {self.rank} starting SIModel with params: {self.params}")
 
         # create the schedule
         self.runner = schedule.init_schedule_runner(self.comm)
-        self.runner.schedule_event(0, self.build_context)
+        self.runner.schedule_event(0, self.initialize_population)
         self.runner.schedule_repeating_event(1, 1, self.step)
         self.runner.schedule_stop(self.params["ticks"])
         self.runner.schedule_end_event(self.at_end)
@@ -257,33 +330,44 @@ class CasmPop(Model):
         # synchronization
         self.context = ctx.SharedContext(self.comm)
 
-        # set the data path
-        self._set_data_path()
+        # the data input path should be defined by $CASMSOCIAL_DATA_PATH
+        load_dotenv()
+        data_input_path = os.environ.get("CASMSOCIAL_DATA_PATH")
+        data_input_path = pathlib.Path.cwd() if not data_input_path else pathlib.Path(data_input_path)
+        self.data_input_path = data_input_path
 
         # create a DuckDB connection for in-memory operations
         self.conn = duckdb.connect(database=":memory:", read_only=False)
-        self.conn.execute(f"PRAGMA threads={os.cpu_count()}")
-        self.conn.execute(
-            """
-            INSTALL spatial;
-            LOAD spatial;
-            """
-        )
-        self.queries = {}
+        self.queries = {
+            "get_tables": "SHOW TABLES",
+            "get_table_schema": "DESCRIBE {table_name}",
+            "hh": "SELECT SELECT sp_id, 'Household' as place_type, latitude, longitude  FROM hh",
+            "work": "SELECT SELECT sp_id, 'Workplace' as place_type, latitude, longitude FROM work",
+            "sch": "SELECT SELECT sp_id, 'School' as place_type, latitude, longitude FROM sch",
+            "create_places": """
+                CREATE TABLE places AS
+                SELECT * FROM hh
+                UNION BY NAME
+                SELECT * FROM work
+                UNION BY NAME
+                SELECT * FROM sch;
+                """,
+            "create_person_last_known_location": """
+                CREATE TABLE person_last_known_location (
+                    person_id INTEGER PRIMARY KEY, -- PRIMARY KEY implies UNIQUE
+                    place_id INTEGER,
+                    minute_last_updated INTEGER
+                )
+                """,
+        }
 
-        self.contact_map = {}
-
-    def _set_data_path(self) -> None:
-        # the data input path should be defined by $CASMSOCIAL_DATA_PATH
-        load_dotenv()
-        data_path = os.environ.get("CASMSOCIAL_DATA_PATH")
-        if not data_path or not pathlib.Path(data_path).exists():
-            raise MissingDataPathError(data_path)
-        self.data_path = pathlib.Path(data_path)
+        # create the DuckDB tables for current locations of all persons
+        # This table will be used to store the last known location of each person
+        self.conn.execute(self.queries["create_person_last_known_location"])
 
     def _validate_and_set_required_params(self):
         """Validate and set required parameters."""
-        required_keys = ["places.file", "persons.file", "activities.file"]
+        required_keys = ["persons.file", "activities.file"]
         for key in required_keys:
             if key not in self.params:
                 logger.error(f"Missing required parameter: {key}")
@@ -296,6 +380,8 @@ class CasmPop(Model):
             "duration.hours",
             "timezone",
             "time.step.minutes",
+            "places.file",
+            "places.files",
             "contacts.file",
         ]
         for key in optional_keys:
@@ -307,6 +393,10 @@ class CasmPop(Model):
         self._set_default_duration_hours()
         self._set_default_timezone()
         self._parse_time_step_minutes()
+
+        if self.params["places.file"] is None and "places.files" not in self.params:
+            logger.error("No places file specified. Please provide 'places.file' or 'places.files'.")
+            raise MissingRequiredParameterError(["places.file", "places.files"])
 
     def _set_default_start_datetime(self):
         if self.params["start.datetime"] is None:
@@ -364,28 +454,7 @@ class CasmPop(Model):
             raise MissingRequiredParameterError(["time.step.minutes", "duration.hours"])
         self.params["ticks"] = int(self.params["duration.hours"] * 60 / self.params["time.step.minutes"])
 
-    def _configure_parallel_processing(self):
-        """Configure parallel processing settings."""
-        # Default parallel processing settings
-        if "parallel.places.enabled" not in self.params:
-            self.params["parallel.places.enabled"] = True
-        if "parallel.places.min_threshold" not in self.params:
-            self.params["parallel.places.min_threshold"] = 50  # Increased threshold for better performance
-        if "parallel.places.max_workers" not in self.params:
-            self.params["parallel.places.max_workers"] = None  # Use CPU count
-
-        # Option to disable automatic place updates during simulation steps
-        if "parallel.places.auto_update" not in self.params:
-            self.params["parallel.places.auto_update"] = False  # Disabled by default to prevent overhead
-
-        # Agent processing: parallel processing disabled due to performance degradation
-        # Thread overhead (0.81x speedup) exceeded benefits for lightweight agent operations
-        if "parallel.agents.enabled" not in self.params:
-            self.params["parallel.agents.enabled"] = False  # Disabled due to measured performance loss
-        if "parallel.agents.min_threshold" not in self.params:
-            self.params["parallel.agents.min_threshold"] = 1000000  # Effectively disabled
-
-    def build_context(self) -> None:
+    def initialize_population(self) -> None:
         """
         Initialize population
 
@@ -393,39 +462,50 @@ class CasmPop(Model):
         from the input data files.
 
         The method performs the following steps:"""
-
-        # register the agent types (derived classes should set agent types)
+        # register the place types (derived classes should set place types)
 
         # create SharedContext consisting of all of the places in this model
-        # Use enhanced projection for better performance and consistency
-        # Use simple projection instantiation to avoid parallel processing overhead
-        self.places_proj = PlacesProjectionV2(
-            "places_projection",
-            self.comm,
-            enable_parallel_updates=False,  # Disabled to prevent performance overhead
-        )
+        self.places_proj = PlacesProjection("places_projection", self.comm)
         self.context.add_projection(self.places_proj)
 
-        # create the input tables
-        self.create_input_tables()
+        # initialize the places
+        if "places.file" in self.params and self.params["places.file"] is not None:
+            logger.debug("Loading places from single file...")
+            self.create_places_from_file(0, self.data_input_path / self.params["places.file"])
+        else:
+            logger.debug("Loading places from multiple files...")
+            if "places.files" not in self.params:
+                logger.error("Error: places.files parameter not specified.")
+                raise MissingRequiredParameterError("places.files")
+                logger.error("Error: places.files must be a list of filenames.")
+                raise InvalidPlacesFilesError(self.params["places.files"])
+                self.params["places.files"] = [self.params["places.files"]]
+            elif not isinstance(self.params["places.files"], list):
+                logger.error("Error: places.files must be a list of filenames.")
+                raise InvalidPlacesFilesError(self.params["places.files"])
 
-        # initialize the places (note: already checked if "places.file" is in params)
-        self.create_places()
+            place_filenames = [self.data_input_path / filename for filename in self.params["places.files"]]
+            self.create_places_from_files(place_filenames)
 
         local_places = self.places_proj.get_local_places()
         logger.info(f"rank {self.rank}: number of local places={len(local_places)}")
-        # add geometry to the places table
-        # self.conn.execute(self.queries["add_geometries"])
 
+        # schedulesList is a list of dict of personID->Schedule object
+        schedulesList = self.create_activities(self.data_input_path / self.params["activities.file"])
+        if not schedulesList or len(schedulesList) == 0:
+            logger.error("Error: activities file is empty or not found.")
+            raise MissingRequiredParameterError("activities.file")
+        logger.info(f"rank {self.rank}: weekday activitiesMap size={len(schedulesList[0])}")
         # contact_map is a dict of personID->{placeID->[personID]}
         # i.e. it is a map of personIDs to a list of contacted persons at each
         # place
-        if "contacts.file" in self.params and self.params.get("contacts.file"):
-            logger.info(f"Loading contact file {self.params['contacts.file']}...")
+        self.contact_map = {}
+        if "contact.file" in self.params:
+            logger.debug("Loading contact file...")
 
-            self.contact_map = self.create_contacts()
+            self.contact_map = self.create_contacts(self.data_input_path / self.params["contact.file"])
         else:
-            logger.warning("Warning: contacts file not specified.")
+            logger.error("Error: contact file not specified.")
 
         logger.debug(f"rank {self.rank}: contacts size={len(self.contact_map)}")
 
@@ -433,74 +513,44 @@ class CasmPop(Model):
 
         # agent_id_map is a map of personID->repast4py.Agent.uid
         # self.person_id_map = {}
-        self.create_persons(self.rng)
+        self.create_persons(self.data_input_path / self.params["persons.file"], schedulesList, self.rng)
 
+        # initialize the table for person last known locations
+        # person_last_known_location_df is a polars DataFrame with columns:
+        person_last_known_location_df = pl.DataFrame(
+            [person.last_known_place for person in self.context.agents(agent_type=0)]
+        )
+        # write the person locations to the DuckDB table
+        self.conn.execute(
+            """
+            INSERT INTO person_last_known_location SELECT * FROM person_last_known_location_df
+            """
+        )
+        logger.info(
+            "person_last_known_location_df:\n"
+            f"number of rows: {person_last_known_location_df.shape[0]}\n"
+            f"{person_last_known_location_df.head}"
+        )
         result = self.conn.execute(self.queries["get_tables"]).fetchall()
         logger.info(f"rank {self.rank}: DuckDB tables after initialization: {result}")
 
-    def create_input_tables(self) -> None:
-        """Load tables from the database."""
-
-        # create the places table
-        places_file = self.data_path / self.params["places.file"]
-        if not places_file.exists():
-            raise MissingRequiredParameterError("places.file")
-        logger.info(f"Loading places file {places_file}...")
-        self.conn.execute("CREATE TABLE IF NOT EXISTS places AS SELECT * FROM read_parquet(?)", [str(places_file)])
-
-        # create the persons table
-        imputation = self.params.get("Imputation", None)
-        persons_file = self.data_path / self.params["persons.file"]
-        if persons_file.is_dir() and imputation is not None:
-            persons_file = persons_file / f"Imputation={imputation}" / "part-0.parquet"
-            logger.info(f"Using imputation persons file {persons_file}...")
-        if not persons_file.exists():
-            raise MissingRequiredParameterError("persons.file")
-        logger.info(f"Loading persons file {persons_file}...")
-        self.conn.execute("CREATE TABLE IF NOT EXISTS persons AS SELECT * FROM read_parquet(?)", [str(persons_file)])
-
-        # create the activities table
-        activities_file = self.data_path / self.params["activities.file"]
-        if activities_file.is_dir() and imputation is not None:
-            activities_file = activities_file / f"Imputation={imputation}" / "part-0.parquet"
-            logger.info(f"Using imputation activities file {activities_file}...")
-        if not activities_file.exists():
-            raise MissingRequiredParameterError("activities.file")
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS activities AS SELECT * FROM read_parquet(?)", [str(activities_file)]
-        )
-
-        self.queries = {
-            "get_tables": "SHOW TABLES",
-            "add_geometries": """
-                -- 1. Load the spatial extension
-                -- This is necessary to use ST_Point and other geospatial functions.
-                INSTALL spatial;
-                LOAD spatial;
-                -- 2. Add the 'location' column of type GEOMETRY
-                -- GEOMETRY is a generic spatial type that can store points, lines, polygons, etc.
-                ALTER TABLE places ADD COLUMN location GEOMETRY;
-                -- 3. Populate the 'location' column
-                -- ST_Point expects (X, Y) which translates to (longitude, latitude) for geographic points.
-                UPDATE places
-                -- Ensure that longitude and latitude are in the correct order for ST_Point
-                SET location = ST_Point(longitude, latitude);
-                """,
-        }
-
-        # create the contacts table if it exists
-        if "contacts.file" in self.params and self.params.get("contacts.file"):
-            contacts_file = self.data_path / self.params["contacts.file"]
-            if not contacts_file.exists():
-                raise MissingRequiredParameterError("contacts.file")
-            logger.info(f"Loading contacts file {contacts_file}...")
-            self.conn.execute(
-                "CREATE TABLE IF NOT EXISTS contacts AS SELECT * FROM read_parquet(?)", [str(contacts_file)]
-            )
+        # create geometry column in places table
+        query = """
+        INSTALL spatial; LOAD spatial;
+        ALTER TABLE places ADD COLUMN location GEOMETRY;
+        UPDATE places SET location = ST_Point(longitude, latitude);
+        """
+        self.conn.execute(query)
+        logger.info("Created geometry column places table.")
+        # get the schema of the places table
+        result = self.conn.execute(self.queries["get_table_schema"].format(table_name="places")).fetchall()
+        logger.info(f"rank {self.rank}: places: {result}")
 
     def create_persons(
         self,
-        rng: repast4py.random.default_rng,
+        personsFile: pathlib.Path,
+        schedulesList: list[dict[int, list[int]]],
+        rng,
     ) -> None:
         """Create persons from the given file.
 
@@ -509,16 +559,8 @@ class CasmPop(Model):
             schedulesList (list[dict]): The list of activities maps.
             rng: The random number generator.
         """
-        # get the person type
-        personType = self.getPersonClass()
-
-        # Create the activities
-        #  - schedulesList is a list of dict of personID->Schedule object
-        schedulesList = self.create_activities()
-        if not schedulesList or len(schedulesList) == 0:
-            logger.error("Error: no activities found.")
-            raise MissingRequiredParameterError("activities.file")
-        logger.info(f"rank {self.rank}: weekday activitiesMap size={len(schedulesList[0])}")
+        # get the person type and data type
+        personType = self.get_person_config().person_type
 
         # get the activities map, which is a dict of personID->Activities object
         # Currently, we assume that there is only one schedule in the list,
@@ -540,8 +582,7 @@ class CasmPop(Model):
         alternate_activities_names = activity_names[len(planned_activity_names) :]
 
         # load the persons from the file
-        # table = pq.read_table(personsFile)
-        table = self.conn.execute("SELECT * FROM persons").fetch_arrow_table()
+        table = pq.read_table(personsFile)
 
         for batch in table.to_batches():
             for row in zip(*batch.columns):
@@ -621,28 +662,6 @@ class CasmPop(Model):
                 self.places_proj.add(person)
                 self.places_proj.assign_agent_to_place(person, household)
 
-    def create_places(self) -> None:
-        """Create places in the project."""
-
-        logger.info("Creating places...")
-
-        # Get the place type and data type
-        placeType = self.getPlaceClass()
-        placeDataType = placeType.getPlaceDataClass()
-
-        # Create the places table
-        table = self.conn.execute("SELECT * FROM places").fetch_arrow_table()
-
-        for batch in table.to_batches():
-            for row in zip(*batch.columns):
-                # convert arrow scalars to python
-                row = [x.as_py() for x in row]
-                place_record = dict(zip(table.column_names, row))
-                if "rank" not in place_record:
-                    place_record["rank"] = 0
-                place = placeType(place_record, placeDataType)
-                self.places_proj.add_place(place)
-
     def create_places_from_file(self, placeTypeIndex: int, placesFile: pathlib.Path) -> None:
         """
         Create places from the given file.
@@ -653,25 +672,27 @@ class CasmPop(Model):
         """
 
         # get the place type
-        logger.info(f"Creating places from {placesFile}...")
+        placeConfig = self.get_place_config(placeTypeIndex)
+        placeType = placeConfig.place_type
+        placeDataType = placeConfig.dataType
 
-        placeType = self.get_agent_type_configs()[Place.TYPE].agent_type
-        placeDataType = self.get_agent_type_configs()[Place.TYPE].agent_data_type
-        table_name = "places"
+        table_names = ["hh", "work", "sch"]
+        if placeConfig.name == "Places":
+            table_names = [placeConfig.name.lower()]
+
+        table_name = table_names[placeTypeIndex]
         print(
-            f"Creating places from {placesFile}:"
-            f" with data type {placeDataType.__name__}"
+            f"Creating places of type {placeConfig.name} from {placesFile}:"
+            f" {placeType.__name__} with data type {placeDataType.__name__}"
             f" and table name {table_name}"
         )
-        # table = pq.read_table(placesFile)
-        table = self.conn.execute("SELECT * FROM places").fetch_arrow_table()
-
+        table = pq.read_table(placesFile)
         # Register the PyArrow table as a DuckDB view
         self.conn.register("my_temp_view", table)
 
         # Use that view in your CREATE TABLE AS query
-        # query = f'CREATE OR REPLACE TABLE "{table_name}" AS SELECT * FROM my_temp_view'
-        # self.conn.execute(query)
+        query = f'CREATE OR REPLACE TABLE "{table_name}" AS SELECT * FROM my_temp_view'  # noqa: S608
+        self.conn.execute(query)
 
         # Optionally fetch the result (if needed)
         # result = self.conn.table(table_name).arrow()
@@ -686,12 +707,45 @@ class CasmPop(Model):
                 place = placeType(place_record, placeDataType)
                 self.places_proj.add_place(place)
 
-    def create_activities(self) -> list[dict[int, list[int]]]:
+    def create_places_from_files(self, places_files: list[pathlib.Path]) -> None:
+        """
+        Create places from the given files.
+
+        Args:
+            places_files (list[pathlib.Path]): The list of place files.
+        """
+        for placeTypeIndex, placesFile in enumerate(places_files):
+            self.create_places_from_file(placeTypeIndex, placesFile)
+
+        # create the places table
+        logger.info("Creating places table...")
+        self.conn.execute(self.queries["create_places"])
+        # verify the places table was created
+        # if not self.conn.table("places").exists():
+        # logger.error("Error: places table was not created.")
+        # raise InvalidTableNameError("places")
+        # show the tables to verify creation
+        logger.info("Showing tables after creating places...")
+        result = self.conn.execute("SHOW TABLES").fetchall()  # Show tables to verify creation
+        logger.info(f"Created tables: {result}")
+
+        places_df = self.conn.query("SELECT * FROM places").pl()
+        logger.info(f"Number of places created: {len(places_df)}")
+
+        # add a remote place
+        remote_place = self.get_remote_place_config().place_type(
+            {"sp_id": 0, "rank": 0}, self.get_remote_place_config().dataType
+        )
+        self.places_proj.add_place(remote_place)
+
+    def create_activities(self, activitiesFile: pathlib.Path) -> list[dict[int, list[int]]]:
         """Create activities from the given file.
         This method reads the activities file and creates a mapping of person IDs
         to their activities. Activities are grouped in schedules for each person.
         The default schedule is for weekdays, but weekend activities can be added later.
 
+        Args:
+            activitiesFile (pathlib.Path): The activities file.
         Returns:
             list[dict[int, list[int]]]: A list containing a single dictionary
             mapping person IDs to their activities for a weekday.
@@ -702,7 +756,7 @@ class CasmPop(Model):
 
         # This should be the most eficient way to extract the data via pyarrow
         # See https://stackoverflow.com/questions/53157495/fastest-way-to-iterate-pyarrow-table/55633193#55633193
-        table = self.conn.execute("SELECT * FROM activities").fetch_arrow_table()
+        table = pq.read_table(activitiesFile)
 
         for batch in table.to_batches():
             d = batch.to_pydict()
@@ -716,7 +770,7 @@ class CasmPop(Model):
 
         return [act_map]
 
-    def create_contacts(self) -> dict[int, dict[int, int]]:
+    def create_contacts(self, contactFile: pathlib.Path) -> dict[int, dict[int, int]]:
         # contactMap looks like:
         # personID -> { hour_of_day -> [ otherPersonIDs ] }
         # dict
@@ -724,8 +778,7 @@ class CasmPop(Model):
 
         # with open(contactFile, 'r', newline='') as f:
         #     contacts = DictReader(f)
-        # table = pq.read_table(contactFile)
-        table = self.conn.execute("SELECT * FROM contacts").fetch_arrow_table()
+        table = pq.read_table(contactFile)
 
         for batch in table.to_batches():
             d = batch.to_pydict()
@@ -745,6 +798,8 @@ class CasmPop(Model):
 
         self.cal.increment(self.time_step_minutes)
 
+        return
+
         # log the current step
         logger.info(
             "Step on "
@@ -752,9 +807,6 @@ class CasmPop(Model):
             f"hour {self.cal.hour_of_day}, "
             f"minute {self.cal.minute_of_day}"
         )
-
-        # Automatic place updates are disabled - they caused performance degradation
-        # The OptimizedHeatRiskModel handles its own optimizations more efficiently
 
         # 2025-02-26 jcline: this is a hack to get the person_id_map
         # self.get_local_ids()
@@ -772,28 +824,8 @@ class CasmPop(Model):
 
         # self.send_messages_between_agents()
 
-        # Process person agents (TYPE=0) with optimized sequential processing
-        # Parallel processing caused 19% performance degradation (0.81x speedup) due to
-        # thread overhead exceeding benefits for lightweight agent operations
-        person_agents = list(self.context.agents(agent_type=0))  # Only person agents
-
-        if len(person_agents) > 0:
-            agent_start_time = time.time()
-
-            # Optimized sequential processing with minimal overhead
-            for person in person_agents:
-                person.step(self.context, self.cal)
-
-            agent_processing_time = time.time() - agent_start_time
-
-            # Log performance for large datasets
-            if self.rank == 0 and len(person_agents) >= 1000:
-                agents_per_second = len(person_agents) / agent_processing_time if agent_processing_time > 0 else 0
-                logger.info(
-                    f"Person agent processing: {len(person_agents):,} agents, "
-                    f"{agent_processing_time:.2f}s, "
-                    f"rate: {agents_per_second:,.0f} agents/sec"
-                )
+        for person in self.context.agents():
+            person.step(self.context, self.cal)
 
         self.log_agents()
 
@@ -964,18 +996,8 @@ class CasmPop(Model):
         """Log the agents at the current time step."""
         pass
 
-    def get_parallel_performance_stats(self) -> dict:
-        """Get performance statistics from parallel place updates."""
-        if hasattr(self.places_proj, "get_parallel_performance_stats"):
-            return self.places_proj.get_parallel_performance_stats()
-        return {}
-
     def at_end(self) -> None:
         """Actions to take at the end of the simulation."""
-        # Log parallel processing performance if enabled
-        perf_stats = self.get_parallel_performance_stats()
-        if perf_stats and self.rank == 0:
-            logger.info(f"Parallel processing performance stats: {perf_stats}")
         pass
 
     def start(self) -> None:
@@ -986,8 +1008,8 @@ class CasmPop(Model):
         logger.info(f"Simulation took {end_time - self.start_time} seconds.")
 
 
-# Register CasmPop
-Models.add_model(CasmPop.__module__ + "." + CasmPop.__name__, CasmPop)
+# Register SIModel
+Models.add_model(SIModel.__module__ + "." + SIModel.__name__, SIModel)
 
 
 # utility functions
