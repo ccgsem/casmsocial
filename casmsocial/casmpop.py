@@ -5,6 +5,7 @@ Created: 02 Dec 2024
 Defining the CasmPop
 """
 
+import glob
 import os
 import pathlib
 import time
@@ -449,15 +450,36 @@ class CasmPop(Model):
         self.conn.execute("CREATE TABLE IF NOT EXISTS places AS SELECT * FROM read_parquet(?)", [str(places_file)])
 
         # create the persons table
-        imputation = self.params.get("Imputation", None)
+        imputation = self.params.get("Imputation", None) if "Imputation" in self.params else None
         persons_file = self.data_path / self.params["persons.file"]
-        if persons_file.is_dir() and imputation is not None:
-            persons_file = persons_file / f"Imputation={imputation}" / "part-0.parquet"
-            logger.info(f"Using imputation persons file {persons_file}...")
         if not persons_file.exists():
             raise MissingRequiredParameterError("persons.file")
         logger.info(f"Loading persons file {persons_file}...")
-        self.conn.execute("CREATE TABLE IF NOT EXISTS persons AS SELECT * FROM read_parquet(?)", [str(persons_file)])
+        if imputation is not None:
+            persons_files_path = str(persons_file / "*/*.parquet")
+            persons_files = glob.glob(persons_files_path)
+            logger.info(f"Using imputation {imputation} for persons file {persons_files_path}...")
+            self.conn.execute(
+                """
+                CREATE OR REPLACE TABLE persons AS
+                SELECT
+                    -- Cast Hive partition column from VARCHAR to INTEGER
+                    CAST(Imputation AS INTEGER) AS Imputation,
+                    * EXCLUDE (Imputation)
+                FROM read_parquet(
+                    ?,          -- directory with Hive-style partitions
+                    hive_partitioning = 1       -- tell DuckDB to read dir names as columns
+
+                )
+                WHERE CAST(Imputation AS INTEGER) = ?;
+                """,
+                [persons_files, imputation],
+            )
+        else:
+            self.conn.execute(
+                "CREATE TABLE IF NOT EXISTS persons AS SELECT * FROM read_parquet(?)",
+                [str(persons_file)],
+            )
 
         # create the activities table
         activities_file = self.data_path / self.params["activities.file"]
