@@ -982,7 +982,7 @@ class HeatRiskModel2(CasmPop):
         # Collect all agents
         agents = list(self.context.agents(agent_type=0))
 
-        imputation = int(self.params.get("imputation", 1))
+        imputation = int(self.params.get("Imputation", 1))
         experiment_id = int(self.params.get("experiment_id", 1))
 
         # For millions of agents, you may want to use generators for memory efficiency
@@ -1061,7 +1061,7 @@ class HeatRiskModel2(CasmPop):
         """Get the agent data for logging."""
         # heat_threshold_cooling_center = self.get_environment().heat_threshold_cooling_center
         # heat = filter_heat_indices(person.state.heat_indices, heat_threshold_cooling_center)
-        imputation = int(self.params.get("imputation", 1))
+        imputation = int(self.params.get("Imputation", 1))
         experiment_id = int(self.params.get("experiment_id", 1))
 
         return PersonLogData(
