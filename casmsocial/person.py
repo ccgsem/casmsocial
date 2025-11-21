@@ -1,4 +1,5 @@
-""" Person Agent Base Class """
+"""Person Agent Base Class"""
+
 from __future__ import annotations
 
 import math
@@ -263,7 +264,7 @@ class Person(core.Agent):
         # the first two activities are for weekdays and weekends
         # any additional activities are for unplanned activities
         if activities_idx < 2:  # if sticking to planned activities
-            if cal.is_weekday():
+            if cal.is_weekday:
                 activities_idx = 0
             elif len(self.schedules) > 0:  # if there is a weekend schedule
                 activities_idx = 1
