@@ -155,9 +155,11 @@ class HeatRiskEnvironment(SimEnvironment):
         required_keys = [
             "environment.file",
             "closest_cooling_center.file",
-            "heat_threshold",
+            "heat_threshold_cooling_center",
+            "heat_threshold_health_effect",
             "cooling_centers_experiment.file",
             "experiment_id",
+            "run_log_file",
         ]
         if not all(key in Model.get_model().params for key in required_keys):
             logger.error(f"Error: Missing required parameters in model: {required_keys}")
@@ -796,6 +798,8 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
 class PersonLogData:
     """Data for logging person agent information."""
 
+    Imputation: int
+    experiment_id: int
     minute_of_day: int
     hour_of_day: int
     rank: int  # rank of the agent in the MPI communicator
@@ -823,8 +827,8 @@ class PersonLogData:
 # 6a. Define run log data
 @dataclass
 class RunLogData:
-    # imputation: int
-    # experiment: int
+    Imputation: int
+    experiment_id: int
     countAgents: int
     totalHeatIndex: float
     # avgHeatIndex: float
@@ -978,6 +982,9 @@ class HeatRiskModel2(CasmPop):
         # Collect all agents
         agents = list(self.context.agents(agent_type=0))
 
+        imputation = int(self.params.get("imputation", 1))
+        experiment_id = int(self.params.get("experiment_id", 1))
+
         # For millions of agents, you may want to use generators for memory efficiency
         # Flatten all heat_indices
         all_heat_indices = [
@@ -1012,8 +1019,8 @@ class HeatRiskModel2(CasmPop):
         countExperiencedHealthEffect = float(sum(1 for exp in experienced_he if exp))
 
         return RunLogData(
-            # imputation,
-            # experiment,
+            imputation,
+            experiment_id,
             countAgents,
             totalHeatIndex,
             # avgHeatIndex,
@@ -1054,8 +1061,12 @@ class HeatRiskModel2(CasmPop):
         """Get the agent data for logging."""
         # heat_threshold_cooling_center = self.get_environment().heat_threshold_cooling_center
         # heat = filter_heat_indices(person.state.heat_indices, heat_threshold_cooling_center)
+        imputation = int(self.params.get("imputation", 1))
+        experiment_id = int(self.params.get("experiment_id", 1))
 
         return PersonLogData(
+            Imputation=imputation,
+            experiment_id=experiment_id,
             minute_of_day=self.cal.minute_of_day,
             hour_of_day=self.cal.hour_of_day,
             rank=self.comm.Get_rank(),
@@ -1089,12 +1100,18 @@ class HeatRiskModel2(CasmPop):
         # convert the DataFrame to an Arrow Table
         run_log_table = run_log_df.to_arrow()
 
+        # Define partition schema
+        partition_schema = pa.schema([pa.field("Imputation", pa.int32()), pa.field("experiment_id", pa.int32())])
+
+        # Set Hive-style partitioning
+        partitioning = HivePartitioning(partition_schema)
+
         # Write dataset
         ds.write_dataset(
             data=run_log_table,
             base_dir=self.run_log_file,
             format="parquet",
-            # partitioning=partitioning,
+            partitioning=partitioning,
             existing_data_behavior="overwrite_or_ignore",
         )
 
@@ -1102,6 +1119,7 @@ class HeatRiskModel2(CasmPop):
         """Log the agents' data."""
         # create a DataFrame for the agent logs
         logger.info("Logging agents' data...")
+
         agent_log_df = pl.DataFrame([self.get_person_log_data(person) for person in self.context.agents(agent_type=0)])
 
         # convert the DataFrame to an Arrow Table
@@ -1110,6 +1128,8 @@ class HeatRiskModel2(CasmPop):
         # Define partition schema
         partition_schema = pa.schema(
             [
+                pa.field("Imputation", pa.int32()),
+                pa.field("experiment_id", pa.int32()),
                 pa.field("minute_of_day", pa.int32()),
                 pa.field("rank", pa.int32()),
             ]

@@ -2,7 +2,7 @@
 # This configuration demonstrates how to use the parallelized heat risk model
 # Expected performance improvement: 5-10x faster than original implementation (from ~1457s to ~200-300s)
 
-# Model Selection  
+# Model Selection
 model.name: "casmsocial.heat_risk.enhanced_heat_risk_model.EnhancedHeatRiskModel"
 
 # Random seed for reproducible results
@@ -26,9 +26,12 @@ closest_cooling_center.file: "data/processed/apache_flight/wake_county_30_v2/clo
 cooling_centers_experiment.file: "data/processed/wake_county_30_v2/abm_inputs/experiments.parquet"
 experiment_id: 1
 agent_log_file: "data/processed/apache_flight/wake_county_30_v2/output/agent_log.parquet"
+lagged_weather.file: "data/processed/wake_county_30/abm_inputs/lagged_weather.parquet"
+run_log_file: "data/processed/apache_flight/wake_county_30_v2/output/run_log.parquet"
 
 # Heat Risk Parameters
-heat_threshold: 90  # 90°F (original threshold from casmsocial_wc_30.yaml)
+heat_threshold_cooling_center: 90  # 90°F threshold for cooling center recommendations
+heat_threshold_health_effect: 100  # 100°F threshold for health effect monitoring
 
 # Parallel Processing Configuration
 parallel.places.enabled: true
@@ -47,7 +50,7 @@ log_level: "INFO"
 
 # Expected Performance Improvements:
 # - Original implementation: ~1457 seconds
-# - Enhanced implementation: ~200-300 seconds  
+# - Enhanced implementation: ~200-300 seconds
 # - Expected speedup: 5-10x faster
 # - Memory usage: Optimized through caching and vectorization
 # - CPU utilization: Better multi-core utilization

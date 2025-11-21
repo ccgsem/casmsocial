@@ -476,6 +476,7 @@ class CasmPop(Model):
                 [persons_files, imputation],
             )
         else:
+            logger.info(f"Using persons file {persons_file}...")
             self.conn.execute(
                 "CREATE TABLE IF NOT EXISTS persons AS SELECT * FROM read_parquet(?)",
                 [str(persons_file)],
@@ -483,14 +484,33 @@ class CasmPop(Model):
 
         # create the activities table
         activities_file = self.data_path / self.params["activities.file"]
-        if activities_file.is_dir() and imputation is not None:
-            activities_file = activities_file / f"Imputation={imputation}" / "part-0.parquet"
-            logger.info(f"Using imputation activities file {activities_file}...")
         if not activities_file.exists():
             raise MissingRequiredParameterError("activities.file")
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS activities AS SELECT * FROM read_parquet(?)", [str(activities_file)]
-        )
+        if imputation is not None:
+            activities_files_path = str(activities_file / "*/*.parquet")
+            activities_files = glob.glob(activities_files_path)
+            logger.info(f"Using imputation {imputation} for activities file {activities_files_path}...")
+            self.conn.execute(
+                """
+                CREATE OR REPLACE TABLE activities AS
+                SELECT
+                    -- Cast Hive partition column from VARCHAR to INTEGER
+                    CAST(Imputation AS INTEGER) AS Imputation,
+                    * EXCLUDE (Imputation)
+                FROM read_parquet(
+                    ?,          -- directory with Hive-style partitions
+                    hive_partitioning = 1       -- tell DuckDB to read dir names as columns
+
+                )
+                WHERE CAST(Imputation AS INTEGER) = ?;
+                """,
+                [activities_files, imputation],
+            )
+        else:
+            logger.info(f"Using activities file {activities_file}...")
+            self.conn.execute(
+                "CREATE TABLE IF NOT EXISTS activities AS SELECT * FROM read_parquet(?)", [str(activities_file)]
+            )
 
         self.queries = {
             "get_tables": "SHOW TABLES",
