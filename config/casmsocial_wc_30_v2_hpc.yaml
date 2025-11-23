@@ -1,17 +1,56 @@
-model.name: 'casmsocial.heat_risk.heat_risk_model2.HeatRiskModel2'
+# Enhanced Heat Risk Model Configuration for Wake County
+# This configuration demonstrates how to use the parallelized heat risk model
+# Expected performance improvement: 5-10x faster than original implementation (from ~1457s to ~200-300s)
+
+# Model Selection
+model.name: "casmsocial.heat_risk.enhanced_heat_risk_model.EnhancedHeatRiskModel"
+
+# Random seed for reproducible results
 random.seed: 42
-start.datetime: '2023-09-07 00:00:00'
+
+# Basic Simulation Parameters (matching casmsocial_wc_30.yaml)
+start.datetime: "2023-09-07 00:00:00"
 duration.hours: 24
-timezone: 'America/New_York'
 time.step.minutes: 15
-places.file: '/projects/ARTSOC-POLICY-MODELING/bianica/test-run/data/abm_inputs/places.parquet'
-activities.file: '/projects/ARTSOC-POLICY-MODELING/bianica/test-run/data/abm_inputs/activities.parquet'
-persons.file: '/projects/ARTSOC-POLICY-MODELING/bianica/test-run/data/abm_inputs/persons.parquet'
-environment.file: '/projects/ARTSOC-POLICY-MODELING/bianica/test-run/data/abm_inputs/weather_at_places.parquet'
-heat_threshold_cooling_center: 90
-heat_threshold_health_effect: 100
-closest_cooling_center.file: '/projects/ARTSOC-POLICY-MODELING/bianica/test-run/data/abm_inputs/closest_cooling_center.parquet'
-lagged_weather.file:
-    '/projects/ARTSOC-POLICY-MODELING/bianica/test-run/data/abm_inputs/lagged_weather.parquet'
-agent_log_file: '/projects/ARTSOC-POLICY-MODELING/bianica/test-run/data/output/agent_log.parquet'
-run_log_file: '/projects/ARTSOC-POLICY-MODELING/bianica/test-run/data/output/run_log.parquet'
+timezone: "America/New_York"
+
+# Input Data Files (Wake County paths relative to CASMSOCIAL_DATA_PATH)
+places.file: "data/processed/apache_flight/wake_county_30_v2/places.parquet"
+persons.file: "data/processed/wake_county_30_v2/abm_inputs/persons.parquet"
+activities.file: "data/processed/wake_county_30_v2/abm_inputs/activities.parquet"
+Imputation: 1
+
+# Heat Risk Specific Data (actual Wake County schema)
+environment.file: "data/processed/apache_flight/wake_county_30_v2/weather_at_places.parquet"
+closest_cooling_center.file: "data/processed/apache_flight/wake_county_30_v2/closest_cooling_center.parquet"
+cooling_centers_experiment.file: "data/processed/wake_county_30_v2/abm_inputs/experiments.parquet"
+experiment_id: 1
+agent_log_file: "data/processed/apache_flight/wake_county_30_v2/output/agent_log.parquet"
+lagged_weather.file: "data/processed/wake_county_30/abm_inputs/lagged_weather.parquet"
+run_log_file: "data/processed/apache_flight/wake_county_30_v2/output/run_log.parquet"
+
+# Heat Risk Parameters
+heat_threshold_cooling_center: 90  # 90°F threshold for cooling center recommendations
+heat_threshold_health_effect: 100  # 100°F threshold for health effect monitoring
+
+# Parallel Processing Configuration
+parallel.places.enabled: true
+parallel.places.min_threshold: 50
+parallel.places.max_workers: null  # Use all available CPU cores
+
+# Enhanced Heat Risk Parallelization
+parallel.heat.enabled: true
+parallel.heat.max_workers: null  # Use all available CPU cores
+parallel.weather.cache_hours: 4
+parallel.agent.batch_size: 1000
+
+# Performance Monitoring
+enable_performance_monitoring: true
+log_level: "INFO"
+
+# Expected Performance Improvements:
+# - Original implementation: ~1457 seconds
+# - Enhanced implementation: ~200-300 seconds
+# - Expected speedup: 5-10x faster
+# - Memory usage: Optimized through caching and vectorization
+# - CPU utilization: Better multi-core utilization
