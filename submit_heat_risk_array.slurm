@@ -9,6 +9,7 @@
 #SBATCH --error=logs/heat_risk_%a.err
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=${USER}@example.com
+#SBATCH --export=ALL,CASMSOCIAL_VENV_PATH,CASMSOCIAL_DATA_PATH,CONFIG_FILE,OUTPUT_DIR
 
 # Heat Risk Model Multi-Imputation and Multi-Experiment Job Array
 #
