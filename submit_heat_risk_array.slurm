@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=heat_risk_array
-#SBATCH --array=1-750%50
+#SBATCH --array=1-750%10
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64GB
@@ -20,7 +20,8 @@
 #   - Imputation values: 1-30
 #   - Experiment IDs: 1-25
 #   - Total jobs: 30 * 25 = 750
-#   - Job array limit: 50 concurrent jobs (adjust %50 as needed)
+#   - Job array limit: 10 concurrent jobs (adjust %10 as needed for your cluster)
+#   - For 5-node per job limit: keep at %10 or lower
 #
 # Required Environment Variables:
 #   - CASMSOCIAL_VENV_PATH: Path to Python virtual environment (required)
