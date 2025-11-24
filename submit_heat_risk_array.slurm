@@ -9,7 +9,7 @@
 #SBATCH --error=logs/heat_risk_%a.err
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=${USER}@example.com
-#SBATCH --export=ALL,CASMSOCIAL_VENV_PATH,CASMSOCIAL_DATA_PATH,CONFIG_FILE,OUTPUT_DIR
+#SBATCH --export=ALL,CASMSOCIAL_VENV_PATH,CASMSOCIAL_DATA_PATH,CONFIG_FILE,OUTPUT_DIR,CASMSOCIAL_PROJECT_ROOT
 
 # Heat Risk Model Multi-Imputation and Multi-Experiment Job Array
 #
@@ -26,17 +26,24 @@
 # Required Environment Variables:
 #   - CASMSOCIAL_VENV_PATH: Path to Python virtual environment (required)
 #   - CASMSOCIAL_DATA_PATH: Path to data directory (required)
+#   - CASMSOCIAL_PROJECT_ROOT: Root directory of casmsocial project (required)
 #   - CONFIG_FILE: Path to config YAML (optional, default: config/enhanced_heat_risk_example.yaml)
 #   - OUTPUT_DIR: Output directory (optional, default: hpc_outputs)
 #
 # Usage:
-#   CASMSOCIAL_VENV_PATH=/path/to/venv sbatch submit_heat_risk_array.slurm
+#   export CASMSOCIAL_PROJECT_ROOT=/projects/ARTSOC-POLICY-MODELING/git/casmsocial
+#   export CASMSOCIAL_VENV_PATH=/projects/ARTSOC-POLICY-MODELING/git/casmsocial/.venv
+#   sbatch submit_heat_risk_array.slurm
 #
 # With custom configuration:
-#   CASMSOCIAL_VENV_PATH=/path/to/venv CONFIG_FILE=config/custom.yaml sbatch submit_heat_risk_array.slurm
+#   export CASMSOCIAL_PROJECT_ROOT=/projects/ARTSOC-POLICY-MODELING/git/casmsocial
+#   export CASMSOCIAL_VENV_PATH=/projects/ARTSOC-POLICY-MODELING/git/casmsocial/.venv
+#   CONFIG_FILE=config/custom.yaml sbatch submit_heat_risk_array.slurm
 #
 # With custom output directory:
-#   CASMSOCIAL_VENV_PATH=/path/to/venv OUTPUT_DIR=/scratch/results sbatch submit_heat_risk_array.slurm
+#   export CASMSOCIAL_PROJECT_ROOT=/projects/ARTSOC-POLICY-MODELING/git/casmsocial
+#   export CASMSOCIAL_VENV_PATH=/projects/ARTSOC-POLICY-MODELING/git/casmsocial/.venv
+#   OUTPUT_DIR=/scratch/results sbatch submit_heat_risk_array.slurm
 
 set -e  # Exit on error
 
@@ -46,7 +53,7 @@ set -e  # Exit on error
 
 # Default values
 CONFIG_FILE="${CONFIG_FILE:-config/enhanced_heat_risk_example.yaml}"
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="${CASMSOCIAL_PROJECT_ROOT:-.}"
 LOG_DIR="${PROJECT_ROOT}/logs"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/hpc_outputs}"
 
