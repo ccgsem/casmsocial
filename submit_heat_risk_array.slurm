@@ -21,11 +21,20 @@
 #   - Total jobs: 30 * 25 = 750
 #   - Job array limit: 50 concurrent jobs (adjust %50 as needed)
 #
-# Usage:
-#   sbatch submit_heat_risk_array.slurm
+# Required Environment Variables:
+#   - CASMSOCIAL_VENV_PATH: Path to Python virtual environment (required)
+#   - CASMSOCIAL_DATA_PATH: Path to data directory (required)
+#   - CONFIG_FILE: Path to config YAML (optional, default: config/enhanced_heat_risk_example.yaml)
+#   - OUTPUT_DIR: Output directory (optional, default: hpc_outputs)
 #
-# To submit with custom configuration file:
-#   CONFIG_FILE=/path/to/custom.yaml sbatch submit_heat_risk_array.slurm
+# Usage:
+#   CASMSOCIAL_VENV_PATH=/path/to/venv sbatch submit_heat_risk_array.slurm
+#
+# With custom configuration:
+#   CASMSOCIAL_VENV_PATH=/path/to/venv CONFIG_FILE=config/custom.yaml sbatch submit_heat_risk_array.slurm
+#
+# With custom output directory:
+#   CASMSOCIAL_VENV_PATH=/path/to/venv OUTPUT_DIR=/scratch/results sbatch submit_heat_risk_array.slurm
 
 set -e  # Exit on error
 
@@ -38,6 +47,20 @@ CONFIG_FILE="${CONFIG_FILE:-config/enhanced_heat_risk_example.yaml}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="${PROJECT_ROOT}/logs"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/hpc_outputs}"
+
+# Python virtual environment path (required for HPC)
+# Set via: CASMSOCIAL_VENV_PATH=/path/to/venv sbatch submit_heat_risk_array.slurm
+if [ -z "$CASMSOCIAL_VENV_PATH" ]; then
+    echo "ERROR: CASMSOCIAL_VENV_PATH environment variable not set"
+    echo "Please set it to your Python virtual environment path"
+    echo "Example: CASMSOCIAL_VENV_PATH=/scratch/user/venv sbatch submit_heat_risk_array.slurm"
+    exit 1
+fi
+
+if [ ! -d "$CASMSOCIAL_VENV_PATH" ]; then
+    echo "ERROR: Virtual environment path does not exist: $CASMSOCIAL_VENV_PATH"
+    exit 1
+fi
 
 # Array dimensions (1-based indexing)
 IMPUTATION_MIN=1
@@ -134,13 +157,29 @@ echo "Running command:"
 echo "python -m casmsocial ${CONFIG_FILE} '${PARAMS_JSON}'"
 echo ""
 
-# Add Python path if needed
-export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+# Load HPC modules (adjust module names for your system)
+echo "Loading HPC modules..."
+unset PYTHONPATH
+unset LD_LIBRARY_PATH
+module load ucx/default
+module load python/3.12.9
+module load mpich/4.0.2
+
+# Activate Python virtual environment
+echo "Activating Python virtual environment: $CASMSOCIAL_VENV_PATH"
+source ${CASMSOCIAL_VENV_PATH}/bin/activate
+
+# Set environment for UCX (MPI communication)
+export UCX_TLS=tcp
 
 # Run the model with parameter overrides
 # repast4py accepts: python -m module config_file "json_params"
 # The JSON string overrides values from the YAML config file
-uv run mpirun -n 1 python -m casmsocial \
+echo "Running command:"
+echo "mpirun -n 1 python -m casmsocial ${CONFIG_FILE} '${PARAMS_JSON}'"
+echo ""
+
+mpirun -n 1 python -m casmsocial \
     "${CONFIG_FILE}" \
     "${PARAMS_JSON}"
 
