@@ -39,17 +39,24 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="${PROJECT_ROOT}/logs"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/hpc_outputs}"
 
-# Array dimensions
+# Array dimensions (1-based indexing)
 IMPUTATION_MIN=1
 IMPUTATION_MAX=30
 EXPERIMENT_MIN=1
 EXPERIMENT_MAX=25
+NUM_EXPERIMENTS=$((EXPERIMENT_MAX - EXPERIMENT_MIN + 1))  # = 25
 
-# Calculate values from array index
-TOTAL_EXPERIMENTS=$((EXPERIMENT_MAX - EXPERIMENT_MIN + 1))
+# Calculate values from array task ID
+# Convert SLURM's 1-based array task ID to 0-based index for modulo arithmetic
 ARRAY_INDEX=$((SLURM_ARRAY_TASK_ID - 1))
-IMPUTATION=$((ARRAY_INDEX / TOTAL_EXPERIMENTS + IMPUTATION_MIN))
-EXPERIMENT_ID=$((ARRAY_INDEX % TOTAL_EXPERIMENTS + EXPERIMENT_MIN))
+
+# Map to imputation (cycles through experiments for each imputation)
+# Imputation ranges from 1 to 30
+IMPUTATION=$((ARRAY_INDEX / NUM_EXPERIMENTS + IMPUTATION_MIN))
+
+# Map to experiment_id (cycles 1-25 for each imputation)
+# experiment_id ranges from 1 to 25
+EXPERIMENT_ID=$((ARRAY_INDEX % NUM_EXPERIMENTS + EXPERIMENT_MIN))
 
 # ============================================================================
 # Setup
