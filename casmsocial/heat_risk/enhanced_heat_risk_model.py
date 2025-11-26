@@ -37,7 +37,7 @@ class EnhancedHeatRiskEnvironment(HeatRiskEnvironment):
         self.name = name
         self.parallel_processor = None
         self.weather_cache = {}
-        self.cache_duration_hours = 4
+        self.cache_duration_hours = 4  # Default, will be updated from config in setup()
 
         # Will be initialized in setup() when model is available
         self.initialized = False
@@ -52,13 +52,24 @@ class EnhancedHeatRiskEnvironment(HeatRiskEnvironment):
                 # Get the actual model params and data
                 super().__init__(self.name)
 
-                # Initialize parallel processor
+                # Get configuration from model params
+                model = self._get_model()
+                self.cache_duration_hours = model.params.get("parallel.weather.cache_hours", 4)
+                parallel_heat_max_workers = model.params.get("parallel.heat.max_workers", None)
+                agent_batch_size = model.params.get("parallel.agent.batch_size", 1000)
+
+                # Initialize parallel processor with config values
                 self.parallel_processor = ParallelHeatProcessor(
-                    max_workers=None,
-                    enable_metrics=True,  # Use all CPU cores
+                    max_workers=parallel_heat_max_workers,
+                    enable_metrics=True,
+                    batch_size_agents=agent_batch_size,
                 )
 
-                logger.info("Enhanced heat risk environment initialized with parallel processing")
+                logger.info(
+                    f"Enhanced heat risk environment initialized with parallel processing "
+                    f"(cache_hours={self.cache_duration_hours}, max_workers={parallel_heat_max_workers}, "
+                    f"agent_batch_size={agent_batch_size})"
+                )
                 self.initialized = True
 
             except Exception as e:

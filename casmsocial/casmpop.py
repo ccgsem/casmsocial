@@ -398,12 +398,17 @@ class CasmPop(Model):
         # register the agent types (derived classes should set agent types)
 
         # create SharedContext consisting of all of the places in this model
-        # Use enhanced projection for better performance and consistency
-        # Use simple projection instantiation to avoid parallel processing overhead
+        # Use enhanced projection with configurable parallel processing
+        parallel_enabled = self.params.get("parallel.places.enabled", True)
+        parallel_min_threshold = self.params.get("parallel.places.min_threshold", 50)
+        parallel_max_workers = self.params.get("parallel.places.max_workers", None)
+
         self.places_proj = PlacesProjectionV2(
             "places_projection",
             self.comm,
-            enable_parallel_updates=False,  # Disabled to prevent performance overhead
+            enable_parallel_updates=parallel_enabled,
+            parallel_min_threshold=parallel_min_threshold,
+            parallel_max_workers=parallel_max_workers,
         )
         self.context.add_projection(self.places_proj)
 

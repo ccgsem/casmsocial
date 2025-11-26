@@ -150,21 +150,29 @@ class ParallelHeatProcessor:
     and cooling center optimization.
     """
 
-    def __init__(self, max_workers: Optional[int] = None, enable_metrics: bool = True):
+    def __init__(
+        self,
+        max_workers: Optional[int] = None,
+        enable_metrics: bool = True,
+        batch_size_agents: Optional[int] = None,
+        batch_size_places: Optional[int] = None,
+    ):
         """
         Initialize the parallel heat processor.
 
         Args:
             max_workers: Maximum number of parallel workers (default: CPU count)
             enable_metrics: Whether to collect performance metrics
+            batch_size_agents: Number of agents to process per batch (default: 1000)
+            batch_size_places: Number of places to process per batch (default: 100)
         """
         self.max_workers = max_workers or os.cpu_count()
         self.enable_metrics = enable_metrics
         self.metrics = HeatProcessingMetrics() if enable_metrics else None
 
-        # Performance tuning parameters
-        self.batch_size_agents = 1000  # Process agents in batches
-        self.batch_size_places = 100  # Process places in batches
+        # Performance tuning parameters (configurable via parameters)
+        self.batch_size_agents = batch_size_agents or 1000  # Process agents in batches
+        self.batch_size_places = batch_size_places or 100  # Process places in batches
         self.weather_cache_size = 24  # Hours of weather data to cache
 
         # Initialize base parallel updater
@@ -174,7 +182,10 @@ class ParallelHeatProcessor:
             self.place_updater = None
             logger.warning("Parallel place updates disabled - NumbaPlaceUpdater not available")
 
-        logger.info(f"ParallelHeatProcessor initialized with {self.max_workers} workers")
+        logger.info(
+            f"ParallelHeatProcessor initialized with {self.max_workers} workers "
+            f"(agent_batch={self.batch_size_agents}, place_batch={self.batch_size_places})"
+        )
 
     def process_weather_data_parallel(
         self, weather_df: pl.DataFrame, current_time: datetime, places: list[Place]
