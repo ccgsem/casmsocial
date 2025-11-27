@@ -34,12 +34,15 @@ heat_threshold_cooling_center: 90  # 90°F threshold for cooling center recommen
 heat_threshold_health_effect: 100  # 100°F threshold for health effect monitoring
 
 # Parallel Processing Configuration
-parallel.places.enabled: true
+# Note: Parallelization overhead exceeds benefits for this dataset size
+# Testing showed 23x slowdown when enabled. Disabled by default.
+parallel.places.enabled: false
 parallel.places.min_threshold: 50
 parallel.places.max_workers: null  # Use all available CPU cores
 
 # Enhanced Heat Risk Parallelization
-parallel.heat.enabled: true
+# Note: Keep disabled due to thread contention overhead
+parallel.heat.enabled: false
 parallel.heat.max_workers: null  # Use all available CPU cores
 parallel.weather.cache_hours: 4
 parallel.agent.batch_size: 1000
