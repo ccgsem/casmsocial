@@ -146,8 +146,8 @@ class ParallelAgentProcessor:
                         )
 
                 except Exception as e:
-                    logger.error(f"Batch {batch_idx} failed: {e}")
-                    errors.append(f"Batch {batch_idx}: {e!s}")
+                    logger.error(f"Batch {batch_idx} failed: {e!r}")
+                    errors.append(f"Batch {batch_idx}: {e!r}")
 
         # Log any errors
         if errors:
@@ -171,13 +171,13 @@ class ParallelAgentProcessor:
                     person.step(context, cal)
                     processed += 1
                 except Exception as e:
-                    error_msg = f"Agent {person.id}: {e!s}"
+                    error_msg = f"Agent {person.id}: {e!r}"
                     errors.append(error_msg)
                     logger.debug(f"Agent processing error - {error_msg}")
 
         except Exception as e:
-            logger.error(f"Batch processing failed: {e}")
-            errors.append(f"Batch failure: {e!s}")
+            logger.error(f"Batch processing failed: {e!r}")
+            errors.append(f"Batch failure: {e!r}")
 
         batch_time = time.time() - batch_start
 
@@ -192,7 +192,7 @@ class ParallelAgentProcessor:
             try:
                 person.step(context, cal)
             except Exception as e:
-                errors.append(f"Agent {person.id}: {e!s}")
+                errors.append(f"Agent {person.id}: {e!r}")
 
         return {"errors": errors}
 

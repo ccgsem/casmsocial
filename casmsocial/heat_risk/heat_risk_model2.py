@@ -5,7 +5,6 @@ Created: 02 Dec 2024
 Defining the heat risk model for the CASMSOCIAL/PRSIM project
 """
 
-
 import math
 import time
 from collections import deque, namedtuple
@@ -187,9 +186,7 @@ class HeatRiskEnvironment(SimEnvironment):
 
         # convert the time column to datetime
         self.microweather_df = self.microweather_df.with_columns(
-            [
-                pl.col("time").str.strptime(pl.Datetime, format="%Y-%m-%dT%H:%M:%S")  # or include time if needed
-            ]
+            [pl.col("time").str.strptime(pl.Datetime, format="%Y-%m-%dT%H:%M:%S")]  # or include time if needed
         )
         logger.info(f"Loaded microweather data with {self.microweather_df.shape[0]} rows")
         logger.info(f"Microweather data schema is {self.microweather_df.schema}")
