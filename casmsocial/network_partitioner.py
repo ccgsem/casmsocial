@@ -74,13 +74,18 @@ def partition_with_repast4py(
 
 
 def main(
-    persons_file: str = typer.Argument(
+    persons_file: str = typer.Option(
         "data/processed/wake_county_30_v2/abm_inputs/persons.parquet",
+        "--persons-file",
         help="Path to persons parquet directory",
     ),
-    imputation: int = typer.Argument(1, help="Imputation number to partition"),
-    output_file: str = typer.Argument("data/place_network.txt", help="Output network file path"),
-    n_ranks: int = typer.Argument(8, help="Number of MPI processes"),
+    imputation: int = typer.Option(1, "--imputation", help="Imputation number to partition"),
+    output_file: str = typer.Option(
+        "data/place_network.txt",
+        "--output-file",
+        help="Output network file path",
+    ),
+    n_ranks: int = typer.Option(8, "--n-ranks", help="Number of MPI processes"),
 ) -> None:
     """
     Partition activity location network using repast4py.network with METIS.
