@@ -47,9 +47,9 @@ def partition_with_metispy(
     """
     Partition activity location network using metispy (metis-python).
 
-    This orchestrates the three-step manual METIS workflow:
+    This orchestrates the three-step METIS workflow:
     1. Build NetworkX graph from person activities
-    2. Use metispy.part_graph() to partition the graph
+    2. Use metispy.part_graph() to partition the NetworkX graph
     3. Create Hive-partitioned data files for MPI
 
     Args:
@@ -63,7 +63,7 @@ def partition_with_metispy(
         - metis-python: Python METIS wrapper
           (pip install metis-python or uv add metis-python)
         - METIS system library with METIS_DLL environment variable set
-          (brew install metis on macOS, apt-get on Linux)
+          (brew install metis on macOS, apt-get install libmetis-dev on Linux)
     """
     # Check METIS_DLL is set
     metis_dll = os.environ.get("METIS_DLL")
@@ -97,25 +97,23 @@ def partition_with_metispy(
         raise NetworkPartitionerError(error_msg) from e
 
     try:
-        # Create adjacency list format for metispy
-        # metispy expects adjacency list where nodes are 1-indexed
+        # Create node mapping (spatial ID to 1-indexed graph ID)
         node_list = sorted(graph.nodes())
         node_mapping = {node: i + 1 for i, node in enumerate(node_list)}
 
-        # Build adjacency list (1-indexed)
-        adjncy = []
-        xadj = [0]
-        for node in node_list:
-            neighbors = sorted([node_mapping[n] for n in graph.neighbors(node)])
-            adjncy.extend(neighbors)
-            xadj.append(len(adjncy))
-
-        # Run METIS partitioning
-        objval, partition = metispy.part_graph(xadj, adjncy, nparts=n_ranks, ufactor=30)
+        # Run METIS partitioning directly on NetworkX graph
+        # metispy.part_graph() accepts NetworkX graphs and returns (objval, partition)
+        # where partition is a list indexed by node order (0-indexed)
+        objval, partition = metispy.part_graph(graph, nparts=n_ranks, ufactor=30)
         logger.info(f"METIS partitioning complete. Edge cut: {objval}")
 
-        # Convert partition array to partition_map (1-indexed graph IDs)
-        partition_map = {i + 1: p for i, p in enumerate(partition)}
+        # Convert partition array to partition_map
+        # partition[i] is the partition for the i-th node (0-indexed)
+        # We need to map from 1-indexed graph IDs to partition assignments
+        partition_map = {}
+        for i, node in enumerate(node_list):
+            graph_id = node_mapping[node]
+            partition_map[graph_id] = partition[i]
 
         # Log partition distribution
         logger.info("Partition distribution:")
