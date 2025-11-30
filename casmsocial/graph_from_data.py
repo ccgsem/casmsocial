@@ -1,4 +1,5 @@
 import glob
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -6,6 +7,7 @@ import duckdb
 import networkx as nx
 import pandas as pd
 import typer
+from dotenv import load_dotenv
 from loguru import logger
 
 
@@ -211,6 +213,13 @@ def main(
     logger.info(f"Processing agent file: {persons_file}")
     logger.info(f"Output graph file: {output_file}")
     logger.info(f"Output map file: {map_file}")
+
+    # Load environment variables
+    load_dotenv()
+    data_path = os.environ.get("CASMSOCIAL_DATA_PATH")
+    if data_path:
+        logger.info(f"Using CASMSOCIAL_DATA_PATH: {data_path}")
+        persons_file = Path(data_path) / persons_file
 
     # Build NetworkX graph
     graph = full_map_of_adjacent_places(persons_file, imputation)
