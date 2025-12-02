@@ -102,13 +102,13 @@ def partition_persons(
     imputation: int,
     num_partitions: int,
 ) -> None:
-    """Partition persons dataframe by process and save to Hive-style directory structure.
+    """Partition persons dataframe by process and save as Hive-partitioned dataset.
 
     Args:
         persons_file: Path to persons parquet directory (Hive-partitioned by Imputation)
         partition_map: Mapping from graph_id to partition_id
         spid_to_graphid: Mapping from spatial_id to graph_id
-        output_dir: Output directory for partitioned persons
+        output_dir: Output directory for partitioned data
         imputation: Imputation number to load
         num_partitions: Number of partitions (processes)
     """
@@ -144,17 +144,26 @@ def partition_persons(
         count = (persons["process"] == partition_id).sum()
         logger.info(f"  Partition {partition_id}: {count} persons")
 
-    # Save partitioned persons in Hive-style directory structure
-    # Create one file per partition for efficient MPI reading
-    for partition_id in range(num_partitions):
-        partition_persons = persons[persons["process"] == partition_id]
-        partition_dir = output_dir / f"Imputation={imputation}" / f"partition={partition_id}"
-        partition_dir.mkdir(parents=True, exist_ok=True)
+    # Save partitioned persons as Hive-partitioned dataset
+    # Root directory: persons.parquet
+    # Partition columns: Imputation, process
+    persons_output_dir = output_dir / "persons.parquet"
+    logger.info(f"Saving {len(persons)} persons to Hive-partitioned dataset at {persons_output_dir}...")
 
-        partition_file = partition_dir / "part-0.parquet"
-        partition_persons.to_parquet(partition_file)
-        logger.info(f"Saved {len(partition_persons)} persons to {partition_file}")
+    # Add Imputation column back for Hive partitioning
+    persons["Imputation"] = imputation
 
+    # Write as Hive-partitioned parquet dataset
+    # This creates directory structure: persons.parquet/Imputation=N/process=M/part-*.parquet
+    persons.to_parquet(
+        path=str(persons_output_dir),
+        engine="pyarrow",
+        partition_cols=["Imputation", "process"],
+        index=False,
+    )
+
+    logger.info(f"Saved Hive-partitioned persons dataset to {persons_output_dir}")
+    logger.info(f"  Structure: {persons_output_dir}/Imputation={imputation}/process=*/part-*.parquet")
     logger.info("Persons partitioning complete!")
 
 
