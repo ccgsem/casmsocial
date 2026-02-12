@@ -116,7 +116,7 @@ source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
     { name = "loguru" },
-    { name = "metis-python" },
+    { name = "metis" },
     { name = "polars" },
     { name = "pyarrow" },
     { name = "pydantic" },
@@ -154,7 +154,7 @@ dev = [
 requires-dist = [
     { name = "duckdb", specifier = ">=1.3.0" },
     { name = "loguru", specifier = ">=0.7.3" },
-    { name = "metis-python", specifier = ">=0.1" },
+    { name = "metis", specifier = ">=0.2a5" },
     { name = "polars", specifier = ">=1.28.1" },
     { name = "pyarrow", specifier = ">=19.0.1" },
     { name = "pydantic", specifier = ">=2.10.6" },
@@ -790,14 +790,10 @@ wheels = [
 ]
 
 [[package]]
-name = "metis-python"
-version = "0.1"
+name = "metis"
+version = "0.2a5"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "networkx", version = "3.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/61/85/5c34097e1c3cae41fb1a2ab78f16f283f27461a56b13dcc8552c969a773b/metis-python-0.1.tar.gz", hash = "sha256:d2f8004378e973adf8d47b2e8050a78bd137ef946370bf4456054d2e30cae988", size = 11283 }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/54/84a7defec2ecf13aaaeda7ccf10e4000148cc21fc90dac7ec778e594a67c/metis-0.2a5.tar.gz", hash = "sha256:c98f4aa129141554bea8d9e62daea5fea8351439f723e8e27fe593c2b7c53903", size = 10947 }
 
 [[package]]
 name = "mkdocs"
