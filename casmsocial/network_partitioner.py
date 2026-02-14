@@ -88,7 +88,7 @@ def partition_with_metispy(
     logger.info(f"Partitioning graph for {n_ranks} MPI processes using METIS...")
 
     try:
-        import metispy
+        import metis
     except ImportError as e:
         error_msg = (
             "metis-python not installed. Install with:\n  pip install metis-python\n  or\n  uv add metis-python\n"
@@ -104,7 +104,7 @@ def partition_with_metispy(
         # Run METIS partitioning directly on NetworkX graph
         # metispy.part_graph() accepts NetworkX graphs and returns (objval, partition)
         # where partition is a list indexed by node order (0-indexed)
-        objval, partition = metispy.part_graph(graph, nparts=n_ranks, ufactor=30)
+        objval, partition = metis.part_graph(graph, nparts=n_ranks, ufactor=30)
         logger.info(f"METIS partitioning complete. Edge cut: {objval}")
 
         # Convert partition array to partition_map
