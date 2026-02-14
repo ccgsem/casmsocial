@@ -753,13 +753,20 @@ class CasmPop(Model):
 
         for batch in table.to_batches():
             d = batch.to_pydict()
-            for sp_persons_id, activity_id, activity_seq, start, end in zip(
-                d["sp_persons_id"], d["activity_id"], d["activity_sequence"], d["starttime_min"], d["endtime_min"]
+            for sp_persons_id, activity_id, activity_seq, start, end, act_place_id in zip(
+                d["sp_persons_id"],
+                d["activity_id"],
+                d["activity_sequence"],
+                d["starttime_min"],
+                d["endtime_min"],
+                d["sp_act_id"],
             ):
                 if sp_persons_id not in act_map:
-                    act_map[sp_persons_id] = [Act(sp_persons_id, activity_id, activity_seq, start, end)]
+                    act_map[sp_persons_id] = [Act(sp_persons_id, activity_id, activity_seq, start, end, act_place_id)]
                 else:
-                    act_map[sp_persons_id].append(Act(sp_persons_id, activity_id, activity_seq, start, end))
+                    act_map[sp_persons_id].append(
+                        Act(sp_persons_id, activity_id, activity_seq, start, end, act_place_id)
+                    )
 
         return [act_map]
 

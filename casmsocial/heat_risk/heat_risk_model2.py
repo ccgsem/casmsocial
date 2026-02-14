@@ -77,7 +77,11 @@ def create_closest_cooling_centers(conn: duckdb.DuckDBPyConnection, experiment_i
     query = """
     CREATE TABLE closest_cooling_center AS
     WITH experiment AS (
-        SELECT cooling_center_ids
+        SELECT
+            cooling_center_ids,
+            open_min,
+            close_min,
+            distance_threshold
         FROM experiments
         WHERE experiment_id = ?
     ),
@@ -85,11 +89,20 @@ def create_closest_cooling_centers(conn: duckdb.DuckDBPyConnection, experiment_i
         SELECT
             p.sp_id,
             p.latitude,
-            p.longitude
+            p.longitude,
+            z[2] AS open_min,
+            z[3] AS close_min,
+            e.distance_threshold
         FROM experiment e
-        CROSS JOIN UNNEST(e.cooling_center_ids) AS t(cooling_center_id)
+        CROSS JOIN UNNEST(
+            list_zip(
+            e.cooling_center_ids,
+            e.open_min,
+            e.close_min
+            )
+            ) AS t(z)
         JOIN places p
-          ON p.sp_id = t.cooling_center_id
+          ON p.sp_id = z[1]
     ),
     distances AS (
         SELECT
@@ -98,6 +111,9 @@ def create_closest_cooling_centers(conn: duckdb.DuckDBPyConnection, experiment_i
             p.AIR,
             p.cooling_center,
             cc.sp_id AS cooling_center_id,
+            cc.open_min,
+            cc.close_min,
+            cc.distance_threshold,
 
             -- Great-circle distance in meters using DuckDB spatial
             ST_Distance_Sphere(
@@ -123,12 +139,27 @@ def create_closest_cooling_centers(conn: duckdb.DuckDBPyConnection, experiment_i
         AIR,
         cooling_center,
         cooling_center_id AS closest_cooling_center_id,
+        open_min,
+        close_min,
+        distance_threshold,
         distance_to_cooling_center_m AS distance_to_closest_cooling_center_m
     FROM ranked
     WHERE rn = 1;
     """
 
     conn.execute(query, [experiment_id])
+    # df = conn.execute(
+    #    "SELECT * FROM closest_cooling_center LIMIT 5"
+    # ).df()
+
+    # print(f"DF OF CLOSEST COOLING CENTER {df}")
+    cur = conn.execute("SELECT * FROM closest_cooling_center LIMIT 5")
+    rows = cur.fetchall()
+    cols = [desc[0] for desc in cur.description]
+
+    print(f"CC COLS: {cols}")
+    for row in rows:
+        print(f"CC ROW: {row}")
 
 
 class MissingEnvironmentFile(Exception):
@@ -154,6 +185,8 @@ class HeatRiskEnvironment(SimEnvironment):
         required_keys = [
             "environment.file",
             "closest_cooling_center.file",
+            "distance_threshold_cooling_center",
+            "cooling_center_operating_hours",
             "heat_threshold_cooling_center",
             "heat_threshold_health_effect",
             "cooling_centers_experiment.file",
@@ -211,6 +244,10 @@ class HeatRiskEnvironment(SimEnvironment):
         )  # default heat threshold in Celsius 32.2222 (90.0 Fahrenheit)
 
         self.__heat_threshold_health_effect = Model.get_model().params.get("heat_threshold_health_effect", 32.2222)
+        self.__distance_threshold_cooling_center = Model.get_model().params.get(
+            "distance_threshold_cooling_center", 2500
+        )
+        self.__cooling_center_operating_hours = Model.get_model().params.get("cooling_center_operating_hours", False)
 
         # values from the microweather data
         self.fields = [
@@ -220,6 +257,14 @@ class HeatRiskEnvironment(SimEnvironment):
             "wbgt",  # wet bulb globe temperature in Celsius
         ]
         self.environment_tuple = namedtuple("HeatRiskEnvironment", self.fields)
+
+    @property
+    def distance_threshold_cooling_center(self) -> float:
+        return self.__distance_threshold_cooling_center
+
+    @property
+    def cooling_center_operating_hours(self) -> float:
+        return self.__cooling_center_operating_hours
 
     @property
     def heat_threshold_cooling_center(self) -> float:
@@ -266,11 +311,15 @@ class HeatRiskEnvironment(SimEnvironment):
         logger.info(f"Microweather data for {current_time}:\n{weather_snapshot.shape[0]} rows")
         logger.info(f"\n{weather_snapshot.head(5)}")
 
+        cur = self.conn.execute("SELECT * FROM weather_snapshot LIMIT 5")
+        rows = cur.fetchall()
+        cols = [desc[0] for desc in cur.description]
+
+        print(f"WEATHER SNAPSHOT cols: {cols}")
+        for row in rows:
+            print(f"WEATHER SNAPSHOT row: {row}")
+
         # convert the weather snapshot to a DuckDB table (update the weather table)
-        # self.conn.execute("""
-        #     CREATE OR REPLACE TABLE 'weather'
-        #     AS SELECT * FROM weather_snapshot;
-        #     """)
         self.conn.execute(
             """
             CREATE OR REPLACE TABLE weather AS
@@ -283,7 +332,11 @@ class HeatRiskEnvironment(SimEnvironment):
                 w.wbgt,
                 cc.AIR,
                 cc.cooling_center,
-                cc.distance_to_closest_cooling_center_m
+                cc.closest_cooling_center_id,
+                cc.distance_to_closest_cooling_center_m,
+                cc.open_min,
+                cc.close_min,
+                cc.distance_threshold
             FROM weather_snapshot AS w
             JOIN closest_cooling_center AS cc ON w.place_id = cc.sp_id; -- Join condition
             """
@@ -292,6 +345,14 @@ class HeatRiskEnvironment(SimEnvironment):
         if not weather_with_cc:
             logger.error("No weather data found after updating the snapshot.")
             return
+        cur = self.conn.execute("SELECT * FROM weather LIMIT 5")
+        rows = cur.fetchall()
+        cols = [desc[0] for desc in cur.description]
+
+        print(f"WEATHER cols: {cols}")
+        for row in rows:
+            print(f"WEATHER row: {row}")
+
         # log the updated weather data
         logger.info(f"Updated microweather snapshot with {len(weather_with_cc)} rows.")
         places_proj = context.get_projection("places_projection")
@@ -308,9 +369,17 @@ class HeatRiskEnvironment(SimEnvironment):
             place.data.wbgt = row[5]  # wbgt
             place.data.AIR = row[6]  # AIR
             place.data.cooling_center = row[7]  # cooling_center
-            place.data.distance_to_closest_cooling_center_m = row[8]  # distance to closest cooling center in meters
+            place.data.closest_cooling_center_id = row[8]
+            place.data.distance_to_closest_cooling_center_m = row[9]  # distance to closest cooling center in meters
+            place.data.open_min = row[10]
+            place.data.close_min = row[11]
+            place.data.distance_threshold = row[12]
             # set the closest cooling center ID
-            place.data.closest_cooling_center_id = row[0]  # first column is time
+            # place.data.closest_cooling_center_id = row[0]  # first column is time
+            # print(f"ROW: {row}")
+            # print(f"PLACE: {place}")
+            # print(f"PLACE CC: {place.data.cooling_center}")
+            # print(f"PLACE CLOSEST CC ID: {place.data.closest_cooling_center_id}")
 
         logger.info("Microweather snapshot updated successfully.")
 
@@ -357,7 +426,7 @@ class HeatRiskEnvironment(SimEnvironment):
         """
         result = self.conn.execute(
             """
-            SELECT cc.sp_id, cc.location, cc.cooling_center, distance_to_closest_cooling_center_m
+            SELECT cc.sp_id, cc.location, cc.cooling_center, cc.closest_cooling_center_id, distance_to_closest_cooling_center_m, cc.open_min, cc.close_min, cc.distance_threshold
             FROM places AS p
             JOIN closest_cooling_center AS cc ON p.sp_id = cc.sp_id
             WHERE p.sp_id = ?
@@ -366,8 +435,12 @@ class HeatRiskEnvironment(SimEnvironment):
             """,
             (place_id, n),
         ).fetchall()
-        candidates = [(place, distance) for place, _, _, distance in result]
-
+        candidates = [
+            (place, distance, open_min, close_min, distance_threshold)
+            for place, _, _, _, distance, open_min, close_min, distance_threshold in result
+        ]
+        # candidates = [(place, distance) for place, _, _, distance in result]
+        print(f"CANDIDATES {candidates}")
         return candidates
 
 
@@ -384,6 +457,9 @@ class PlaceDataWithClimate(PlaceData):
     wbgt: float = float("nan")  # wet bulb globe temperature in Celsius
     closest_cooling_center_id: int = None  # ID of the closest cooling center
     distance_to_closest_cooling_center_m: float = float("nan")  # distance to the closest cooling center in meters
+    open_min: int = None  # time the cooling center opens in minutes
+    close_min: int = None  # time the cooling center closes in minutes
+    distance_threshold: int = None  # distance willing to travel to cooling center
 
 
 # 3. Define a PersonData Class with heat risk data
@@ -391,6 +467,7 @@ class PlaceDataWithClimate(PlaceData):
 class PersonDataWithHeatRisk(PersonData):
     """Data for a Person."""
 
+    # previous_activities_idx: int = None
     outside_worker: bool = False
     outdoor_heat_indices: deque = field(default_factory=lambda: deque([float("nan")]))
     outdoor_temp_indices: deque = field(default_factory=lambda: deque([float("nan")]))
@@ -405,7 +482,9 @@ class PersonDataWithHeatRisk(PersonData):
     max_hours_with_heh_health_effect: int = 0
     prob_heat_event: float = 0.0
     experienced_heat_event: bool = False
-    moved_to_cooling_center: bool = False
+    moved_to_cooling_center: bool = False  # current state
+    ever_moved_to_cooling_center: bool = False  # history flag
+    cooling_center_visits: int = 0
     heat_event_place_id: int = None
     cooling_center_id: int = None
     outdoors: bool = False
@@ -426,6 +505,146 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
     def __init__(self, person: Person):
         """Constructor for the HeatRiskBehaviorEngine class."""
         super().__init__(person)
+
+    # ------------------------------------------------------------------
+    # Helper classes for decide function
+    # ------------------------------------------------------------------
+    # 1. Guard clauses: early exit checks
+    # ------------------------------------------------------------------
+    def _guard_missing_place(self, place: Place) -> bool:
+        """Return True if the place exists and has temperature data,
+        False otherwise (the caller should `return` immediately)."""
+        if not place:
+            logger.error(f"Person {self.agent.id} does not have a place")
+            return False
+        if place.data.T_xy == float("nan"):
+            logger.error(f"Person {self.agent.id} has no temperature data at place {place.id}")
+            return False
+        return True
+
+    def _handle_already_experienced_event(self, place: Place) -> bool:
+        """If the agent already suffered a heat event, push a “cooled” index
+        and return True so the caller can exit early."""
+        if self.agent.state.experienced_heat_event:
+            logger.debug(f"Person {self.agent.id} has already experienced a heat event")
+            # ---- compute the cooled heat index (same formula used later) ----
+            outdoor_c = (place.data.heat_index - 32) * 5 / 9
+            local_c = 23 + 0.1 * outdoor_c
+            local_f = local_c * 1.8 + 32
+
+            p = self.agent
+            p.state.heat_indices.appendleft(local_f)
+            p.state.outdoor_heat_indices.appendleft(place.data.heat_index)
+            p.state.outdoor_wbgt_indices.appendleft(place.data.wbgt)
+            p.state.outdoor_dew_point_indices.appendleft(place.data.dew_point)
+            p.state.outdoor_temp_indices.appendleft(place.data.T_xy)
+            return True
+        return False
+
+    def _next_place_has_ac(self, time: int) -> bool:
+        """Helper used by `_maybe_return_from_cooling_center`- checks the
+        *next* scheduled activity (at `time`) and returns True if that place has
+        air conditioning."""
+        schedule_names = [s.name for s in self.agent.schedules.schedules]
+        weekday_idx = schedule_names.index("weekday")
+        act = self.agent.schedules[weekday_idx].activityAt(time)
+        next_place = self.agent.context.get_projection("places_projection").lookup_place(act.place_id)
+        return bool(next_place and next_place.data.AIR)
+
+    def _push_cooled_index(self, place: Place) -> None:
+        """Push the same “cooled” heat index that we use when a heat event
+        has already been experienced."""
+        outdoor_c = (place.data.heat_index - 32) * 5 / 9
+        local_c = 23 + 0.1 * outdoor_c
+        local_f = local_c * 1.8 + 32
+
+        p = self.agent
+        p.state.heat_indices.appendleft(local_f)
+        p.state.outdoor_heat_indices.appendleft(place.data.heat_index)
+        p.state.outdoor_wbgt_indices.appendleft(place.data.wbgt)
+        p.state.outdoor_dew_point_indices.appendleft(place.data.dew_point)
+        p.state.outdoor_temp_indices.appendleft(place.data.T_xy)
+
+    def _maybe_return_from_cooling_center(self, place: Place, time: int, env: HeatRiskEnvironment) -> bool:
+        """
+        Returns True if the method *handled* the situation (i.e. the agent stays
+        in the cooling centre or returns to the regular schedule) and the caller
+        should `return` immediately.
+        """
+        if not self.agent.state.moved_to_cooling_center:
+            return False
+
+        logger.debug(f"Person {self.agent.id} is currently in a cooling centre")
+        closes = place.data.close_min
+
+        # Exit condition: centre closed **or** next scheduled place has AC
+        if (env.cooling_center_operating_hours and time >= closes) or self._next_place_has_ac(time):
+            self.return_to_regular_schedule()
+        else:
+            # stay in centre - push a “cooled” index
+            self._push_cooled_index(place)
+        return True
+
+    # ------------------------------------------------------------------
+    # 2. Heat index computation
+    # ------------------------------------------------------------------
+    def _compute_local_heat_index(
+        self,
+        place: Place,
+        env: HeatRiskEnvironment,
+        cal: SimTime,
+    ) -> float:
+        """
+        Return the *perceived* heat index (in °F) for the current tick.
+        The logic mirrors the three branches that used to live inside `decide`:
+        * outdoor worker → raw outdoor value
+        * indoor with AC → 23°C + 0.1·outdoor
+        * indoor without AC → lagged heat index formula
+        """
+        # Adjust heat index based on situation of person
+        # - 1. If person is indoors and has AC,
+        # -- then apply approximations supported by Nguyen et al. (2014) and Quinn et al. (2017)
+        # -- indoor_heat_index_celcius = 23 + 0.1 * outdoor_heat_index_celcius
+        # - 2. If person is indoors but does not have AC,
+        # -- then apply Quinn et al. (2014)
+        # -- indoor_heat_index_celcius = 27.00 + 0.24⋅outdoor_heat_index_celcius(t) + 0.076⋅outdoor_heat_index_celcius(t minus 1) - 0.016⋅outdoor_heat_index_celcius (t minus 2)
+        # - 3. If person is at work and is an outside worker,
+        # -- then apply outdoor_heat_index
+
+        outdoor_f = place.data.heat_index  # already °C
+        outdoor_c = (outdoor_f - 32) * 5 / 9  # convert to °C for math
+
+        # 1. Outside worker (already flagged earlier)
+        if self.agent.state.outdoors:
+            return place.data.heat_index  # keep original °F value
+
+        # 2. Inside **and** has AC → simple AC correction
+        if self.agent.state.has_ac_access:
+            indoor_c = 23 + 0.1 * outdoor_c
+            return indoor_c * 1.8 + 32
+
+        # 3. Inside **without** AC → lagged weather model
+        hour = cal.hour_of_day
+        one_day_lag, two_day_lag = env.get_lagged_heat_index(hour)
+        indoor_c = 27.0 + 0.24 * outdoor_c + 0.076 * one_day_lag - 0.016 * two_day_lag
+        return indoor_c * 1.8 + 32
+
+    # ------------------------------------------------------------------
+    # 2c. Hourly Excess Heat (HEH) bookkeeping
+    # ------------------------------------------------------------------
+    def _maybe_update_heh_counters(self, cal: SimTime, env: HeatRiskEnvironment) -> None:
+        """
+        Every full hour (minute 45) update the per hour HEH counters.
+        """
+        if cal.minute_of_day % 60 != 45:
+            return
+
+        hrs_cc, hrs_he = self.get_hours_with_heh(
+            env.heat_threshold_cooling_center,
+            env.heat_threshold_health_effect,
+        )
+        self.agent.state.hours_with_heh_cooling_center = hrs_cc
+        self.agent.state.hours_with_heh_health_effect = hrs_he
 
     def compute_hourly_excess_heat(self, threshold: float):
         """Compute the Hourly Excess Heat (HEH)"""
@@ -500,6 +719,9 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
 
         return hours_with_heh_cooling_center, hours_with_heh_health_effect
 
+    def compute_heh_minutes(self):
+        return
+
     def compute_prob_heat_event(self, threshold: float) -> float:
         """Compute the probability of a heat event."""
         heat_indices = self.agent.state.heat_indices
@@ -540,10 +762,11 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         #     air conditioning - looking for the three closest places
 
         person = self.agent
-        # consider_seeking_cooling = np.random.rand() < self.agent.state.prob_heat_event
+        environment = Model.get_model().get_environment()
+        time = cal.minute_of_day
+
         # For now will just consider seeking cooling center if exposed to heat threshold for over a certain
         ## number of hours - ticks are in 15 minute increments, so 12 is 3 hours
-        # consider_seeking_cooling = self.agent.state.prob_heat_event > 12
         heh_hours_cooling_center = person.state.hours_with_heh_cooling_center
         heh_hours_health_effect = person.state.hours_with_heh_health_effect
         consider_seeking_cooling = heh_hours_cooling_center > 2
@@ -551,8 +774,6 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         have_health_effect = heh_hours_health_effect > 2 or heh_hours_cooling_center > 4
         if not consider_seeking_cooling:
             return False
-
-        # logger.info(f"Person {self.agent.id} is considering seeking cooling")
 
         # 1) if hourly excess heat is too high, experience an adverse health effect
         if have_health_effect:
@@ -562,17 +783,30 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
 
         # 2) if did not have a health effect, find the closest cooling center
         cooling_center_candidate_id = place.data.closest_cooling_center_id
+        # cooling_center_candidate_id = place.data.cooling_center
+        # print(f"cooling_center_candidate_id {cooling_center_candidate_id}")
         closest_cooling_center_distance = place.data.distance_to_closest_cooling_center_m
-        cooling_center_above_distance_threshold = closest_cooling_center_distance > 2500
+        cooling_center_opens = place.data.open_min
+        cooling_center_closes = place.data.close_min
+        cooling_center_distance_threhsold = place.data.distance_threshold
+        cooling_center_above_distance_threshold = closest_cooling_center_distance > cooling_center_distance_threhsold
 
-        # If there are no cooling centers found, or if the distance to the nearest cooling center
-        ## is too far, then stay at current location
+        # Check if cooling center is open
+        is_open = True
+        if environment.cooling_center_operating_hours:
+            is_open = time <= cooling_center_closes and time >= cooling_center_opens
+
+        # If there are no cooling centers found, or if the distance to the nearest cooling center, or if the cooling center is closes
+        ## then stay at current location
         if cooling_center_candidate_id is None or cooling_center_above_distance_threshold:
             # no cooling center is accessible from the person's current place
-            # logger.warning(f"Person {self.agent.id} has no cooling center at place {place.id}.")
-            # person.state.experienced_heat_event = True
-            # person.state.heat_event_place_id = place.id
+            # just use the person's current place as the cooling center
+            cooling_center_candidate_id = place.id
+            return False
 
+        # If there is a close cooling center but it is closed
+        # then stay at current location
+        if not is_open:
             # just use the person's current place as the cooling center
             cooling_center_candidate_id = place.id
             return False
@@ -585,34 +819,38 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         seeking_cooling = consider_seeking_cooling
         ##### COMMMENT OUT FOR NO COOLING CENTER RUNS #####
         if seeking_cooling:
-            self.move_to_cooling_center(cooling_center_candidate_id, cal.hour_of_day)
+            self.move_to_cooling_center(cooling_center_candidate_id, cal.hour_of_day, cooling_center_closes)
             return True
 
         return False
 
-    def move_to_cooling_center(self, place_id: int, current_hour: int) -> None:
+    def move_to_cooling_center(self, place_id: int, current_hour: int, time_to_move: int) -> None:
         """Move the person to a cooling center.
 
         Arguments:
             place_id: int: The ID of the cooling center place.
             current_hour: int: The current hour of the day.
         """
+        person = self.agent
+
         # find the next hour
         next_hour = current_hour + 1
         start_time = next_hour * 60
 
         # currently set end time to the end of the day
-        end_time = 1440  # 24 hours
+        end_time = time_to_move
+        # end_time = 1440  # 24 hours
 
         # find the activity and schedule indices
         activity_names = CasmPop.get_activity_names()
         activity_id = activity_names.index("cooling_center")
 
-        person = self.agent
         if person.state.moved_to_cooling_center:
             logger.error(f"Person {person.id} has already moved to a cooling center")
             return
+
         person.state.moved_to_cooling_center = True
+        person.state.ever_moved_to_cooling_center = True
         person.state.cooling_center_id = place_id
 
         schedule_names = [schedule.name for schedule in person.schedules.schedules]
@@ -623,171 +861,71 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
 
         # need to modify the person's activities to include the cooling
         activities_data = person.state.places
-        # print("person.state.places")
-        # print(person.state.places)
         person.state.places = update_activities_data(activities_data, cooling_center=place_id)
 
-        act_go_to_cooling_center = Act(person.id, activity_id, 1.0, start_time, end_time)
+        act_go_to_cooling_center = Act(person.id, activity_id, 1.0, start_time, end_time, place_id)
 
         # add the activity to the schedule
         person.schedules.schedules[schedule_idx].addAct(act_go_to_cooling_center)
         logger.debug(f"Person {person.id} updated schedule to move to cooling center {place_id}")
-        for act in person.schedules.schedules[schedule_idx].acts:
-            logger.debug(f"  {act}")
+
         previous_schedule = person.state.activities_idx
         person.state.activities_idx = schedule_idx
+
+        for act in person.schedules.schedules[schedule_idx].acts:
+            logger.debug(f"  {act}")
         logger.debug(f"Person {person.id} moved to schedule {schedule_idx} from {previous_schedule}")
+        person.state.cooling_center_visits += 1
+
+    def return_to_regular_schedule(self):
+        person = self.agent
+
+        schedule_names = [schedule.name for schedule in person.schedules.schedules]
+        weekday_idx = schedule_names.index("weekday")
+        person.state.activities_idx = weekday_idx
+
+        person.state.moved_to_cooling_center = False
+        person.state.cooling_center_id = None
+
+        logger.debug(f"Person {person.id} returned to regular schedule")
 
     def decide(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Decide what to do."""
-        # TODO (2025-02-26 jcline): implement this method
-        #   - This is where the person decides what to do
-        #   - This could be based on the heat index, probability of a heat event,
-        #     or other factors
-
         # get the heat index at the person's location
         places_proj = context.get_projection("places_projection")
         place = places_proj.lookup_place(self.agent.currentPlaceID)
-        if not place:
-            logger.error(f"Person {self.agent.id} does not have a place")
+
+        # ---------- 1. Guard clauses ----------
+        if not self._guard_missing_place(place):
+            return
+        if self._handle_already_experienced_event(place):
+            return
+        if self._maybe_return_from_cooling_center(place, cal.minute_of_day, Model.get_model().get_environment()):
             return
 
-        if place.data.T_xy == float("nan"):
-            logger.error(f"Person {self.agent.id} has no temperature data at place {place.id}")
-            return
-
-        # Get outdoor weather variables for place
-        outdoor_heat_index = place.data.heat_index
-        outdoor_wbgt = place.data.wbgt
-        outdoor_dew_point = place.data.dew_point
-        outdoor_temp = place.data.T_xy
-        # Convert heat index to Celcius for computations
-        outdoor_heat_index_c = (outdoor_heat_index - 32) * 5 / 9
-
-        # note: if the place has air conditioning, we assume the heat index is 22.2222C (72F)
-        # - 'T_xy' is the temperature in F at the place, not the heat index
-        # - 'heat_index' is the heat index in C at the place
-        # - The other values are also in C -- not sure how to process them yet
-        # all environment variables including closest cooling center are in place.data
-
-        # log the environment values
-        person = self.agent
-
-        # If person is at a cooling center, assume has AC access at current location
-        # check if the person has already experienced a heat event
-        ##### COMMENT OUT FOR NO COOLING CENTER RUNS #####
-        if self.agent.state.experienced_heat_event:
-            logger.debug(f"Person {self.agent.id} has already experienced a heat event")
-            local_heat_index_c = 23 + 0.1 * outdoor_heat_index_c
-            local_heat_index = (local_heat_index_c * 1.8) + 32
-            person.state.heat_indices.appendleft(local_heat_index)
-            person.state.outdoor_heat_indices.appendleft(outdoor_heat_index)
-            person.state.outdoor_wbgt_indices.appendleft(outdoor_wbgt)
-            person.state.outdoor_dew_point_indices.appendleft(outdoor_dew_point)
-            person.state.outdoor_temp_indices.appendleft(outdoor_temp)
-            return
-
-        if self.agent.state.moved_to_cooling_center:
-            logger.debug(f"Person {self.agent.id} has already moved to a cooling center")
-            local_heat_index_c = 23 + 0.1 * outdoor_heat_index_c
-            local_heat_index = (local_heat_index_c * 1.8) + 32
-            person.state.heat_indices.appendleft(local_heat_index)
-            person.state.outdoor_heat_indices.appendleft(outdoor_heat_index)
-            person.state.outdoor_wbgt_indices.appendleft(outdoor_wbgt)
-            person.state.outdoor_dew_point_indices.appendleft(outdoor_dew_point)
-            person.state.outdoor_temp_indices.appendleft(outdoor_temp)
-            return
-
-        # local_heat_index = place.data.T_xy  # or should this be heat_index
-        # check if person is an outside worker that is currently at work
-        # find the activity and schedule indices
+        # ---------- 2. Determine outdoor/AC flags ----------
         activity_names = CasmPop.get_activity_names()
-        activity_id = activity_names.index("work")
-        time = cal.minute_of_day
-        act = person.schedules[person.state.activities_idx].activityAt(time)
-        current_activity = int(act.activity_id)
+        work_id = activity_names.index("work")
+        act = self.agent.schedules[self.agent.state.activities_idx].activityAt(cal.minute_of_day)
+        self.agent.state.outdoors = int(act.activity_id) == work_id and self.agent.state.outside_worker
+        self.agent.state.has_ac_access = bool(place.data.AIR) and not self.agent.state.outdoors
 
-        person.state.outdoors = current_activity == activity_id and person.state.outside_worker
-        if place.data.AIR and not person.state.outdoors:
-            person.state.has_ac_access = True
-        else:
-            person.state.has_ac_access = False
+        # ---------- 3. Compute perceived heat index ----------
+        local_heat_f = self._compute_local_heat_index(place, Model.get_model().get_environment(), cal)
 
-        # Adjust heat index for indoors/outdoors and AC access
-        local_heat_index = outdoor_heat_index
-        # local_heat_index = place.data.heat_index
-        environment = Model.get_model().get_environment()
-        # environment = self.get_environment()
+        p = self.agent
+        p.state.heat_indices.appendleft(local_heat_f)
+        p.state.outdoor_heat_indices.appendleft(place.data.heat_index)
+        p.state.outdoor_wbgt_indices.appendleft(place.data.wbgt)
+        p.state.outdoor_dew_point_indices.appendleft(place.data.dew_point)
+        p.state.outdoor_temp_indices.appendleft(place.data.T_xy)
 
-        # Adjust heat index based on situation of person
-        # - 1. If person is indoors and has AC,
-        # -- then apply approximations supported by Nguyen et al. (2014) and Quinn et al. (2017)
-        # -- indoor_heat_index_celcius = 23 + 0.1 * outdoor_heat_index_celcius
-        # - 2. If person is indoors but does not have AC,
-        # -- then apply Quinn et al. (2014)
-        # -- indoor_heat_index_celcius = 27.00 + 0.24⋅outdoor_heat_index_celcius(t) + 0.076⋅outdoor_heat_index_celcius(t minus 1) - 0.016⋅outdoor_heat_index_celcius (t minus 2)
-        # - 3. If person is at work and is an outside worker,
-        # -- then apply outdoor_heat_index
+        # ---------- 4. Update HEH counters once per hour ----------
+        self._maybe_update_heh_counters(cal, Model.get_model().get_environment())
 
-        # If person is outside worker and is currently at work, then keep outside heat index
-        if person.state.outdoors:
-            pass  # use outside local heat index
-        # If person is inside and has air conditioning, adjust heat index to reflect this
-        elif person.state.has_ac_access:
-            local_heat_index_c = 23 + 0.1 * outdoor_heat_index_c
-            local_heat_index = (local_heat_index_c * 1.8) + 32
-        # If person is indoors but does not have air conditioning, adjust heat index
-        else:
-            hour = cal.hour_of_day
-            one_day_lag, two_day_lag = environment.get_lagged_heat_index(hour)
-            local_heat_index_c = 27.00 + 0.24 * outdoor_heat_index_c + 0.076 * one_day_lag - 0.016 * two_day_lag
-            local_heat_index = (local_heat_index_c * 1.8) + 32
-
-        person.state.heat_indices.appendleft(local_heat_index)
-        person.state.outdoor_heat_indices.appendleft(outdoor_heat_index)
-        person.state.outdoor_wbgt_indices.appendleft(outdoor_wbgt)
-        person.state.outdoor_dew_point_indices.appendleft(outdoor_dew_point)
-        person.state.outdoor_temp_indices.appendleft(outdoor_temp)
-
-        # Compute hourly excess heat at hourly timesteps and store hourly_excess_heat
-        time = cal.minute_of_day
-        if time % 60 == 45:
-            (
-                person.state.hours_with_heh_cooling_center,
-                person.state.hours_with_heh_health_effect,
-            ) = self.get_hours_with_heh(
-                environment.heat_threshold_cooling_center, environment.heat_threshold_health_effect
-            )
-
-        logger.debug(
-            f"Person {self.agent.id} has heat index {local_heat_index}C and hours_with_heh {person.state.hours_with_heh_cooling_center}"
-        )
-        # update the probability of a heat event
-        # environment = Model.get_model().get_environment()
-        # person.state.prob_heat_event = self.compute_prob_heat_event(environment.heat_threshold)
-        # logger.debug(
-        #    f"Person {self.agent.id} has heat index {local_heat_index}C and prob_heat_event {person.state.prob_heat_event}"
-        # )
-        # return  # skip the rest of the decision-making process for now
-
-        # compute whether a heat event has occurred
-        # if np.random.rand() < self.agent.state.prob_heat_event:
-        # if a heat event has occurred, set the flag and return
-        #   - This person has experienced a heat event, so they will not seek cooling
-        #   - This is a simplification for now - person will conitnue to act as if they have not experienced a heat event
-        #   - This person is now immune to future heat events
-        #    person.state.experienced_heat_event = True
-        #    person.state.heat_event_place_id = place.id
-
-        #    logger.info(f"Person {self.agent.id} has experienced a heat event at hour {cal.hour_of_day}")
-        #    return
-
+        # 5. Ask the cooling centre subengine
         if self.decide_to_seek_cooling(place, cal):
-            person.state.heat_event_place_id = place.id
-            # logger.info(f"Person {self.agent.id} is seeking cooling at hour {cal.hour_of_day}")
-            return
-        # else:
-        # logger.debug(f"Person {self.agent.id} is not seeking cooling at hour {cal.hour_of_day}")
+            p.state.heat_event_place_id = place.id
 
 
 # 6a. Define agent log data
@@ -811,8 +949,6 @@ class PersonLogData:
     heatIndex: float
     hrsWithHourlyExcessHeatCoolingCenter: int
     hrsWithHourlyExcessHeatHealthEffect: int
-    # hrsAboveHeatThreshold: int
-    # probHeatEvent: float
     experiencedHeatEvent: bool
     movedToCoolingCenter: bool
     outdoors: bool
@@ -828,13 +964,11 @@ class RunLogData:
     experiment_id: int
     countAgents: int
     totalHeatIndex: float
-    # avgHeatIndex: float
     totalHrsWithHEHCoolingCenter: int
     totalHrsWithHEHHealthEffect: int
-    # avgHrsWithHEHCoolingCenter: float
-    # avgHrsWithHEHHealthEffect: float
     countMovedToCoolingCenter: int
     countExperiencedHealthEffect: int
+    countVisitsToCoolingCenter: int
 
 
 # 6b. Define the HeatRiskModel class
@@ -861,9 +995,6 @@ class HeatRiskModel2(CasmPop):
 
         # show the initialization time
         logger.info(f"HeatRiskModel2 initialized at time={time.time() - self.start_time} seconds")
-
-        # initialize the environment
-        # self._heat_threshold = 90.0
 
     @property
     def heat_threshold_cooling_center(self) -> float:
@@ -901,12 +1032,16 @@ class HeatRiskModel2(CasmPop):
 
         # set up the environment
         environment = self.get_environment()
+        self._cooling_center_operating_hours = environment.cooling_center_operating_hours
+        self._distance_threshold_cooling_center = environment.distance_threshold_cooling_center
         self._heat_threshold_cooling_center = environment.heat_threshold_cooling_center
         self._heat_threshold_health_effect = environment.heat_threshold_health_effect
 
         # Need to sum heat index across all ticks; initialize to 0
         self.total_heat_index = 0
 
+        logger.info(f"Boolean for using cooling center operating hours is {self._cooling_center_operating_hours}C")
+        logger.info(f"Distance threshold set to go to a cooling center is {self._distance_threshold_cooling_center}C")
         logger.info(f"Heat threshold set to seek a cooling center is {self._heat_threshold_cooling_center}C")
         logger.info(f"Heat threshold set to to have a health effect is {self._heat_threshold_health_effect}C")
 
@@ -924,29 +1059,10 @@ class HeatRiskModel2(CasmPop):
         # log the agents
         logger.info("Logging agents after population initialization")
         self.log_agents()
-        # self.total_heat_index = self.get_total_heat_index()
-        # print("total heat index is")
-        # print(self.total_heat_index)
 
     def create_input_tables(self):
         logger.info("Creating input tables for HeatRiskModel2...")
         super().create_input_tables()
-
-        # load the closest cooling stations data
-        # closest_cooling_center_arrow_file_path = (
-        #     Model.get_model().data_path / Model.get_model().params["closest_cooling_center.file"]
-        # )
-        # if not closest_cooling_center_arrow_file_path.exists():
-        #     logger.error(f"Error: Closest cooling station file {closest_cooling_center_arrow_file_path} not found.")
-        #     raise MissingEnvironmentFile(closest_cooling_center_arrow_file_path)
-        # closest_cooling_center_df = pl.read_parquet(closest_cooling_center_arrow_file_path)
-        # logger.info(f"Loaded closest cooling centers data with {closest_cooling_center_df.shape[0]} rows")
-        # self.conn.execute(
-        #     """
-        #     CREATE OR REPLACE TABLE closest_cooling_center2 AS
-        #     SELECT * FROM closest_cooling_center_df;
-        #     """
-        # )
 
         cooling_centers_experiment_file_path = (
             Model.get_model().data_path / Model.get_model().params["cooling_centers_experiment.file"]
@@ -991,28 +1107,21 @@ class HeatRiskModel2(CasmPop):
             # if not isinstance(val, float) or not math.isnan(val)
         ]
         filtered_all_heat_indices = [x for x in all_heat_indices if not math.isnan(x)]
-        # print("all_heat_indices[:10]")
-        # print(list(filtered_all_heat_indices)[:10])
-        # print(sum(list(filtered_all_heat_indices)[:10]))
-        # print(sum(list(filtered_all_heat_indices)))
-        # heat_indices = [person.state.heat_indices for person in agents if person.state.heat_indices]
         hrs_with_heh_cc = [person.state.max_hours_with_heh_cooling_center for person in agents]
         hrs_with_heh_health = [person.state.max_hours_with_heh_health_effect for person in agents]
-        moved_to_cc = [person.state.moved_to_cooling_center for person in agents]
+        # moved_to_cc = [person.state.moved_to_cooling_center for person in agents]
+        moved_to_cc = [person.state.ever_moved_to_cooling_center for person in agents]
+        totalVisits = sum(p.state.cooling_center_visits for p in agents)
         experienced_he = [person.state.experienced_heat_event for person in agents]
 
         # Compute aggregates
         countAgents = len(agents)
-        # totalHeatIndex = self.total_heat_index
         totalHeatIndex = float(sum(list(filtered_all_heat_indices)))
-        # totalHeatIndex = float(sum(heat_indices))
-        # avgHeatIndex = float(self.total_heat_index / countAgents)
-        # avgHeatIndex = float(sum(heat_indices)) / len(heat_indices) if heat_indices else float("nan")
         totalHrsWithHEHCoolingCenter = float(sum(hrs_with_heh_cc))
         totalHrsWithHEHHealthEffect = float(sum(hrs_with_heh_health))
-        # avgHrsWithHEHCoolingCenter = float(totalHrsWithHEHCoolingCenter) / len(agents) if agents else float("nan")
-        # avgHrsWithHEHHealthEffect = float(totalHrsWithHEHHealthEffect) / len(agents) if agents else float("nan")
         countMovedToCoolingCenter = float(sum(1 for moved in moved_to_cc if moved))
+        # countVisitsToCoolingCenter = float(sum(1 for moved in totalVisits if moved))
+        countVisitsToCoolingCenter = float(totalVisits)
         countExperiencedHealthEffect = float(sum(1 for exp in experienced_he if exp))
 
         return RunLogData(
@@ -1020,20 +1129,16 @@ class HeatRiskModel2(CasmPop):
             experiment_id,
             countAgents,
             totalHeatIndex,
-            # avgHeatIndex,
             totalHrsWithHEHCoolingCenter,
             totalHrsWithHEHHealthEffect,
-            # avgHrsWithHEHCoolingCenter,
-            # avgHrsWithHEHHealthEffect,
             countMovedToCoolingCenter,
             countExperiencedHealthEffect,
+            countVisitsToCoolingCenter,
         )
 
     def get_total_heat_index(self) -> float:
         # Collect all agents
         agents = list(self.context.agents(agent_type=0))
-        # print("len(agents)")
-        # print(len(agents))
 
         # For millions of agents, you may want to use generators for memory efficiency
         all_heat_indices = [
@@ -1043,16 +1148,8 @@ class HeatRiskModel2(CasmPop):
             # if not isinstance(val, float) or not math.isnan(val)
         ]
         filtered_all_heat_indices = [x for x in all_heat_indices if not math.isnan(x)]
-        # heat_indices = [person.state.heat_indices[0] for person in agents if person.state.heat_indices]
         total_heat_index_for_tick = sum(list(filtered_all_heat_indices))
-        # print("total_heat_index_for_tick")
-        # print(total_heat_index_for_tick)
-        # print("total before")
-        # print(self.total_heat_index)
-        # self.total_heat_index = self.total_heat_index + total_heat_index_for_tick
         self.total_heat_index = total_heat_index_for_tick
-        # print("total_hi")
-        # print(self.total_heat_index)
 
     def get_person_log_data(self, person: Person) -> PersonLogData:
         """Get the agent data for logging."""
@@ -1076,7 +1173,6 @@ class HeatRiskModel2(CasmPop):
             outdoorDewPoint=person.state.outdoor_dew_point_indices[0],
             outdoorTemperature=person.state.outdoor_temp_indices[0],
             heatIndex=person.state.heat_indices[0],
-            # hrsAboveHeatThreshold=len(heat),
             hrsWithHourlyExcessHeatCoolingCenter=person.state.hours_with_heh_cooling_center,
             hrsWithHourlyExcessHeatHealthEffect=person.state.hours_with_heh_health_effect,
             # probHeatEvent=person.state.prob_heat_event,
@@ -1121,7 +1217,7 @@ class HeatRiskModel2(CasmPop):
 
         # convert the DataFrame to an Arrow Table
         agent_log_table = agent_log_df.to_arrow()
-
+        self.log_run()
         # Define partition schema
         partition_schema = pa.schema(
             [

@@ -15,6 +15,7 @@ class Act:
     activity_sequence: int
     starttime_min: int
     endtime_min: int
+    place_id: int
 
     def contains(self, time: float) -> bool:
         """Return True if the time is within the start and end times of the activity."""
@@ -41,7 +42,9 @@ class Activities:
     def activityAt(self, time: float) -> Act:
         """Find the activity at a particular time."""
         next_act = None
+        # print(f"self.acts {self.acts}")
         for act in self.acts:
+            # print(f"act {act}")
             if act.contains(time):
                 return act
 
