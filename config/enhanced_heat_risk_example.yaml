@@ -24,16 +24,28 @@ Imputation: 1
 environment.file: "data/processed/apache_flight/wake_county_30_v2/weather_at_places.parquet"
 closest_cooling_center.file: "data/processed/apache_flight/wake_county_30_v2/closest_cooling_center.parquet"
 cooling_centers_experiment.file: "data/processed/wake_county_30_v2/abm_inputs_erl/experiments.parquet"
-experiment_id: 1
-agent_log_file: "data/processed/apache_flight/wake_county_30_v2/output/agent_log.parquet"
 lagged_weather.file: "data/processed/wake_county_30/abm_inputs/lagged_weather.parquet"
-run_log_file: "data/processed/apache_flight/wake_county_30_v2/output/run_log.parquet"
+experiment_id: 1
+
+# Output Files
+agent_log_file: "data/processed/apache_flight/wake_county_30_v2/output_test2/agent_log.parquet"
+agent_hourly_log_file: "data/processed/apache_flight/wake_county_30_v2/output_test2/agent_hourly_log.parquet"
+run_log_file: "data/processed/apache_flight/wake_county_30_v2/output_test2/run_log.parquet"
+run_person_log_file: "data/processed/apache_flight/wake_county_30_v2/output_test2/run_agent_log.parquet"
+write_agent_tick_log: true
+write_run_log: true
+write_agent_hourly_log: true
+write_end_run_person_log: true
 
 # Heat Risk Parameters
 distance_threshold_cooling_center: 2500 # 2500 meter threshold for distance to cooling center
 cooling_center_operating_hours: true # if set to true, will consider cooling center operating hours
 heat_threshold_cooling_center: 90  # 90°F threshold for cooling center recommendations
 heat_threshold_health_effect: 100  # 100°F threshold for health effect monitoring
+heat_threshold_work_break: 80 # 80°F threshold for recommended work breaks
+degrees_f_minutes_threshold_cooling_center: 90
+degrees_f_minutes_threshold_health_effect: 100
+disable_heat_health_incidents: true
 
 # Parallel Processing Configuration
 # Note: Parallelization overhead exceeds benefits for this dataset size

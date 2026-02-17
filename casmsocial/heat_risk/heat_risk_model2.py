@@ -5,6 +5,7 @@ Created: 02 Dec 2024
 Defining the heat risk model for the CASMSOCIAL/PRSIM project
 """
 
+# ruff: noqa: SIM108
 import math
 import time
 from collections import deque, namedtuple
@@ -244,6 +245,15 @@ class HeatRiskEnvironment(SimEnvironment):
         )  # default heat threshold in Celsius 32.2222 (90.0 Fahrenheit)
 
         self.__heat_threshold_health_effect = Model.get_model().params.get("heat_threshold_health_effect", 32.2222)
+
+        self.__degrees_f_minutes_threshold_cooling_center = Model.get_model().params.get(
+            "degrees_f_minutes_threshold_cooling_center", 90
+        )
+
+        self.__degrees_f_minutes_threshold_health_effect = Model.get_model().params.get(
+            "degrees_f_minutes_threshold_health_effect", 100
+        )
+
         self.__distance_threshold_cooling_center = Model.get_model().params.get(
             "distance_threshold_cooling_center", 2500
         )
@@ -273,6 +283,14 @@ class HeatRiskEnvironment(SimEnvironment):
     @property
     def heat_threshold_health_effect(self) -> float:
         return self.__heat_threshold_health_effect
+
+    @property
+    def degrees_f_minutes_threshold_cooling_center(self) -> float:
+        return self.__degrees_f_minutes_threshold_cooling_center
+
+    @property
+    def degrees_f_minutes_threshold_health_effect(self) -> float:
+        return self.__degrees_f_minutes_threshold_health_effect
 
     def setup(self) -> None:
         """Setup the environment."""
@@ -374,12 +392,6 @@ class HeatRiskEnvironment(SimEnvironment):
             place.data.open_min = row[10]
             place.data.close_min = row[11]
             place.data.distance_threshold = row[12]
-            # set the closest cooling center ID
-            # place.data.closest_cooling_center_id = row[0]  # first column is time
-            # print(f"ROW: {row}")
-            # print(f"PLACE: {place}")
-            # print(f"PLACE CC: {place.data.cooling_center}")
-            # print(f"PLACE CLOSEST CC ID: {place.data.closest_cooling_center_id}")
 
         logger.info("Microweather snapshot updated successfully.")
 
@@ -489,6 +501,25 @@ class PersonDataWithHeatRisk(PersonData):
     cooling_center_id: int = None
     outdoors: bool = False
     has_ac_access: bool = False
+    f_minutes_cumulative_cooling_center: float = 0.0  # total exposure so far
+    f_minutes_history_cooling_center: deque[float] = field(
+        default_factory=lambda: deque(
+            maxlen=None
+        )  # keep **all** ticks; change maxlen if you only need a sliding window
+    )
+    f_minutes_cumulative_health_effect: float = 0.0  # total exposure so far
+    f_minutes_history_health_effect: deque[float] = field(
+        default_factory=lambda: deque(
+            maxlen=None
+        )  # keep **all** ticks; change maxlen if you only need a sliding window
+    )
+    heat_intensity: deque[float] = field(
+        default_factory=lambda: deque([float("nan")])  # will grow one value per hour
+    )
+    dehh_cumulative_cooling_center: float = 0.0  # Daily Excess Hourly Heat (°F·h) for the “cooling center” threshold
+    dehh_cumulative_health_effect: float = 0.0  # Daily Excess Hourly Heat for the “health effect” threshold
+    # a deque that will hold ONE dict per completed hour
+    hourly_log: deque[dict] = field(default_factory=lambda: deque())
 
 
 # 4. Define a HeatRiskBehaviorEngine Class
@@ -505,6 +536,51 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
     def __init__(self, person: Person):
         """Constructor for the HeatRiskBehaviorEngine class."""
         super().__init__(person)
+
+    def _finalise_hourly_record(self, person: Person, hour_of_day: int) -> None:
+        """
+        Build a dict that contains all the fields required for the
+        *hourly* person log, push it onto the agent's `hourly_log` deque,
+        and reset the per hour temporary trackers.
+        """
+        # ----- 1) HEH values (they are stored in the *hourly* deques) -----
+        heh_cc = person.state.hourly_excess_heat_cooling_center[0]  # °F min, most recent hour
+        heh_he = person.state.hourly_excess_heat_health_effect[0]  # °F min, most recent hour
+
+        # ----- 2) Heat index statistics for the hour --------------------
+        # The four most recent values belong to the hour that just ended.
+        recent_heat_idxs = list(person.state.heat_indices)[:4]  # newest first
+        # Guard against NaNs (they appear at the very beginning of the run)
+        clean_vals = [v for v in recent_heat_idxs if not math.isnan(v)]
+
+        # average (if we have any real values)
+        avg_heat = float(sum(clean_vals) / len(clean_vals)) if clean_vals else float("nan")
+        # max intensity (same as what you already store in `heat_intensity`)
+        max_intensity = max(clean_vals) if clean_vals else float("nan")
+
+        # The intensity for the hour was already computed by
+        # `_maybe_update_heat_intensity` and lives in the deque
+        hour_intensity = person.state.heat_intensity[0] if person.state.heat_intensity else float("nan")
+
+        # Build the record
+        record = {
+            "hour_of_day": hour_of_day,
+            "agent_id": person.id,
+            "hourlyExcessHeatCoolingCenter": heh_cc,
+            "hourlyExcessHeatHealthEffect": heh_he,
+            "averageHeatIndex": avg_heat,
+            "maxHeatIndex": max_intensity,  # should be the same as heatIntensity but can check
+            "heatIntensity": hour_intensity,
+        }
+
+        # Store the record
+        person.state.hourly_log.appendleft(record)
+
+        # Reset the temporary per hour flags for the next hour
+        person.state.hourly_moved_to_cooling_center = False
+        person.state.hourly_outdoors = False
+        person.state.hourly_has_ac_access = False
+        # (no need to reset `hourly_intensity_max` now because we don't use it)
 
     # ------------------------------------------------------------------
     # Helper classes for decide function
@@ -541,14 +617,18 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
             return True
         return False
 
-    def _next_place_has_ac(self, time: int) -> bool:
+    def _next_place_has_ac(self, time: int, context) -> bool:
         """Helper used by `_maybe_return_from_cooling_center`- checks the
         *next* scheduled activity (at `time`) and returns True if that place has
         air conditioning."""
         schedule_names = [s.name for s in self.agent.schedules.schedules]
         weekday_idx = schedule_names.index("weekday")
         act = self.agent.schedules[weekday_idx].activityAt(time)
-        next_place = self.agent.context.get_projection("places_projection").lookup_place(act.place_id)
+        next_place_id = act.place_id
+        places_proj = context.get_projection("places_projection")
+        next_place = places_proj.lookup_place(next_place_id)
+        # places_proj = context.get_projection("places_projection")
+        # next_place = context.get_projection("places_projection").lookup_place(act.place_id)
         return bool(next_place and next_place.data.AIR)
 
     def _push_cooled_index(self, place: Place) -> None:
@@ -565,7 +645,20 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         p.state.outdoor_dew_point_indices.appendleft(place.data.dew_point)
         p.state.outdoor_temp_indices.appendleft(place.data.T_xy)
 
-    def _maybe_return_from_cooling_center(self, place: Place, time: int, env: HeatRiskEnvironment) -> bool:
+        fmin_this_tick_cc, fmin_this_tick_he = self.compute_f_minutes(
+            temp_f=local_f,
+            # Optional: pull these from model params instead of hardcoding
+            env=Model.get_model().get_environment(),
+            step_minutes=15,  # change if your simulation step changes
+        )
+
+        # Update the per agent containers
+        p.state.f_minutes_cumulative_cooling_center += fmin_this_tick_cc
+        p.state.f_minutes_history_cooling_center.append(fmin_this_tick_cc)
+        p.state.f_minutes_cumulative_health_effect += fmin_this_tick_he
+        p.state.f_minutes_history_health_effect.append(fmin_this_tick_he)
+
+    def _maybe_return_from_cooling_center(self, place: Place, time: int, env: HeatRiskEnvironment, context) -> bool:
         """
         Returns True if the method *handled* the situation (i.e. the agent stays
         in the cooling centre or returns to the regular schedule) and the caller
@@ -578,12 +671,14 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         closes = place.data.close_min
 
         # Exit condition: centre closed **or** next scheduled place has AC
-        if (env.cooling_center_operating_hours and time >= closes) or self._next_place_has_ac(time):
+        if (env.cooling_center_operating_hours and time >= closes) or self._next_place_has_ac(time, context):
             self.return_to_regular_schedule()
+            return False
         else:
             # stay in centre - push a “cooled” index
             self._push_cooled_index(place)
-        return True
+            return True
+        # return True
 
     # ------------------------------------------------------------------
     # 2. Heat index computation
@@ -635,6 +730,12 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
     def _maybe_update_heh_counters(self, cal: SimTime, env: HeatRiskEnvironment) -> None:
         """
         Every full hour (minute 45) update the per hour HEH counters.
+
+        Tang, C., Ji, Y., Li, Q., Yao, Z., Cheng, J., He, Y., ... & Su, H. (2021).
+        Effects of different heat exposure patterns (accumulated and transient)
+        and schizophrenia hospitalizations: a time-series analysis on hourly
+        temperature basis. Environmental Science and Pollution Research, 28(48),
+        69160-69170.
         """
         if cal.minute_of_day % 60 != 45:
             return
@@ -645,6 +746,52 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         )
         self.agent.state.hours_with_heh_cooling_center = hrs_cc
         self.agent.state.hours_with_heh_health_effect = hrs_he
+
+    def _maybe_update_heat_intensity(self, cal: SimTime) -> None:
+        """
+        At the end of each hour (minute 45) compute the maximum perceived heat index
+        that occurred in the just finished hour and store it.
+        """
+        # We only act once per hour, exactly where the HEH routine already fires.
+        if cal.minute_of_day % 60 != 45:  # minute 45 == last tick of the hour (15 min steps)
+            return
+
+        person = self.agent
+
+        # 1) Grab the last 4 perceived heat index values (the current hour)
+        recent_vals = list(person.state.heat_indices)[:4]  # newest first
+        # 2) Convert any NaNs to -inf so they don't break max()
+        recent_vals = [v if not math.isnan(v) else float("-inf") for v in recent_vals]
+        # 3) Compute the maximum (hourly intensity)
+        hour_intensity = max(recent_vals) if recent_vals else float("nan")
+
+        # 4) Store it in the per agent deque
+        person.state.heat_intensity.appendleft(hour_intensity)
+
+    def compute_f_minutes(
+        self,
+        temp_f: float,
+        env: HeatRiskEnvironment,
+        step_minutes: int = 15,
+    ) -> float:
+        # Pull the threshold from the model parameters (default = 100°F per the paper)
+        threshold_cc = env.degrees_f_minutes_threshold_cooling_center
+        threshold_he = env.degrees_f_minutes_threshold_health_effect
+
+        fmin_cc = 0
+        fmin_he = 0
+
+        if temp_f <= threshold_cc:
+            fmin_cc = 0.0
+        else:
+            fmin_cc = (temp_f - threshold_cc) * step_minutes
+
+        if temp_f <= threshold_he:
+            fmin_he = 0
+        else:
+            fmin_he = (temp_f - threshold_he) * step_minutes
+
+        return fmin_cc, fmin_he
 
     def compute_hourly_excess_heat(self, threshold: float):
         """Compute the Hourly Excess Heat (HEH)"""
@@ -689,6 +836,33 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
 
         # Store HEH
         return heh
+
+    def _heh_min_to_hour(self, heh_min: float) -> float:
+        """Convert HEH from °F minutes to °F hours."""
+        return heh_min / 60.0  # 60 min per hour
+
+    def _update_daily_dehh(self, cal: SimTime, env: HeatRiskEnvironment) -> None:
+        """
+        Called once per hour (minute 45). Adds the just completed hour's HEH
+        (converted to °F hour) to the running daily DEHH total.
+        """
+        if cal.minute_of_day % 60 != 45:  # sanity check, we only run at hour end
+            return
+
+        person = self.agent
+
+        # ----- 1) fetch the latest HEH values (they were just appended
+        #          in get_hours_with_heh) -----
+        latest_heh_cc = person.state.hourly_excess_heat_cooling_center[0]  # °F min
+        latest_heh_he = person.state.hourly_excess_heat_health_effect[0]  # °F min
+
+        # ----- 2) convert to °F hour -----
+        heh_cc_hour = latest_heh_cc / 60.0
+        heh_he_hour = latest_heh_he / 60.0
+
+        # ----- 3) accumulate -----
+        person.state.dehh_cumulative_cooling_center += heh_cc_hour
+        person.state.dehh_cumulative_health_effect += heh_he_hour
 
     def get_hours_with_heh(self: float, threshold_cooling_center: float, threshold_health_effect: float) -> float:
         # Update HEH for current hour
@@ -754,16 +928,11 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         Returns:
             bool: True if the person decides to seek cooling, False otherwise.
         """
-        # TODO (2025-02-26 jcline): implement this method
-        #   - This is where the person decides to seek cooling
-        #   - This could be based on the heat index, probability of a heat event,
-        #     or other factors
-        #   - Also looking at the place data for cooling centers and
-        #     air conditioning - looking for the three closest places
 
         person = self.agent
         environment = Model.get_model().get_environment()
         time = cal.minute_of_day
+        disable_incidents = Model.get_model().params.get("disable_heat_health_incidents", False)
 
         # For now will just consider seeking cooling center if exposed to heat threshold for over a certain
         ## number of hours - ticks are in 15 minute increments, so 12 is 3 hours
@@ -772,6 +941,13 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         consider_seeking_cooling = heh_hours_cooling_center > 2
 
         have_health_effect = heh_hours_health_effect > 2 or heh_hours_cooling_center > 4
+        # ---- NEW: hard-disable health incidents
+        if disable_incidents:
+            have_health_effect = False
+            person.state.experienced_heat_event = False
+            # optional: also clear these so logs don't show a "health event place"
+            person.state.heat_event_place_id = None
+
         if not consider_seeking_cooling:
             return False
 
@@ -891,6 +1067,21 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
 
     def decide(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Decide what to do."""
+        # The simulation runs in 15 min steps, so minute 45 is the last
+        # tick of an hour.  When we hit minute 0 of the *next* hour we
+        # finalise the record for the hour that just finished.
+        p = self.agent
+        if cal.minute_of_day % 60 == 0:  # we have just entered a new hour
+            # The hour that just ended is `cal.hour_of_day - 1` (wrap at 0)
+            finished_hour = (cal.hour_of_day - 1) % 24
+            self._finalise_hourly_record(p, finished_hour)
+
+        # ---- NEW: enforce "always false" every tick (strong guarantee)
+        disable_heat_health_incidents = Model.get_model().params.get("disable_heat_health_incidents", False)
+        if disable_heat_health_incidents:
+            self.agent.state.experienced_heat_event = False
+            self.agent.state.heat_event_place_id = None
+
         # get the heat index at the person's location
         places_proj = context.get_projection("places_projection")
         place = places_proj.lookup_place(self.agent.currentPlaceID)
@@ -900,7 +1091,9 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
             return
         if self._handle_already_experienced_event(place):
             return
-        if self._maybe_return_from_cooling_center(place, cal.minute_of_day, Model.get_model().get_environment()):
+        if self._maybe_return_from_cooling_center(
+            place, cal.minute_of_day, Model.get_model().get_environment(), context
+        ):
             return
 
         # ---------- 2. Determine outdoor/AC flags ----------
@@ -913,17 +1106,36 @@ class HeatRiskBehaviorEngine(BehaviorEngine):
         # ---------- 3. Compute perceived heat index ----------
         local_heat_f = self._compute_local_heat_index(place, Model.get_model().get_environment(), cal)
 
-        p = self.agent
         p.state.heat_indices.appendleft(local_heat_f)
         p.state.outdoor_heat_indices.appendleft(place.data.heat_index)
         p.state.outdoor_wbgt_indices.appendleft(place.data.wbgt)
         p.state.outdoor_dew_point_indices.appendleft(place.data.dew_point)
         p.state.outdoor_temp_indices.appendleft(place.data.T_xy)
 
-        # ---------- 4. Update HEH counters once per hour ----------
+        # ---------- 4. Compute degrees f-minutes ----------
+        fmin_this_tick_cc, fmin_this_tick_he = self.compute_f_minutes(
+            temp_f=local_heat_f,
+            # Optional: pull these from model params instead of hard coding
+            env=Model.get_model().get_environment(),
+            step_minutes=15,  # change if your simulation step changes
+        )
+
+        # Update the per agent containers
+        p.state.f_minutes_cumulative_cooling_center += fmin_this_tick_cc
+        p.state.f_minutes_history_cooling_center.append(fmin_this_tick_cc)
+        p.state.f_minutes_cumulative_health_effect += fmin_this_tick_he
+        p.state.f_minutes_history_health_effect.append(fmin_this_tick_he)
+
+        # ---------- 5. Update HEH counters once per hour ----------
         self._maybe_update_heh_counters(cal, Model.get_model().get_environment())
 
-        # 5. Ask the cooling centre subengine
+        # ---------- 6. Update Heat Intensity once per hour ----------
+        self._maybe_update_heat_intensity(cal)
+
+        # ---------- 7. Update daily DEHH (new) ----------
+        self._update_daily_dehh(cal, Model.get_model().get_environment())
+
+        # 8. Ask the cooling centre subengine
         if self.decide_to_seek_cooling(place, cal):
             p.state.heat_event_place_id = place.id
 
@@ -947,6 +1159,8 @@ class PersonLogData:
     outdoorDewPoint: float
     outdoorTemperature: float
     heatIndex: float
+    hourlyExcessHeatCoolingCenter: float
+    hourlyExcessHeatHealthEffect: float
     hrsWithHourlyExcessHeatCoolingCenter: int
     hrsWithHourlyExcessHeatHealthEffect: int
     experiencedHeatEvent: bool
@@ -955,6 +1169,47 @@ class PersonLogData:
     hasACAccess: bool
     heatEventPlaceId: int
     coolingCenterId: int
+    fMinutesCumulativeCoolingCenter: float  # total exposure up to this tick
+    fMinutesCumulativeHealthEffect: float
+    fMinutesThisTickCoolingCenter: float  # contribution of the *current* tick
+    fMinutesThisTickHealthEffect: float
+    heatIntensity: float = float("nan")  # intensity of the *current* hour
+    dehhCoolingCenter: float = 0.0  # DEHH for the *current* day (°F·h)
+    dehhHealthEffect: float = 0.0  # DEHH for health effect threshold
+
+    # Hourly log fields
+    hourOfDay: int = -1  # the hour this row belongs to
+    placeIdAtHourEnd: int = -1  # agent's place at the end of the hour
+    movedToCoolingCenterHour: bool = False
+    outdoorsHour: bool = False
+    hasACAccessHour: bool = False
+    heatIntensityHour: float = float("nan")
+    fMinutesThisTickCoolingCenterHour: float = 0.0
+    fMinutesThisTickHealthEffectHour: float = 0.0
+
+    # End of run log fields
+    homePlaceId: int = -1
+    everMovedToCoolingCenterRun: bool = False
+    everOutdoorsRun: bool = False
+    hasACAccessHome: bool = False
+    maxHeatIntensityRun: float = float("-inf")
+    dehhCoolingCenterRun: float = 0.0
+    dehhHealthEffectRun: float = 0.0
+
+
+class PersonRunLogData:
+    """One row per agent written at the very end of the simulation."""
+
+    agent_id: int
+    hrsWithhourlyExcessHeatCoolingCenter: int
+    hrsWithhourlyExcessHeatHealthEffect: int
+    fMinutesCumulativeCoolingCenter: float
+    fMinutesCumulativeHealthEffect: float
+    averageHeatIndex: float  # mean of all *per tick* heat index values (°F)
+    averageHeatIntensity: float  # mean of the hourly intensity values (°F)
+    maxHeatIntensity: float  # highest intensity ever observed (°F)
+    dehhCoolingCenter: float  # total daily excess hourly heat (°F·h) for cooling centre
+    dehhHealthEffect: float  # same for health effect threshold
 
 
 # 6a. Define run log data
@@ -969,6 +1224,12 @@ class RunLogData:
     countMovedToCoolingCenter: int
     countExperiencedHealthEffect: int
     countVisitsToCoolingCenter: int
+    totalFMinutesCoolingCenter: float = 0.0
+    totalFMinutesHealthEffect: float = 0.0
+    totalHeatIntensity: float = 0.0
+    maxHeatIntensity: float = 0.0
+    totalDEHHCoolingCenter: float = 0.0
+    totalDEHHHealthEffect: float = 0.0
 
 
 # 6b. Define the HeatRiskModel class
@@ -979,22 +1240,77 @@ class HeatRiskModel2(CasmPop):
         """Constructor for the HeatRiskModel class"""
         super().__init__(comm, params)
 
+        # ----------------------------
+        # Output toggles (defaults)
+        # ----------------------------
+        self.write_agent_tick_log = bool(self.params.get("write_agent_tick_log", True))
+        self.write_run_log = bool(self.params.get("write_run_log", True))
+        self.write_agent_hourly_log = bool(self.params.get("write_agent_hourly_log", False))
+        self.write_end_run_person_log = bool(self.params.get("write_end_run_person_log", False))
+
+        # ----------------------------
+        # Paths created only if needed
+        # ----------------------------
+        self.agent_log_file = None
+        self.agent_hourly_log_file = None
+        self.run_log_file = None
+        self.run_person_log_file = None
+
+        def _optional_log_path(self, enabled: bool, param_name: str):
+            if not enabled:
+                return None
+            if param_name not in self.params:
+                raise MissingRequiredParameterError([param_name])
+
+            path = self.data_path / self.params[param_name]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            return path
+
         # create the agent log file path
-        if "agent_log_file" not in self.params:
-            raise MissingRequiredParameterError(["agent_log_file"])
-        self.agent_log_file = self.data_path / self.params["agent_log_file"]
-        if not self.agent_log_file.parent.exists():
-            self.agent_log_file.parent.mkdir(parents=True, exist_ok=True)
+        self.write_agent_tick_log = bool(self.params.get("write_agent_tick_log", True))
+        self.write_run_log = bool(self.params.get("write_run_log", True))
+        self.write_agent_hourly_log = bool(self.params.get("write_agent_hourly_log", False))
+        self.write_end_run_person_log = bool(self.params.get("write_end_run_person_log", False))
+
+        self.agent_log_file = self._optional_log_path(self.write_agent_tick_log, "agent_log_file")
+        self.agent_hourly_log_file = self._optional_log_path(self.write_agent_hourly_log, "agent_hourly_log_file")
+        self.run_log_file = self._optional_log_path(self.write_run_log, "run_log_file")
+        self.run_person_log_file = self._optional_log_path(self.write_end_run_person_log, "run_person_log_file")
+
+        logger.info(f"HeatRiskModel2 initialized at time={time.time() - self.start_time} seconds")
+
+        # if self.write_agent_tick_log:
+        #    if "agent_log_file" not in self.params:
+        #        raise MissingRequiredParameterError(["agent_log_file"])
+        #    self.agent_log_file = self.data_path / self.params["agent_log_file"]
+        #    if not self.agent_log_file.parent.exists():
+        #        self.agent_log_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # create the agent log file path
+        # if self.write_agent_hourly_log:
+        #    if "agent_hourly_log_file" not in self.params:
+        #       raise MissingRequiredParameterError(["agent_hourly_log_file"])
+        #    self.agent_hourly_log_file = self.data_path / self.params["agent_hourly_log_file"]
+        #    if not self.agent_hourly_log_file.parent.exists():
+        #        self.agent_hourly_log_file.parent.mkdir(parents=True, exist_ok=True)
 
         # create the run log file path
-        if "run_log_file" not in self.params:
-            raise MissingRequiredParameterError(["run_log_file"])
-        self.run_log_file = self.data_path / self.params["run_log_file"]
-        if not self.run_log_file.parent.exists():
-            self.run_log_file.parent.mkdir(parents=True, exist_ok=True)
+        # if self.write_run_log:
+        #    if "run_log_file" not in self.params:
+        #        raise MissingRequiredParameterError(["run_log_file"])
+        #    self.run_log_file = self.data_path / self.params["run_log_file"]
+        #    if not self.run_log_file.parent.exists():
+        #        self.run_log_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # if self.write_end_run_person_log:
+        #    if "run_person_log_file" not in self.params:
+        #        raise MissingRequiredParameterError(["run_person_log_file"])
+        #    self.run_person_log_file = self.data_path / self.params["run_person_log_file"]
+        #    if not self.run_person_log_file.parent.exists():
+        #        self.run_person_log_file.parent.mkdir(parents=True, exist_ok=True)
 
         # show the initialization time
-        logger.info(f"HeatRiskModel2 initialized at time={time.time() - self.start_time} seconds")
+        # logger.info(f"HeatRiskModel2 initialized at time={time.time() - self.start_time} seconds")
 
     @property
     def heat_threshold_cooling_center(self) -> float:
@@ -1002,6 +1318,12 @@ class HeatRiskModel2(CasmPop):
 
     def heat_threshold_health_effect(self) -> float:
         return self._heat_threshold_health_effect
+
+    def degrees_f_minutes_cooling_center(self) -> float:
+        return self._degrees_f_minutes_cooling_center
+
+    def degrees_f_minutes_health_effect(self) -> float:
+        return self._degrees_f_minutes_health_effect
 
     def build_context(self) -> None:
         """Initialize population"""
@@ -1036,6 +1358,8 @@ class HeatRiskModel2(CasmPop):
         self._distance_threshold_cooling_center = environment.distance_threshold_cooling_center
         self._heat_threshold_cooling_center = environment.heat_threshold_cooling_center
         self._heat_threshold_health_effect = environment.heat_threshold_health_effect
+        self._degrees_f_minutes_threshold_cooling_center = environment.degrees_f_minutes_threshold_cooling_center
+        self._degrees_f_minutes_threshold_health_effect = environment.degrees_f_minutes_threshold_cooling_center
 
         # Need to sum heat index across all ticks; initialize to 0
         self.total_heat_index = 0
@@ -1044,6 +1368,12 @@ class HeatRiskModel2(CasmPop):
         logger.info(f"Distance threshold set to go to a cooling center is {self._distance_threshold_cooling_center}C")
         logger.info(f"Heat threshold set to seek a cooling center is {self._heat_threshold_cooling_center}C")
         logger.info(f"Heat threshold set to to have a health effect is {self._heat_threshold_health_effect}C")
+        logger.info(
+            f"Degrees F-minutes set to seek a cooling center is {self._degrees_f_minutes_threshold_cooling_center}C"
+        )
+        logger.info(
+            f"Degrees F-minutes set to to have a health effect is {self._degrees_f_minutes_threshold_health_effect}C"
+        )
 
         # check the first agent
         person = next(self.context.agents())
@@ -1123,6 +1453,13 @@ class HeatRiskModel2(CasmPop):
         # countVisitsToCoolingCenter = float(sum(1 for moved in totalVisits if moved))
         countVisitsToCoolingCenter = float(totalVisits)
         countExperiencedHealthEffect = float(sum(1 for exp in experienced_he if exp))
+        totalFMinutesCoolingCenter = float(sum(p.state.f_minutes_cumulative_cooling_center for p in agents))
+        totalFMinutesHealthEffect = float(sum(p.state.f_minutes_cumulative_health_effect for p in agents))
+        all_heat_ints = [val for p in agents for val in p.state.heat_intensity if not math.isnan(val)]
+        totalHeatIntensity = float(sum(all_heat_ints))
+        maxHeatIntensity = float(max(all_heat_ints)) if all_heat_ints else float("-inf")
+        totalDEHHCoolingCenter = float(sum(p.state.dehh_cumulative_cooling_center for p in agents))
+        totalDEHHHealthEffect = float(sum(p.state.dehh_cumulative_health_effect for p in agents))
 
         return RunLogData(
             imputation,
@@ -1134,6 +1471,12 @@ class HeatRiskModel2(CasmPop):
             countMovedToCoolingCenter,
             countExperiencedHealthEffect,
             countVisitsToCoolingCenter,
+            totalFMinutesCoolingCenter,
+            totalFMinutesHealthEffect,
+            totalHeatIntensity,
+            maxHeatIntensity,
+            totalDEHHCoolingCenter,
+            totalDEHHHealthEffect,
         )
 
     def get_total_heat_index(self) -> float:
@@ -1173,6 +1516,16 @@ class HeatRiskModel2(CasmPop):
             outdoorDewPoint=person.state.outdoor_dew_point_indices[0],
             outdoorTemperature=person.state.outdoor_temp_indices[0],
             heatIndex=person.state.heat_indices[0],
+            hourlyExcessHeatCoolingCenter=(
+                person.state.hourly_excess_heat_cooling_center[0]
+                if person.state.hourly_excess_heat_cooling_center
+                else float("nan")
+            ),
+            hourlyExcessHeatHealthEffect=(
+                person.state.hourly_excess_heat_health_effect[0]
+                if person.state.hourly_excess_heat_health_effect
+                else float("nan")
+            ),
             hrsWithHourlyExcessHeatCoolingCenter=person.state.hours_with_heh_cooling_center,
             hrsWithHourlyExcessHeatHealthEffect=person.state.hours_with_heh_health_effect,
             # probHeatEvent=person.state.prob_heat_event,
@@ -1182,10 +1535,28 @@ class HeatRiskModel2(CasmPop):
             hasACAccess=person.state.has_ac_access,
             heatEventPlaceId=person.state.heat_event_place_id,
             coolingCenterId=person.state.cooling_center_id,
+            fMinutesCumulativeCoolingCenter=person.state.f_minutes_cumulative_cooling_center,
+            fMinutesCumulativeHealthEffect=person.state.f_minutes_cumulative_health_effect,
+            fMinutesThisTickCoolingCenter=(
+                person.state.f_minutes_history_cooling_center[-1]
+                if person.state.f_minutes_history_cooling_center
+                else 0.0
+            ),
+            fMinutesThisTickHealthEffect=(
+                person.state.f_minutes_history_health_effect[-1]
+                if person.state.f_minutes_history_health_effect
+                else 0.0
+            ),
+            heatIntensity=(person.state.heat_intensity[0] if person.state.heat_intensity else float("nan")),
+            dehhCoolingCenter=person.state.dehh_cumulative_cooling_center,
+            dehhHealthEffect=person.state.dehh_cumulative_health_effect,
         )
 
     def log_run(self) -> None:
         """Log the run's data."""
+        if not self.write_run_log:
+            return
+
         # create a DataFrame for the agent logs
         logger.info("Logging run data...")
         run_log_df = pl.DataFrame([self.get_run_log_data()])
@@ -1210,6 +1581,9 @@ class HeatRiskModel2(CasmPop):
 
     def log_agents(self) -> None:
         """Log the agents' data."""
+        if not self.write_agent_tick_log:
+            return
+
         # create a DataFrame for the agent logs
         logger.info("Logging agents' data...")
 
@@ -1243,9 +1617,140 @@ class HeatRiskModel2(CasmPop):
         # Track total heat index after each tick
         self.get_total_heat_index()
 
+    def log_hourly_persons(self) -> None:
+        """Collect every agent's hourly rows and write a single Parquet file."""
+        if not self.write_agent_hourly_log:
+            return
+
+        logger.info("Writing hourly person log …")
+
+        imputation = int(self.params.get("Imputation", 1))
+        experiment_id = int(self.params.get("experiment_id", 1))
+
+        rows = []
+        for person in self.context.agents(agent_type=0):
+            # The deque holds the newest hour first, we can just extend the list
+            rows.extend(person.state.hourly_log)
+
+        if not rows:
+            logger.warning("No hourly rows to write.")
+            return
+
+        df = pl.DataFrame(rows).with_columns(
+            [
+                pl.lit(imputation).cast(pl.Int32).alias("Imputation"),
+                pl.lit(experiment_id).cast(pl.Int32).alias("experiment_id"),
+            ]
+        )
+        table = df.to_arrow()
+        # df = pl.DataFrame(rows)
+        # table = df.to_arrow()
+
+        # You can reuse the same `hourly_person_log_file` path you defined in __init__
+        # (or create a new one if you prefer).  Here we keep the same location.
+        partition_schema = pa.schema(
+            [
+                pa.field("Imputation", pa.int32()),
+                pa.field("experiment_id", pa.int32()),
+                pa.field("hour_of_day", pa.int32()),
+                pa.field("rank", pa.int32()),
+            ]
+        )
+        partitioning = HivePartitioning(partition_schema)
+
+        ds.write_dataset(
+            data=table,
+            base_dir=self.agent_hourly_log_file,  # e.g. logs/agents_hourly.parquet
+            format="parquet",
+            partitioning=partitioning,
+            existing_data_behavior="overwrite_or_ignore",
+        )
+        logger.info(f"Hourly person log written - {len(rows)} rows total.")
+
+    def log_end_run_persons(self) -> None:
+        """
+        Create a Parquet file that contains ONE compact row per agent
+        with the ten columns you specified.
+        """
+        if not self.write_end_run_person_log:
+            return
+
+        logger.info("Writing end of run person summary …")
+        imputation = int(self.params.get("Imputation", 1))
+        experiment_id = int(self.params.get("experiment_id", 1))
+
+        rows = []
+        for person in self.context.agents(agent_type=0):
+            # --------------------------------------------------------------
+            # 1. Compute the *average* heat index across the whole run
+            # --------------------------------------------------------------
+            # `person.state.heat_indices` holds the *most recent* values at the
+            # front of the deque.  We want the *average of all values ever
+            # recorded*, so we simply flatten the deque (order does not matter).
+            heat_vals = [v for v in person.state.heat_indices if not math.isnan(v)]
+            avg_heat = float(sum(heat_vals) / len(heat_vals)) if heat_vals else float("nan")
+
+            # --------------------------------------------------------------
+            # 2. Compute the *average* and *max* of the **hourly intensity**
+            # --------------------------------------------------------------
+            # `person.state.heat_intensity` was filled once per hour by the
+            # `_maybe_update_heat_intensity` helper (max heat index of that hour).
+            intensity_vals = [v for v in person.state.heat_intensity if not math.isnan(v)]
+            avg_intensity = float(sum(intensity_vals) / len(intensity_vals)) if intensity_vals else float("nan")
+            max_intensity = float(max(intensity_vals)) if intensity_vals else float("-inf")
+
+            # --------------------------------------------------------------
+            # 3. Pull the other fields directly from the agent state
+            # --------------------------------------------------------------
+            rows.append(
+                {
+                    "Imputation": imputation,
+                    "experiment_id": experiment_id,
+                    "agent_id": person.id,
+                    "hrsWithhourlyExcessHeatCoolingCenter": person.state.max_hours_with_heh_cooling_center,
+                    "hrsWithhourlyExcessHeatHealthEffect": person.state.max_hours_with_heh_health_effect,
+                    "fMinutesCumulativeCoolingCenter": person.state.f_minutes_cumulative_cooling_center,
+                    "fMinutesCumulativeHealthEffect": person.state.f_minutes_cumulative_health_effect,
+                    "averageHeatIndex": avg_heat,
+                    "averageHeatIntensity": avg_intensity,
+                    "maxHeatIntensity": max_intensity,
+                    "dehhCoolingCenter": person.state.dehh_cumulative_cooling_center,
+                    "dehhHealthEffect": person.state.dehh_cumulative_health_effect,
+                }
+            )
+        if not rows:
+            logger.warning("No agents found: end of run person file will be empty.")
+            return
+
+        df = pl.DataFrame(rows)
+        table = df.to_arrow()
+
+        # ------------------------------------------------------------------
+        # Write the table, we reuse the same base folder you already gave
+        # for run level logs, just a sub folder called “person_end”.
+        # ------------------------------------------------------------------
+        partition_schema = pa.schema([pa.field("Imputation", pa.int32()), pa.field("experiment_id", pa.int32())])
+        partitioning = HivePartitioning(partition_schema)
+        ds.write_dataset(
+            data=table,
+            base_dir=self.run_person_log_file,  # <-- defined in __init__ (see below)
+            format="parquet",
+            partitioning=partitioning,
+            existing_data_behavior="overwrite_or_ignore",
+        )
+        logger.info(f"End of run person summary written - {len(rows)} rows.")
+
     def at_end(self) -> None:
         logger.info("Logging final model run data...")
-        self.log_run()
+        # 1) Write the hour level file (all agents, all hours)
+        if self.write_agent_hourly_log:
+            self.log_hourly_persons()
+        # 2) End of run per agent file (your new compact table)
+        if self.write_end_run_person_log:
+            self.log_end_run_persons()
+        # 2) Write the regular run level summary (unchanged)
+        if self.write_run_log:
+            self.log_run()
 
 
 # Register HeatRiskModel
