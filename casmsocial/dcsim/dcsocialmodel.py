@@ -5,9 +5,13 @@ Created: 09 Dec 2024
 Defining the artificial social model for the Artificial Societies project
 """
 
+from dataclasses import dataclass
 from loguru import logger
 from mpi4py import MPI
-from repast4py import logging
+import polars as pl
+import pyarrow as pa
+import pyarrow.dataset as ds
+from pyarrow.dataset import HivePartitioning
 
 from casmsocial.casmpop import CasmPop
 from casmsocial.factory import Models
@@ -15,7 +19,18 @@ from casmsocial.person import Person, PersonData
 from casmsocial.place import Place, PlaceData
 
 
-# 1. Define a CasmPop-derived Class
+# 1. Define PersonLogData class
+@dataclass
+class PersonLogData:
+    tick: int
+    rank: int  # rank of the agent in the MPI communicator
+    agent_id: int
+    x: float
+    y: float
+    place_id: int
+
+
+# 2. Define a CasmPop-derived Class
 class ArtSocModel(CasmPop):
     """ArtSocModel class"""
 
@@ -29,15 +44,9 @@ class ArtSocModel(CasmPop):
         # register the person and place agent types
         logger.info(f"Registering person type (TYPE={Person.TYPE})...")
         CasmPop.setPersonClass(Person, PersonData)
-        # CasmPop.register_agent_type_config(
-        #     AgentTypeConfig(name="Person", agent_type=Person, agent_data_type=PersonData)
-        # )
 
         logger.info(f"Registering place type (TYPE={Place.TYPE})...")
         CasmPop.setPlaceClass(Place, PlaceData)
-        # CasmPop.register_agent_type_config(
-        #     AgentTypeConfig(name="Place", agent_type=Place, agent_data_type=PlaceData)
-        # )
 
         # register the activities
         CasmPop.register_planned_activity_names(["sp_hh_id", "sp_work_id", "sp_school_id"])
@@ -47,30 +56,51 @@ class ArtSocModel(CasmPop):
         super().build_context()
 
         # initialize the logging
-        self.agent_logger = logging.TabularLogger(
-            self.comm,
-            self.params["agent_log_file"],
-            [
-                "tick",
-                "agent_id",
-                "x",
-                "y",
-            ],
-        )
+        self.agent_log_file = self.params["agent_log_file"]
         self.log_agents()
 
+    def get_person_log_data(self, person: Person) -> PersonLogData:
+        """Get the agent data for logging."""
+        return PersonLogData(
+            tick=self.cal.tick,
+            rank=self.comm.Get_rank(),
+            agent_id=person.id,
+            x=person.pt.x,
+            y=person.pt.y,
+            place_id=person.currentPlaceID,
+        )
+
     def log_agents(self) -> None:
-        # tick = self.runner.schedule.tick
-        tick = self.cal.hour_of_day
+        # create a DataFrame for the agent logs
+        logger.info("Logging agents' data...")
 
-        for person in self.context.agents():
-            self.agent_logger.log_row(tick, person.id)
+        agent_log_df = pl.DataFrame([self.get_person_log_data(person) for person in self.context.agents(agent_type=0)])
 
-        self.agent_logger.write()
+        # convert the DataFrame to an Arrow Table
+        agent_log_table = agent_log_df.to_arrow()
+
+        # Define partition schema
+        partition_schema = pa.schema(
+            [
+                pa.field("tick", pa.int32()),
+                pa.field("rank", pa.int32()),
+            ]
+        )
+
+        # Set Hive-style partitioning
+        partitioning = HivePartitioning(partition_schema)
+
+        # Write dataset
+        ds.write_dataset(
+            data=agent_log_table,
+            base_dir=self.agent_log_file,
+            format="parquet",
+            partitioning=partitioning,
+            existing_data_behavior="overwrite_or_ignore",
+        )
 
     def at_end(self) -> None:
-        # self.data_set.close()
-        self.agent_logger.close()
+        super().at_end()
 
 
 # Register ArtSocModel
