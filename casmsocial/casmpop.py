@@ -5,7 +5,6 @@ Created: 02 Dec 2024
 Defining the CasmPop
 """
 
-import glob
 import os
 import pathlib
 import time
@@ -14,17 +13,19 @@ from datetime import datetime
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
-import duckdb
 import repast4py
+import repast4py.random
 from dotenv import load_dotenv
 from loguru import logger
 from mpi4py import MPI
+from numpy.random import Generator
 from repast4py import context as ctx
 from repast4py import schedule
 
 from casmsocial.activities import Act, Activities, Schedules
-from casmsocial.data_utilities import convert_to_int
+from casmsocial.data_utilities import check_if_table_exists, convert_to_int, quote_table_identifier
 from casmsocial.date_utilities import get_closest_monday, get_midnight
+from casmsocial.ducklake_utils import get_ducklake_connection
 from casmsocial.environment import Environment
 from casmsocial.factory import Models
 from casmsocial.message import Message
@@ -148,6 +149,40 @@ class CasmPop(Model):
 
     # class methods
     @classmethod
+    def get_default_parameters(cls) -> dict:
+        """Get the default parameters for the CasmPop model."""
+        return {
+            "model.name": "casmsocial.casmpop.CasmPop",
+            "places.file": None,
+            "persons.file": None,
+            "activities.file": None,
+            "contacts.file": None,
+            "start.datetime": None,
+            "duration.hours": None,
+            "timezone": None,
+            "time.step.minutes": None,
+            # parallel processing settings
+            "parallel.places.enabled": True,
+            "parallel.places.min_threshold": 50,  # Increased threshold for better performance
+            "parallel.places.max_workers": None,  # Use CPU count
+            "parallel.places.auto_update": False,  # Disabled by default to prevent overhead
+            "parallel.agents.enabled": False,  # Disabled due to measured performance loss
+            "parallel.agents.min_threshold": 1000000,  # Effectively disabled
+        }
+
+    @classmethod
+    def get_default_performance_parameters(cls) -> dict:
+        """Get the default performance parameters for the CasmPop model."""
+        return {
+            "parallel.places.enabled": True,
+            "parallel.places.min_threshold": 50,  # Increased threshold for better performance
+            "parallel.places.max_workers": None,  # Use CPU count
+            "parallel.places.auto_update": False,  # Disabled by default to prevent overhead
+            "parallel.agents.enabled": False,  # Disabled due to measured performance loss
+            "parallel.agents.min_threshold": 1000000,  # Effectively disabled
+        }
+
+    @classmethod
     def getPersonClass(cls) -> type[Person]:
         """Get the person class."""
         return cls.__personClass
@@ -258,33 +293,39 @@ class CasmPop(Model):
         # synchronization
         self.context = ctx.SharedContext(self.comm)
 
-        # set the data path
-        self._set_data_path()
+        # set the data resources (e.g. data paths, DuckLake connection, etc.)
+        self._set_data_resources()
 
-        # create a DuckDB connection for in-memory operations
-        self.conn = duckdb.connect(database=":memory:", read_only=False)
-        self.conn.execute(f"PRAGMA threads={os.cpu_count()}")
-        self.conn.execute(
-            """
-            INSTALL spatial;
-            LOAD spatial;
-            """
-        )
         self.queries = {}
 
         self.contact_map = {}
 
-    def _set_data_path(self) -> None:
+        # **note**
+        #
+        # If you are using the repast4py.parameters module, you can just
+        # include a 'random.seed' key in your YAML or JSON configuration file.
+        # The framework will automatically call init() for you during parameter
+        # initialization.
+
+    def _set_data_resources(self) -> None:
         # the data input path should be defined by $CASMSOCIAL_DATA_PATH
-        load_dotenv()
+        load_dotenv()  # load environment variables from .env file if it exists
+
+        # check if the data path is set and valid
         data_path = os.environ.get("CASMSOCIAL_DATA_PATH")
         if not data_path or not pathlib.Path(data_path).exists():
             raise MissingDataPathError(data_path)
         self.data_path = pathlib.Path(data_path)
 
+        ducklake_path = os.environ.get("CASMSOCIAL_DUCKLAKE_PATH")
+        if ducklake_path:
+            self.conn = get_ducklake_connection(pathlib.Path(ducklake_path))
+        else:
+            raise MissingDataPathError("CASMSOCIAL_DUCKLAKE_PATH")
+
     def _validate_and_set_required_params(self):
         """Validate and set required parameters."""
-        required_keys = ["places.file", "persons.file", "activities.file"]
+        required_keys = ["places.table", "persons.table", "activities.table"]
         for key in required_keys:
             if key not in self.params:
                 logger.error(f"Missing required parameter: {key}")
@@ -297,7 +338,7 @@ class CasmPop(Model):
             "duration.hours",
             "timezone",
             "time.step.minutes",
-            "contacts.file",
+            "contacts.table",
         ]
         for key in optional_keys:
             if key not in self.params:
@@ -447,74 +488,60 @@ class CasmPop(Model):
     def create_input_tables(self) -> None:
         """Load tables from the database."""
 
-        # create the places table
-        places_file = self.data_path / self.params["places.file"]
-        if not places_file.exists():
-            raise MissingRequiredParameterError("places.file")
-        logger.info(f"Loading places file {places_file}...")
-        self.conn.execute("CREATE TABLE IF NOT EXISTS places AS SELECT * FROM read_parquet(?)", [str(places_file)])
+        #  create the places table as a view from the ducklake table
+        places_table = self.params["places.table"]
+        if not check_if_table_exists(self.conn, places_table):
+            raise MissingRequiredParameterError("places.table")
+        logger.info(f"creating <places> view from {places_table}...")
+        places_identifier = quote_table_identifier(places_table)
+        self.conn.execute(
+            f"CREATE OR REPLACE VIEW places AS SELECT * FROM {places_identifier}"  # noqa: S608
+        )
 
         # create the persons table
         imputation = self.params.get("Imputation", None) if "Imputation" in self.params else None
-        persons_file = self.data_path / self.params["persons.file"]
-        if not persons_file.exists():
-            raise MissingRequiredParameterError("persons.file")
-        logger.info(f"Loading persons file {persons_file}...")
+        persons_table = self.params["persons.table"]
+        if not check_if_table_exists(self.conn, persons_table):
+            raise MissingRequiredParameterError("persons.table")
+        logger.info(f"creating <persons> view from {persons_table}...")
         if imputation is not None:
-            persons_files_path = str(persons_file / "*/*.parquet")
-            persons_files = glob.glob(persons_files_path)
-            logger.info(f"Using imputation {imputation} for persons file {persons_files_path}...")
+            logger.info(f"Using imputation {imputation} for <persons> table {persons_table}...")
+            persons_identifier = quote_table_identifier(persons_table)
             self.conn.execute(
-                """
-                CREATE OR REPLACE TABLE persons AS
-                SELECT
-                    -- Cast Hive partition column from VARCHAR to INTEGER
-                    CAST(Imputation AS INTEGER) AS Imputation,
-                    * EXCLUDE (Imputation)
-                FROM read_parquet(
-                    ?,          -- directory with Hive-style partitions
-                    hive_partitioning = 1       -- tell DuckDB to read dir names as columns
-
-                )
-                WHERE CAST(Imputation AS INTEGER) = ?;
-                """,
-                [persons_files, imputation],
+                f"""CREATE OR REPLACE VIEW persons AS
+                CREATE OR REPLACE VIEW persons AS
+                SELECT * FROM {persons_identifier}
+                WHERE Imputation = CAST(? AS INTEGER);
+                """,  # noqa: S608
+                [imputation],
             )
         else:
-            logger.info(f"Using persons file {persons_file}...")
+            logger.info(f"Using <persons> table {persons_table}...")
+            persons_identifier = quote_table_identifier(persons_table)
             self.conn.execute(
-                "CREATE TABLE IF NOT EXISTS persons AS SELECT * FROM read_parquet(?)",
-                [str(persons_file)],
+                f"CREATE OR REPLACE VIEW persons AS SELECT * FROM {persons_identifier}"  # noqa: S608
             )
 
         # create the activities table
-        activities_file = self.data_path / self.params["activities.file"]
-        if not activities_file.exists():
-            raise MissingRequiredParameterError("activities.file")
+        activities_table = self.params["activities.table"]
+        if not check_if_table_exists(self.conn, activities_table):
+            raise MissingRequiredParameterError("activities.table")
         if imputation is not None:
-            activities_files_path = str(activities_file / "*/*.parquet")
-            activities_files = glob.glob(activities_files_path)
-            logger.info(f"Using imputation {imputation} for activities file {activities_files_path}...")
+            logger.info(f"Using imputation {imputation} for activities table {activities_table}...")
+            activities_identifier = quote_table_identifier(activities_table)
             self.conn.execute(
-                """
-                CREATE OR REPLACE TABLE activities AS
-                SELECT
-                    -- Cast Hive partition column from VARCHAR to INTEGER
-                    CAST(Imputation AS INTEGER) AS Imputation,
-                    * EXCLUDE (Imputation)
-                FROM read_parquet(
-                    ?,          -- directory with Hive-style partitions
-                    hive_partitioning = 1       -- tell DuckDB to read dir names as columns
-
-                )
-                WHERE CAST(Imputation AS INTEGER) = ?;
-                """,
-                [activities_files, imputation],
+                f"""
+                CREATE OR REPLACE VIEW activities AS
+                SELECT * FROM {activities_identifier}
+                WHERE Imputation = CAST(? AS INTEGER);
+                """,  # noqa: S608
+                [imputation],
             )
         else:
-            logger.info(f"Using activities file {activities_file}...")
+            logger.info(f"Using activities table {activities_table}...")
+            activities_identifier = quote_table_identifier(activities_table)
             self.conn.execute(
-                "CREATE TABLE IF NOT EXISTS activities AS SELECT * FROM read_parquet(?)", [str(activities_file)]
+                f"CREATE OR REPLACE VIEW activities AS SELECT * FROM {activities_identifier}"  # noqa: S608
             )
 
         self.queries = {
@@ -536,18 +563,32 @@ class CasmPop(Model):
         }
 
         # create the contacts table if it exists
-        if "contacts.file" in self.params and self.params.get("contacts.file"):
-            contacts_file = self.data_path / self.params["contacts.file"]
-            if not contacts_file.exists():
-                raise MissingRequiredParameterError("contacts.file")
-            logger.info(f"Loading contacts file {contacts_file}...")
-            self.conn.execute(
-                "CREATE TABLE IF NOT EXISTS contacts AS SELECT * FROM read_parquet(?)", [str(contacts_file)]
-            )
+        if "contacts.table" in self.params and self.params.get("contacts.table"):
+            contacts_table = self.params["contacts.table"]
+            if not check_if_table_exists(self.conn, contacts_table):
+                print(f"Error: contacts table {contacts_table} does not exist in the database.")
+                raise MissingRequiredParameterError("contacts.table")
+            if imputation is not None:
+                logger.info(f"Using imputation {imputation} for contacts table {contacts_table}...")
+                contacts_identifier = quote_table_identifier(contacts_table)
+                self.conn.execute(
+                    f"""
+                    CREATE OR REPLACE VIEW contacts AS
+                    SELECT * FROM {contacts_identifier}
+                    WHERE Imputation = CAST(? AS INTEGER);
+                    """,  # noqa: S608
+                    [imputation],
+                )
+            else:
+                logger.info(f"Using contacts table {contacts_table}...")
+                contacts_identifier = quote_table_identifier(contacts_table)
+                self.conn.execute(
+                    f"CREATE OR REPLACE VIEW contacts AS SELECT * FROM {contacts_identifier}"  # noqa: S608
+                )
 
     def create_persons(
         self,
-        rng: repast4py.random.default_rng,
+        rng: Generator,
     ) -> None:
         """Create persons from the given file.
 

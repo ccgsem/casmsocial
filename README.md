@@ -58,7 +58,7 @@ There are three ways to run the model
 To run (option 1):
 
 ```bash
-% uv run mpirun -n 1 python -m casmsocial.runner config/casmsocial.yaml
+% uv run mpirun -n 1 python -m casmsocial config/casmsocial.yaml
 ```
 
 To run with the virtual environment (option 2):
@@ -66,7 +66,7 @@ To run with the virtual environment (option 2):
 ```bash
 % source ./.venv/bin/activate
 (casmsocial)
-(casmsocial) mpirun -n 1 python -m casmsocial.runner config/casmsocial.yaml
+(casmsocial) mpirun -n 1 python -m casmsocial config/casmsocial.yaml
 ....
 (casmsocial) deactivate
 %
@@ -79,7 +79,7 @@ docker run \
         -v `pwd`/config:/app/config \
         -v ~/Library/CloudStorage/Box-Box/Predicting_Population_Response/data:/app/data \
         --rm -it --entrypoint bash casmsocial
-root@d332db7567f5:/app# uv run mpirun -n 1 python -m casmsocial.runner config/casmsocial_wc.yaml
+root@d332db7567f5:/app# uv run mpirun -n 1 python -m casmsocial config/casmsocial_wc.yaml
 ```
 
 ## Code Quality

@@ -4,14 +4,8 @@ start.datetime: '2025-06-02 00:00:00'
 duration.hours: 168
 timezone: 'America/New_York'
 time.step.minutes: 60
-bbox:
-  crs: EPSG:32618
-  west: 272000.00
-  south: 4218000.00
-  east: 500500.00
-  north: 4385000.00
-places.file: 'data/processed/dmv_population_20241223/places_100.parquet'
-activities.file: 'data/processed/dmv_population_20241223/activities_100.parquet'
-contacts.file: 'data/processed/dmv_population_20241223/cn_100.parquet'
-persons.file: 'data/processed/dmv_population_20241223/persons_100.parquet'
+places.table: 'dmv_population_rti.places_100'
+activities.table: 'dmv_population_rti.activities_100'
+contacts.table: 'dmv_population_rti.contacts_100'
+persons.table: 'dmv_population_rti.persons_100'
 agent_log_file: 'output/agent_log.parquet'

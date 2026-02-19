@@ -3,6 +3,15 @@
 from dataclasses import dataclass, fields
 from typing import Optional, Union
 
+import duckdb
+
+
+class InvalidTableIdentifier(ValueError):
+    """Exception raised for invalid table identifiers."""
+
+    def __init__(self, table_name: str) -> None:
+        super().__init__(f"Invalid table identifier: {table_name}")
+
 
 # extract_dataclass_fields
 def extract_dataclass_attribute_names(dataclass: type[dataclass]) -> list[str]:
@@ -66,3 +75,55 @@ def convert_to_int(x: Union[int, str, None]) -> Optional[int]:
         return int(x)
     except ValueError:
         return None
+
+
+def check_if_table_exists(conn: duckdb.DuckDBPyConnection, table_name: str) -> bool:
+    table_name_parts = table_name.split(".")
+
+    # table_name includes an optional schema prepended to the table name
+    # after split should be no more than 2 parts
+    if len(table_name_parts) > 2:
+        return False
+
+    schema_name = "main"
+    if len(table_name_parts) == 2:
+        schema_name = table_name_parts[0]
+        table_name = table_name_parts[1]
+
+    result = conn.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM duckdb_tables
+            WHERE schema_name = ?
+            AND table_name = ?
+        );
+        """,
+        [schema_name, table_name],
+    ).fetchone()[0]
+    return result
+
+
+def quote_table_identifier(table_name: str) -> str:
+    """Safely quote a schema-qualified table identifier.
+
+    Only allows alphanumeric and underscore identifiers, with an optional
+    schema prefix. Returns a double-quoted identifier suitable for direct
+    SQL interpolation.
+    """
+    table_name_parts = table_name.split(".")
+
+    if len(table_name_parts) > 2:
+        raise InvalidTableIdentifier(table_name)
+
+    def _validate(part: str) -> str:
+        if not part:
+            raise InvalidTableIdentifier(table_name)
+        if not part.replace("_", "").isalnum() or part[0].isdigit():
+            raise InvalidTableIdentifier(table_name)
+        return f'"{part}"'
+
+    if len(table_name_parts) == 2:
+        return f"{_validate(table_name_parts[0])}.{_validate(table_name_parts[1])}"
+
+    return _validate(table_name_parts[0])
