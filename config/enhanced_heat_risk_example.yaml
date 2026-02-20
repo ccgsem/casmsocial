@@ -15,16 +15,16 @@ time.step.minutes: 15
 timezone: "America/New_York"
 
 # Input Data Files (Wake County paths relative to CASMSOCIAL_DATA_PATH)
-places.file: "data/processed/apache_flight/wake_county_30_v2/places.parquet"
-persons.file: "data/processed/wake_county_30_v2/abm_inputs/persons.parquet"
-activities.file: "data/processed/wake_county_30_v2/abm_inputs/activities.parquet"
+places.table: "wake_county_heat.places"
+persons.table: "wake_county_heat.persons"
+activities.table: "wake_county_heat.activities"
 Imputation: 1
 
 # Heat Risk Specific Data (actual Wake County schema)
-environment.file: "data/processed/apache_flight/wake_county_30_v2/weather_at_places.parquet"
-closest_cooling_center.file: "data/processed/apache_flight/wake_county_30_v2/closest_cooling_center.parquet"
-cooling_centers_experiment.file: "data/processed/wake_county_30_v2/abm_inputs_erl/experiments.parquet"
-lagged_weather.file: "data/processed/wake_county_30/abm_inputs/lagged_weather.parquet"
+environment.table: "wake_county_heat.weather_at_places"
+closest_cooling_center.table: "wake_county_heat.closest_cooling_center"
+cooling_centers_experiment.table: "wake_county_heat.experiments_erl"
+lagged_weather.table: "wake_county_heat.lagged_weather"
 experiment_id: 1
 
 # Output Files

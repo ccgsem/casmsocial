@@ -49,6 +49,8 @@ def get_ducklake_connection(ducklake_path: pathlib.Path) -> duckdb.DuckDBPyConne
     LOAD ducklake;
     INSTALL airport FROM community;
     LOAD airport;
+    INSTALL spatial;
+    LOAD spatial;
     """
     )
 
@@ -58,7 +60,7 @@ def get_ducklake_connection(ducklake_path: pathlib.Path) -> duckdb.DuckDBPyConne
         (DATA_PATH '{data_url}', OVERRIDE_DATA_PATH true);
     USE {database_name};
     """
-    print(query_string)
+
     conn.execute(query_string)
 
     return conn

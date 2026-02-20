@@ -23,7 +23,11 @@ from repast4py import context as ctx
 from repast4py import schedule
 
 from casmsocial.activities import Act, Activities, Schedules
-from casmsocial.data_utilities import check_if_table_exists, convert_to_int, quote_table_identifier
+from casmsocial.data_utilities import (
+    check_if_table_exists,
+    convert_to_int,
+    quote_table_identifier,
+)
 from casmsocial.date_utilities import get_closest_monday, get_midnight
 from casmsocial.ducklake_utils import get_ducklake_connection
 from casmsocial.environment import Environment
@@ -37,13 +41,28 @@ from casmsocial.sim_time import SimTime
 
 class MissingRequiredParameterError(Exception):
     def __init__(self, keys):
-        keys_str = ", ".join(str(k) for k in keys) if isinstance(keys, (list, tuple)) else str(keys)
+        if isinstance(keys, (list, tuple)):
+            keys_str = ", ".join(str(k) for k in keys)
+        else:
+            keys_str = str(keys)
         super().__init__(f"Missing required parameter(s): {keys_str}")
+
+
+class MissingRequiredTableError(Exception):
+    def __init__(self, keys):
+        if isinstance(keys, (list, tuple)):
+            keys_str = ", ".join(str(k) for k in keys)
+        else:
+            keys_str = str(keys)
+        super().__init__(f"Missing required table(s): {keys_str}")
 
 
 class InvalidTimeStepError(Exception):
     def __init__(self, value):
-        super().__init__(f"Invalid time step value: {value}. Time step must be an integer.")
+        super().__init__(
+            f"Invalid time step value: {value}. Time step must be "
+            "an integer."
+        )
 
 
 class InvalidTableNameError(Exception):
@@ -103,11 +122,6 @@ class SimEnvironment(Environment):
 
         # theModel.make_contacts(tick)
 
-    @DeprecationWarning
-    def get_values_at_place(self, place: Place) -> namedtuple:
-        """Get the values at the given coordinates."""
-        return None
-
 
 class CasmPop(Model):
     """
@@ -135,7 +149,8 @@ class CasmPop(Model):
     __personClass: type[Person] = Person
     __placeClass: type[Place] = Place
 
-    # list of planned activities (column names in the person file for activities)
+    # list of planned activities (column names in person file for
+    # activities)
     __planned_activity_names: ClassVar[list[str]] = []
 
     # list of activities
@@ -152,34 +167,34 @@ class CasmPop(Model):
     def get_default_parameters(cls) -> dict:
         """Get the default parameters for the CasmPop model."""
         return {
-            "model.name": "casmsocial.casmpop.CasmPop",
-            "places.file": None,
-            "persons.file": None,
-            "activities.file": None,
-            "contacts.file": None,
+            "model.name": cls.__module__ + "." + cls.__name__,
+            "random.seed": 42,
+            "places.table": None,
+            "persons.table": None,
+            "activities.table": None,
+            "contacts.table": None,
             "start.datetime": None,
             "duration.hours": None,
             "timezone": None,
             "time.step.minutes": None,
-            # parallel processing settings
-            "parallel.places.enabled": True,
-            "parallel.places.min_threshold": 50,  # Increased threshold for better performance
-            "parallel.places.max_workers": None,  # Use CPU count
-            "parallel.places.auto_update": False,  # Disabled by default to prevent overhead
-            "parallel.agents.enabled": False,  # Disabled due to measured performance loss
-            "parallel.agents.min_threshold": 1000000,  # Effectively disabled
         }
 
     @classmethod
     def get_default_performance_parameters(cls) -> dict:
-        """Get the default performance parameters for the CasmPop model."""
+        """Get the default performance parameters for the CasmPop model.
+
+        These parameters are used to configure the parallel processing
+        settings for places and agents. The default settings are based on
+        performance testing and may be adjusted based on the specific model
+        and hardware configuration.
+        """
         return {
             "parallel.places.enabled": True,
-            "parallel.places.min_threshold": 50,  # Increased threshold for better performance
+            "parallel.places.min_threshold": 50,
             "parallel.places.max_workers": None,  # Use CPU count
-            "parallel.places.auto_update": False,  # Disabled by default to prevent overhead
-            "parallel.agents.enabled": False,  # Disabled due to measured performance loss
-            "parallel.agents.min_threshold": 1000000,  # Effectively disabled
+            "parallel.places.auto_update": False,
+            "parallel.agents.enabled": False,
+            "parallel.agents.min_threshold": 1000000,
         }
 
     @classmethod
@@ -188,7 +203,9 @@ class CasmPop(Model):
         return cls.__personClass
 
     @classmethod
-    def setPersonClass(cls, person_class: type[Person], person_data) -> None:
+    def setPersonClass(
+        cls, person_class: type[Person], person_data
+    ) -> None:
         """Set the person class."""
         person_class.setPersonDataClass(person_data)
         cls.__personClass = person_class
@@ -199,13 +216,17 @@ class CasmPop(Model):
         return cls.__placeClass
 
     @classmethod
-    def setPlaceClass(cls, place_class: type[Place], place_data) -> None:
+    def setPlaceClass(
+        cls, place_class: type[Place], place_data
+    ) -> None:
         """Set the place class."""
         place_class.setPlaceDataClass(place_data)
         cls.__placeClass = place_class
 
     @classmethod
-    def register_planned_activity_names(cls, planned_activity_names: list[str]) -> None:
+    def register_planned_activity_names(
+        cls, planned_activity_names: list[str]
+    ) -> None:
         """Register planned activities."""
         cls.__planned_activity_names = planned_activity_names
 
@@ -228,7 +249,9 @@ class CasmPop(Model):
     def get_activities_data_type(cls) -> namedtuple:
         """Get the activities data type."""
         if not cls.__activities_data_type:
-            cls.__activities_data_type = namedtuple("ActivitiesDataclass", cls.get_activity_names())
+            cls.__activities_data_type = namedtuple(
+                "ActivitiesDataclass", cls.get_activity_names()
+            )
         return cls.__activities_data_type
 
     @classmethod
@@ -265,11 +288,13 @@ class CasmPop(Model):
 
         self._validate_and_set_required_params()
         self._set_optional_params_with_defaults()
-        self._remove_deprecated_params()
         self._compute_ticks()
         self._configure_parallel_processing()
 
-        logger.info(f"Rank {self.rank} starting CasmPop with params: {self.params}")
+        logger.info(
+            f"Rank {self.rank} starting CasmPop with params: "
+            f"{self.params}"
+        )
 
         # create the schedule
         self.runner = schedule.init_schedule_runner(self.comm)
@@ -279,7 +304,9 @@ class CasmPop(Model):
         self.runner.schedule_end_event(self.at_end)
 
         # set the start datetime and timezone
-        start_datetime = datetime.strptime(self.params["start.datetime"], "%Y-%m-%d %H:%M:%S")
+        start_datetime = datetime.strptime(
+            self.params["start.datetime"], "%Y-%m-%d %H:%M:%S"
+        )
         tz = ZoneInfo(self.params["timezone"])
         start_datetime = start_datetime.replace(tzinfo=tz)
 
@@ -342,7 +369,10 @@ class CasmPop(Model):
         ]
         for key in optional_keys:
             if key not in self.params:
-                logger.warning(f"Optional parameter {key} not found, using default value.")
+                logger.warning(
+                    f"Optional parameter {key} not found, using "
+                    f"default value."
+                )
                 self.params[key] = None
 
         self._set_default_start_datetime()
@@ -352,7 +382,8 @@ class CasmPop(Model):
 
     def _set_default_start_datetime(self):
         if self.params["start.datetime"] is None:
-            self.params["start.datetime"] = get_midnight(get_closest_monday(datetime.now())).strftime(
+            midnight = get_midnight(get_closest_monday(datetime.now()))
+            self.params["start.datetime"] = midnight.strftime(
                 "%Y-%m-%d %H:%M:%S"
             )
 
@@ -370,41 +401,69 @@ class CasmPop(Model):
             return
         if isinstance(self.params["time.step.minutes"], str):
             try:
-                self.params["time.step.minutes"] = int(self.params["time.step.minutes"])
+                self.params["time.step.minutes"] = int(
+                    self.params["time.step.minutes"]
+                )
             except ValueError as err:
-                logger.error(f"Invalid time step value: {self.params['time.step.minutes']}")
-                raise InvalidTimeStepError(self.params["time.step.minutes"]) from err
-        if "time.step.minutes" in self.params and isinstance(self.params["time.step.minutes"], str):
+                logger.error(
+                    f"Invalid time step value: "
+                    f"{self.params['time.step.minutes']}"
+                )
+                raise InvalidTimeStepError(
+                    self.params["time.step.minutes"]
+                ) from err
+        if (
+            "time.step.minutes" in self.params
+            and isinstance(self.params["time.step.minutes"], str)
+        ):
             try:
-                self.params["time.step.minutes"] = int(self.params["time.step.minutes"])
+                self.params["time.step.minutes"] = int(
+                    self.params["time.step.minutes"]
+                )
             except ValueError as err:
-                logger.error(f"Invalid time step value: {self.params.get('time.step', None)}")
-                raise InvalidTimeStepError(self.params.get("time.step.minutes", None)) from err
+                logger.error(
+                    f"Invalid time step value: "
+                    f"{self.params.get('time.step', None)}"
+                )
+                raise InvalidTimeStepError(
+                    self.params.get("time.step.minutes", None)
+                ) from err
         if self.params["time.step.minutes"] <= 0:
             logger.error(
-                f"Invalid time step value: {self.params['time.step.minutes']}. Time step must be a positive integer."
+                f"Invalid time step value: "
+                f"{self.params['time.step.minutes']}. "
+                f"Time step must be a positive integer."
             )
-            raise InvalidTimeStepError(self.params["time.step.minutes"])
+            raise InvalidTimeStepError(
+                self.params["time.step.minutes"]
+            )
         if 1440 % self.params["time.step.minutes"] != 0:
             logger.error(
-                f"Invalid time step value: {self.params['time.step.minutes']}. "
-                "Time step must be a divisor of 1440 (the number of minutes in a day)."
+                f"Invalid time step value: "
+                f"{self.params['time.step.minutes']}. Time step must be "
+                f"a divisor of 1440 (minutes in a day)."
             )
-            raise InvalidTimeStepError(self.params["time.step.minutes"])
-
-    def _remove_deprecated_params(self):
-        """Remove deprecated parameters from the params dictionary."""
-        deprecated_keys = ["stop.at", "steps.per.day"]
-        for key in deprecated_keys:
-            if key in self.params:
-                logger.warning(f"Deprecated parameter {key} found, please update your configuration.")
-                del self.params[key]
+            raise InvalidTimeStepError(
+                self.params["time.step.minutes"]
+            )
 
     def _compute_ticks(self):
-        if "time.step.minutes" not in self.params or "duration.hours" not in self.params:
-            logger.error("Missing required parameters: time.step.minutes or duration.hours")
-            raise MissingRequiredParameterError(["time.step.minutes", "duration.hours"])
-        self.params["ticks"] = int(self.params["duration.hours"] * 60 / self.params["time.step.minutes"])
+        if (
+            "time.step.minutes" not in self.params
+            or "duration.hours" not in self.params
+        ):
+            logger.error(
+                "Missing required parameters: time.step.minutes or "
+                "duration.hours"
+            )
+            raise MissingRequiredParameterError(
+                ["time.step.minutes", "duration.hours"]
+            )
+        self.params["ticks"] = int(
+            self.params["duration.hours"]
+            * 60
+            / self.params["time.step.minutes"]
+        )
 
     def _configure_parallel_processing(self):
         """Configure parallel processing settings."""
@@ -412,37 +471,42 @@ class CasmPop(Model):
         if "parallel.places.enabled" not in self.params:
             self.params["parallel.places.enabled"] = True
         if "parallel.places.min_threshold" not in self.params:
-            self.params["parallel.places.min_threshold"] = 50  # Increased threshold for better performance
+            self.params["parallel.places.min_threshold"] = 50
         if "parallel.places.max_workers" not in self.params:
-            self.params["parallel.places.max_workers"] = None  # Use CPU count
+            self.params["parallel.places.max_workers"] = None
 
-        # Option to disable automatic place updates during simulation steps
+        # Disable automatic place updates during simulation steps
         if "parallel.places.auto_update" not in self.params:
-            self.params["parallel.places.auto_update"] = False  # Disabled by default to prevent overhead
+            self.params["parallel.places.auto_update"] = False
 
-        # Agent processing: parallel processing disabled due to performance degradation
-        # Thread overhead (0.81x speedup) exceeded benefits for lightweight agent operations
+        # Agent processing: parallel disabled due to performance degradation
+        # Thread overhead exceeded benefits for lightweight operations
         if "parallel.agents.enabled" not in self.params:
-            self.params["parallel.agents.enabled"] = False  # Disabled due to measured performance loss
+            self.params["parallel.agents.enabled"] = False
         if "parallel.agents.min_threshold" not in self.params:
-            self.params["parallel.agents.min_threshold"] = 1000000  # Effectively disabled
+            self.params["parallel.agents.min_threshold"] = 1000000
 
     def build_context(self) -> None:
         """
-        Initialize population
+        Initialize population.
 
-        This method initializes the population by creating the places and agents
-        from the input data files.
-
-        The method performs the following steps:"""
+        This method initializes the population by creating the places and
+        agents from the input data files.
+        """
 
         # register the agent types (derived classes should set agent types)
 
-        # create SharedContext consisting of all of the places in this model
+        # create SharedContext consisting of all places in this model
         # Use enhanced projection with configurable parallel processing
-        parallel_enabled = self.params.get("parallel.places.enabled", True)
-        parallel_min_threshold = self.params.get("parallel.places.min_threshold", 50)
-        parallel_max_workers = self.params.get("parallel.places.max_workers", None)
+        parallel_enabled = self.params.get(
+            "parallel.places.enabled", True
+        )
+        parallel_min_threshold = self.params.get(
+            "parallel.places.min_threshold", 50
+        )
+        parallel_max_workers = self.params.get(
+            "parallel.places.max_workers", None
+        )
 
         self.places_proj = PlacesProjectionV2(
             "places_projection",
@@ -456,25 +520,36 @@ class CasmPop(Model):
         # create the input tables
         self.create_input_tables()
 
-        # initialize the places (note: already checked if "places.file" is in params)
+        # initialize the places
+        # (note: already checked if "places.file" is in params)
         self.create_places()
 
         local_places = self.places_proj.get_local_places()
-        logger.info(f"rank {self.rank}: number of local places={len(local_places)}")
+        logger.info(
+            f"rank {self.rank}: number of local "
+            f"places={len(local_places)}"
+        )
         # add geometry to the places table
         # self.conn.execute(self.queries["add_geometries"])
 
         # contact_map is a dict of personID->{placeID->[personID]}
-        # i.e. it is a map of personIDs to a list of contacted persons at each
-        # place
-        if "contacts.file" in self.params and self.params.get("contacts.file"):
-            logger.info(f"Loading contact file {self.params['contacts.file']}...")
+        # i.e. it is a map of personIDs to a list of contacted persons
+        # at each place
+        if "contacts.table" in self.params and self.params.get(
+            "contacts.table"
+        ):
+            logger.info(
+                f"Loading contact file "
+                f"{self.params['contacts.table']}..."
+            )
 
             self.contact_map = self.create_contacts()
         else:
-            logger.warning("Warning: contacts file not specified.")
+            logger.warning("Warning: contacts table not specified.")
 
-        logger.debug(f"rank {self.rank}: contacts size={len(self.contact_map)}")
+        logger.debug(
+            f"rank {self.rank}: contacts size={len(self.contact_map)}"
+        )
 
         self.rng = repast4py.random.default_rng
 
@@ -482,108 +557,159 @@ class CasmPop(Model):
         # self.person_id_map = {}
         self.create_persons(self.rng)
 
-        result = self.conn.execute(self.queries["get_tables"]).fetchall()
-        logger.info(f"rank {self.rank}: DuckDB tables after initialization: {result}")
+        result = self.conn.execute(
+            self.queries["get_tables"]
+        ).fetchall()
+        logger.info(
+            f"rank {self.rank}: DuckDB tables after "
+            f"initialization: {result}"
+        )
 
     def create_input_tables(self) -> None:
         """Load tables from the database."""
 
         #  create the places table as a view from the ducklake table
-        places_table = self.params["places.table"]
+        places_table = self.params.get("places.table")
         if not check_if_table_exists(self.conn, places_table):
-            raise MissingRequiredParameterError("places.table")
-        logger.info(f"creating <places> view from {places_table}...")
-        places_identifier = quote_table_identifier(places_table)
+            raise MissingRequiredTableError(places_table)
+        logger.info(f"creating <places> view from <{places_table}>...")
         self.conn.execute(
-            f"CREATE OR REPLACE VIEW places AS SELECT * FROM {places_identifier}"  # noqa: S608
+            "CREATE OR REPLACE VIEW places AS "
+            "SELECT * FROM "
+            f"{quote_table_identifier(places_table)}"  # noqa: S608
         )
 
         # create the persons table
-        imputation = self.params.get("Imputation", None) if "Imputation" in self.params else None
-        persons_table = self.params["persons.table"]
+        imputation = (
+            self.params.get("Imputation", None)
+            if "Imputation" in self.params
+            else None
+        )
+        persons_table = self.params.get("persons.table")
         if not check_if_table_exists(self.conn, persons_table):
-            raise MissingRequiredParameterError("persons.table")
-        logger.info(f"creating <persons> view from {persons_table}...")
+            raise MissingRequiredTableError(persons_table)
+        logger.info(
+            f"creating <persons> view from <{persons_table}>..."
+        )
         if imputation is not None:
-            logger.info(f"Using imputation {imputation} for <persons> table {persons_table}...")
-            persons_identifier = quote_table_identifier(persons_table)
+            logger.info(
+                f"Using imputation {imputation} for <persons> "
+                f"table <{persons_table}>..."
+            )
+            persons_identifier = quote_table_identifier(
+                persons_table
+            )
+            print(f"persons_identifier: {persons_identifier}")
             self.conn.execute(
                 f"""CREATE OR REPLACE VIEW persons AS
-                CREATE OR REPLACE VIEW persons AS
-                SELECT * FROM {persons_identifier}
-                WHERE Imputation = CAST(? AS INTEGER);
-                """,  # noqa: S608
-                [imputation],
+                SELECT * FROM {persons_table}
+                WHERE Imputation = {imputation};
+                """  # noqa: S608
             )
+            print("Created persons view with imputation filter.")
         else:
-            logger.info(f"Using <persons> table {persons_table}...")
-            persons_identifier = quote_table_identifier(persons_table)
+            logger.info(
+                f"Using <persons> table {persons_table}..."
+            )
+            persons_identifier = quote_table_identifier(
+                persons_table
+            )
             self.conn.execute(
-                f"CREATE OR REPLACE VIEW persons AS SELECT * FROM {persons_identifier}"  # noqa: S608
+                f"CREATE OR REPLACE VIEW persons AS "
+                f"SELECT * FROM {persons_identifier}"  # noqa: S608
             )
 
         # create the activities table
-        activities_table = self.params["activities.table"]
+        activities_table = self.params.get("activities.table")
         if not check_if_table_exists(self.conn, activities_table):
-            raise MissingRequiredParameterError("activities.table")
+            raise MissingRequiredTableError(activities_table)
         if imputation is not None:
-            logger.info(f"Using imputation {imputation} for activities table {activities_table}...")
-            activities_identifier = quote_table_identifier(activities_table)
+            logger.info(
+                f"Using imputation {imputation} for activities "
+                f"table {activities_table}..."
+            )
+            activities_identifier = quote_table_identifier(
+                activities_table
+            )
             self.conn.execute(
                 f"""
                 CREATE OR REPLACE VIEW activities AS
                 SELECT * FROM {activities_identifier}
-                WHERE Imputation = CAST(? AS INTEGER);
-                """,  # noqa: S608
-                [imputation],
+                WHERE Imputation = {imputation};
+                """  # noqa: S608
             )
         else:
-            logger.info(f"Using activities table {activities_table}...")
-            activities_identifier = quote_table_identifier(activities_table)
+            logger.info(
+                f"Using activities table {activities_table}..."
+            )
+            activities_identifier = quote_table_identifier(
+                activities_table
+            )
             self.conn.execute(
-                f"CREATE OR REPLACE VIEW activities AS SELECT * FROM {activities_identifier}"  # noqa: S608
+                f"CREATE OR REPLACE VIEW activities AS "
+                f"SELECT * FROM {activities_identifier}"  # noqa: S608
             )
 
         self.queries = {
             "get_tables": "SHOW TABLES",
             "add_geometries": """
                 -- 1. Load the spatial extension
-                -- This is necessary to use ST_Point and other geospatial functions.
+                -- This is necessary to use ST_Point and other geospatial
+                -- functions.
                 INSTALL spatial;
                 LOAD spatial;
                 -- 2. Add the 'location' column of type GEOMETRY
-                -- GEOMETRY is a generic spatial type that can store points, lines, polygons, etc.
+                -- GEOMETRY is a generic spatial type that can store points,
+                --lines, polygons, etc.
                 ALTER TABLE places ADD COLUMN location GEOMETRY;
                 -- 3. Populate the 'location' column
-                -- ST_Point expects (X, Y) which translates to (longitude, latitude) for geographic points.
+                -- ST_Point expects (X, Y) which translates to (longitude,
+                -- latitude) for geographic points.
                 UPDATE places
-                -- Ensure that longitude and latitude are in the correct order for ST_Point
+                -- Ensure that longitude and latitude are in the correct order
+                -- for ST_Point
                 SET location = ST_Point(longitude, latitude);
                 """,
         }
 
         # create the contacts table if it exists
-        if "contacts.table" in self.params and self.params.get("contacts.table"):
-            contacts_table = self.params["contacts.table"]
+        if "contacts.table" in self.params and self.params.get(
+            "contacts.table"
+        ):
+            contacts_table = self.params.get("contacts.table")
             if not check_if_table_exists(self.conn, contacts_table):
-                print(f"Error: contacts table {contacts_table} does not exist in the database.")
-                raise MissingRequiredParameterError("contacts.table")
+                logger.error(
+                    f"Error: contacts table {contacts_table} "
+                    "does not exist in the database."
+                )
+                raise MissingRequiredTableError(
+                    contacts_table
+                )
             if imputation is not None:
-                logger.info(f"Using imputation {imputation} for contacts table {contacts_table}...")
-                contacts_identifier = quote_table_identifier(contacts_table)
+                logger.info(
+                    f"Using imputation {imputation} for "
+                    f"contacts table {contacts_table}..."
+                )
+                contacts_identifier = quote_table_identifier(
+                    contacts_table
+                )
                 self.conn.execute(
                     f"""
                     CREATE OR REPLACE VIEW contacts AS
                     SELECT * FROM {contacts_identifier}
-                    WHERE Imputation = CAST(? AS INTEGER);
-                    """,  # noqa: S608
-                    [imputation],
+                    WHERE Imputation = {imputation};
+                    """  # noqa: S608
                 )
             else:
-                logger.info(f"Using contacts table {contacts_table}...")
-                contacts_identifier = quote_table_identifier(contacts_table)
+                logger.info(
+                    f"Using contacts table {contacts_table}..."
+                )
+                contacts_identifier = quote_table_identifier(
+                    contacts_table
+                )
                 self.conn.execute(
-                    f"CREATE OR REPLACE VIEW contacts AS SELECT * FROM {contacts_identifier}"  # noqa: S608
+                    f"CREATE OR REPLACE VIEW contacts AS "
+                    f"SELECT * FROM {contacts_identifier}"  # noqa: S608
                 )
 
     def create_persons(
@@ -593,43 +719,53 @@ class CasmPop(Model):
         """Create persons from the given file.
 
         Args:
-            personsFile (pathlib.Path): The persons file.
-            schedulesList (list[dict]): The list of activities maps.
             rng: The random number generator.
         """
         # get the person type
         personType = self.getPersonClass()
 
         # Create the activities
-        #  - schedulesList is a list of dict of personID->Schedule object
+        #  - schedulesList is a list of dict of personID->Schedule
         schedulesList = self.create_activities()
         if not schedulesList or len(schedulesList) == 0:
             logger.error("Error: no activities found.")
             raise MissingRequiredParameterError("activities.file")
-        logger.info(f"rank {self.rank}: weekday activitiesMap size={len(schedulesList[0])}")
+        logger.info(
+            f"rank {self.rank}: weekday activitiesMap "
+            f"size={len(schedulesList[0])}"
+        )
 
-        # get the activities map, which is a dict of personID->Activities object
-        # Currently, we assume that there is only one schedule in the list,
-        # which is the weekday schedule. If there are multiple schedules, we
-        # will need to handle them differently.
+        # get the activities map, which is a dict of
+        # personID->Activities object. Currently, we assume that there is
+        # only one schedule in the list, which is the weekday schedule.
+        # If there are multiple schedules, we will need to handle them
+        # differently.
         activitiesMap = schedulesList[0] if schedulesList else {}
 
-        # get the activities data type: namedtuple to store places for activities
+        # get the activities data type: namedtuple to store places
+        # for activities
         activitiesDataType = self.get_activities_data_type()
 
-        # get the planned_activity_names, which are the fields in the person file that
-        # contain the place ids (e.g. 'sp_work_id', 'sp_school_id', etc.)
+        # get the planned_activity_names, which are the fields in
+        # the person file that contain the place ids
+        # (e.g. 'sp_work_id', 'sp_school_id', etc.)
         planned_activity_names = self.get_planned_activity_names()
 
-        # get the activity names (list should be at least as long as planned_activity_names)
+        # get the activity names
+        # (list should be as long as planned_activity_names)
         activity_names = self.get_activity_names()
 
-        # get the alternate activity names (activities not in the planned activities)
-        alternate_activities_names = activity_names[len(planned_activity_names) :]
+        # get alternate activity names
+        # (activities not in planned activities)
+        alternate_activities_names = activity_names[
+            len(planned_activity_names):
+        ]
 
         # load the persons from the file
         # table = pq.read_table(personsFile)
-        table = self.conn.execute("SELECT * FROM persons").fetch_arrow_table()
+        table = self.conn.execute(
+            "SELECT * FROM persons"
+        ).fetch_arrow_table()
 
         for batch in table.to_batches():
             for row in zip(*batch.columns):
@@ -640,12 +776,16 @@ class CasmPop(Model):
                 personID = p["sp_id"]
 
                 # TODO: add tests for this
-                #  - activities_data = [ p[x] for x in planned_activity_names ]
+                #  - activities_data = [p[x] for x in
+                #    planned_activity_names]
                 #  - all places should be in placeMap
                 #  - the first place is a household
-                #  - how to handle the case where the person is not on this rank?
-                #  - how to handle the case where the person is not in the activitiesMap?
-                places = [convert_to_int(p[x]) for x in planned_activity_names]
+                #  - handle person not on this rank?
+                #  - handle person not in activitiesMap?
+                places = [
+                    convert_to_int(p[x])
+                    for x in planned_activity_names
+                ]
 
                 for place in places:
                     if isinstance(place, str):
@@ -656,21 +796,30 @@ class CasmPop(Model):
 
                 household = self.places_proj.lookup_place(hhId)
                 if not household:
-                    logger.error(f"Error: No household found for {p}")
+                    logger.error(
+                        f"Error: No household found for {p}"
+                    )
                     continue
 
                 rank = household.rank
 
                 if rank != self.rank:
-                    logger.error(f"Error: Person {personID} tagged on rank={rank} is not on this rank.")
+                    logger.error(
+                        f"Error: Person {personID} tagged on "
+                        f"rank={rank} is not on this rank."
+                    )
                     continue
 
                 # Person
-                #  - activitiesMap: schedulesList[0] is a dict of personID->Activities object
+                #  - activitiesMap: schedulesList[0] is a dict of
+                #    personID->Activities object
 
                 # if personID not in activitiesMap:
                 if personID not in activitiesMap:
-                    logger.error(f"Error: No activities found for person {personID}.")
+                    logger.error(
+                        f"Error: No activities found for "
+                        f"person {personID}."
+                    )
                     continue
 
                 # get the schedule for the person
@@ -679,15 +828,19 @@ class CasmPop(Model):
                 schedules = Schedules()
                 schedules.addActivities(activities)
 
-                # create an empty list for weekend activities (if not already present)
+                # create an empty list for weekend activities (if not already
+                # present)
                 weekend_activities = Activities(personID, "weekend", ())
                 schedules.addActivities(weekend_activities)
 
-                # add alternate places for alternate activities that are not
-                # already in the person's schedule.  These alternate activities
-                # are initially empty and may be determined during the simulation.
+                # add alternate places for alternate activities
+                # not already in the person's schedule. These
+                # alternate activities are initially empty and may
+                # be determined during the simulation.
                 for activity_name in alternate_activities_names:
-                    activities = Activities(personID, activity_name, ())
+                    activities = Activities(
+                        personID, activity_name, ()
+                    )
                     schedules.addActivities(activities)
 
                 # add alternate activities to the person's places
@@ -719,7 +872,9 @@ class CasmPop(Model):
         placeDataType = placeType.getPlaceDataClass()
 
         # Create the places table
-        table = self.conn.execute("SELECT * FROM places").fetch_arrow_table()
+        table = self.conn.execute(
+            "SELECT * FROM places"
+        ).fetch_arrow_table()
 
         for batch in table.to_batches():
             for row in zip(*batch.columns):
@@ -731,7 +886,9 @@ class CasmPop(Model):
                 place = placeType(place_record, placeDataType)
                 self.places_proj.add_place(place)
 
-    def create_places_from_file(self, placeTypeIndex: int, placesFile: pathlib.Path) -> None:
+    def create_places_from_file(
+        self, placeTypeIndex: int, placesFile: pathlib.Path
+    ) -> None:
         """
         Create places from the given file.
 
@@ -743,22 +900,31 @@ class CasmPop(Model):
         # get the place type
         logger.info(f"Creating places from {placesFile}...")
 
-        placeType = self.get_agent_type_configs()[Place.TYPE].agent_type
-        placeDataType = self.get_agent_type_configs()[Place.TYPE].agent_data_type
+        placeType = self.get_agent_type_configs()[
+            Place.TYPE
+        ].agent_type
+        placeDataType = self.get_agent_type_configs()[
+            Place.TYPE
+        ].agent_data_type
         table_name = "places"
         print(
-            f"Creating places from {placesFile}:"
-            f" with data type {placeDataType.__name__}"
-            f" and table name {table_name}"
+            f"Creating places from {placesFile}: "
+            f"with data type {placeDataType.__name__} "
+            f"and table name {table_name}"
         )
         # table = pq.read_table(placesFile)
-        table = self.conn.execute("SELECT * FROM places").fetch_arrow_table()
+        table = self.conn.execute(
+            "SELECT * FROM places"
+        ).fetch_arrow_table()
 
         # Register the PyArrow table as a DuckDB view
         self.conn.register("my_temp_view", table)
 
         # Use that view in your CREATE TABLE AS query
-        # query = f'CREATE OR REPLACE TABLE "{table_name}" AS SELECT * FROM my_temp_view'
+        # query = f"""
+        #     CREATE OR REPLACE TABLE "{table_name}" AS
+        #     SELECT * FROM my_temp_view'
+        # """
         # self.conn.execute(query)
 
         # Optionally fetch the result (if needed)
@@ -776,25 +942,38 @@ class CasmPop(Model):
 
     def create_activities(self) -> list[dict[int, list[int]]]:
         """Create activities from the given file.
-        This method reads the activities file and creates a mapping of person IDs
-        to their activities. Activities are grouped in schedules for each person.
-        The default schedule is for weekdays, but weekend activities can be added later.
+
+        This method reads the activities file and creates a mapping of
+        person IDs to their activities. Activities are grouped in
+        schedules for each person. The default schedule is for weekdays,
+        but weekend activities can be added later.
 
         Returns:
-            list[dict[int, list[int]]]: A list containing a single dictionary
-            mapping person IDs to their activities for a weekday.
+            list[dict[int, list[int]]]: A list containing a single
+            dictionary mapping person IDs to their activities for a
+            weekday.
         """
         # activitiesMap looks like:
         # personID -> Activities object
         act_map = {}
 
-        # This should be the most eficient way to extract the data via pyarrow
-        # See https://stackoverflow.com/questions/53157495/fastest-way-to-iterate-pyarrow-table/55633193#55633193
-        table = self.conn.execute("SELECT * FROM activities").fetch_arrow_table()
+        # This should be the most efficient way to extract the data via
+        # pyarrow. See
+        # https://stackoverflow.com/questions/53157495/...
+        table = self.conn.execute(
+            "SELECT * FROM activities"
+        ).fetch_arrow_table()
 
         for batch in table.to_batches():
             d = batch.to_pydict()
-            for sp_persons_id, activity_id, activity_seq, start, end, act_place_id in zip(
+            for (
+                sp_persons_id,
+                activity_id,
+                activity_seq,
+                start,
+                end,
+                act_place_id,
+            ) in zip(
                 d["sp_persons_id"],
                 d["activity_id"],
                 d["activity_sequence"],
@@ -803,10 +982,26 @@ class CasmPop(Model):
                 d["sp_act_id"],
             ):
                 if sp_persons_id not in act_map:
-                    act_map[sp_persons_id] = [Act(sp_persons_id, activity_id, activity_seq, start, end, act_place_id)]
+                    act_map[sp_persons_id] = [
+                        Act(
+                            sp_persons_id,
+                            activity_id,
+                            activity_seq,
+                            start,
+                            end,
+                            act_place_id,
+                        )
+                    ]
                 else:
                     act_map[sp_persons_id].append(
-                        Act(sp_persons_id, activity_id, activity_seq, start, end, act_place_id)
+                        Act(
+                            sp_persons_id,
+                            activity_id,
+                            activity_seq,
+                            start,
+                            end,
+                            act_place_id,
+                        )
                     )
 
         return [act_map]
@@ -814,24 +1009,29 @@ class CasmPop(Model):
     def create_contacts(self) -> dict[int, dict[int, int]]:
         # contactMap looks like:
         # personID -> { hour_of_day -> [ otherPersonIDs ] }
-        # dict
         contactMap = {}
 
         # with open(contactFile, 'r', newline='') as f:
         #     contacts = DictReader(f)
         # table = pq.read_table(contactFile)
-        table = self.conn.execute("SELECT * FROM contacts").fetch_arrow_table()
+        table = self.conn.execute(
+            "SELECT * FROM contacts"
+        ).fetch_arrow_table()
 
         for batch in table.to_batches():
             d = batch.to_pydict()
-            for source, target, hour_of_the_day in zip(d["from_person"], d["to_person"], d["hour"]):
+            for source, target, hour_of_the_day in zip(
+                d["from_person"], d["to_person"], d["hour"]
+            ):
                 if source not in contactMap:
                     contactMap[source] = {}
 
                 if hour_of_the_day not in contactMap[source]:
                     contactMap[source][hour_of_the_day] = []
 
-                contactMap[source][hour_of_the_day].append(target)
+                contactMap[source][hour_of_the_day].append(
+                    target
+                )
 
         return contactMap
 
@@ -848,8 +1048,8 @@ class CasmPop(Model):
             f"minute {self.cal.minute_of_day}"
         )
 
-        # Automatic place updates are disabled - they caused performance degradation
-        # The OptimizedHeatRiskModel handles its own optimizations more efficiently
+        # Automatic place updates are disabled - they caused
+        # performance degradation
 
         # 2025-02-26 jcline: this is a hack to get the person_id_map
         # self.get_local_ids()
@@ -867,10 +1067,13 @@ class CasmPop(Model):
 
         # self.send_messages_between_agents()
 
-        # Process person agents (TYPE=0) with optimized sequential processing
-        # Parallel processing caused 19% performance degradation (0.81x speedup) due to
-        # thread overhead exceeding benefits for lightweight agent operations
-        person_agents = list(self.context.agents(agent_type=0))  # Only person agents
+        # Process person agents (TYPE=0) with optimized sequential
+        # processing. Parallel processing caused performance degradation
+        # due to thread overhead exceeding benefits for lightweight
+        # agent operations
+        person_agents = list(
+            self.context.agents(agent_type=0)
+        )  # Only person agents
 
         if len(person_agents) > 0:
             agent_start_time = time.time()
@@ -883,9 +1086,14 @@ class CasmPop(Model):
 
             # Log performance for large datasets
             if self.rank == 0 and len(person_agents) >= 1000:
-                agents_per_second = len(person_agents) / agent_processing_time if agent_processing_time > 0 else 0
+                agents_per_second = (
+                    len(person_agents) / agent_processing_time
+                    if agent_processing_time > 0
+                    else 0
+                )
                 logger.info(
-                    f"Person agent processing: {len(person_agents):,} agents, "
+                    f"Person agent processing: "
+                    f"{len(person_agents):,} agents, "
                     f"{agent_processing_time:.2f}s, "
                     f"rate: {agents_per_second:,.0f} agents/sec"
                 )
@@ -911,7 +1119,10 @@ class CasmPop(Model):
 
     def add_people_to_places(self) -> None:
         for person in self.context.agents():
-            logger.debug(f"Adding person {person.id} to place {person.state.place_id}")
+            logger.debug(
+                f"Adding person {person.id} to place "
+                f"{person.state.place_id}"
+            )
             # if person.state.place_id not in self.place_map:
             #     logger.error(f"Person {person.id} has no place.")
             #     return
@@ -919,12 +1130,16 @@ class CasmPop(Model):
 
     def make_contacts(self, tick) -> None:
         for person in self.context.agents():
-            personsContactMap = self.contact_map.get(person.id)
+            personsContactMap = self.contact_map.get(
+                person.id
+            )
             if not personsContactMap:  # if person has no network
                 # logger.debug(f"Person {person.id} has no network.")
                 continue
 
-            contactIDs = personsContactMap.get(person.state.place_id)
+            contactIDs = personsContactMap.get(
+                person.state.place_id
+            )
             if not contactIDs:
                 # logger.debug(
                 #     f"Person {person.id} has no contacts at "
@@ -933,7 +1148,8 @@ class CasmPop(Model):
 
             contacts = []
             for contactID in contactIDs:
-                contacts.append(self.context.agent(self.person_id_map[contactID]))
+                uid = self.person_id_map[contactID]
+                contacts.append(self.context.agent(uid))
             person.make_contacts(contacts)
 
     def send_messages_between_agents(self) -> None:
@@ -968,44 +1184,73 @@ class CasmPop(Model):
 
                 for message in messages:
                     recipient = message.recipient
-                    # recipient_person = self.context.agent(self.person_id_map[recipient])
-                    if recipient in self.person_id_map:  # message to local person
-                        recipient_uid = self.person_id_map[recipient]
-                        logger.debug(f"Message from {message.sender} to {person_cache[recipient_uid].state}:")
-                        person_cache[recipient_uid].receive_message(message)
+                    # recipient_person = self.context.agent(
+                    #     self.person_id_map[recipient]
+                    # )
+                    if recipient in self.person_id_map:
+                        # message to local person
+                        recipient_uid = self.person_id_map[
+                            recipient
+                        ]
+                        logger.debug(
+                            f"Message from {message.sender} to "
+                            f"{person_cache[recipient_uid].state}:"
+                        )
+                        person_cache[
+                            recipient_uid
+                        ].receive_message(message)
                     else:  # message to remote person
-                        logger.debug(f"Message from {message.sender} to {recipient}:")
+                        logger.debug(
+                            f"Message from {message.sender} to "
+                            f"{recipient}:"
+                        )
 
                         # get remote person ID
                         remote_person_ids.append(recipient)
 
                         # create message to send to other rank
                         message_to_send = message
-                        message_to_send.recipients = [recipient]
-                        messages_to_send.append(message_to_send)
+                        message_to_send.recipients = [
+                            recipient
+                        ]
+                        messages_to_send.append(
+                            message_to_send
+                        )
 
             else:
                 logger.debug(f"Person {person.id} has no messages.")
                 continue
 
         # Exchange messages between processors
-        all_messages = self.exchange_messages(remote_person_ids, messages_to_send)
+        all_messages = self.exchange_messages(
+            remote_person_ids, messages_to_send
+        )
 
         # Step 2: Deliver messages from remote processors
         for message in all_messages:
             recipient = message.recipient
             if recipient in self.person_id_map:
                 recipient_uid = self.person_id_map[recipient]
-                logger.debug(f"Remote message from {message.sender} to " f"{person_cache[recipient_uid].state}:")
-                person_cache[recipient_uid].receive_message(message)
+                logger.debug(
+                    f"Remote message from {message.sender} to "
+                    f"{person_cache[recipient_uid].state}:"
+                )
+                person_cache[recipient_uid].receive_message(
+                    message
+                )
             else:
-                logger.debug(f"Remote message from {message.sender} to {recipient} not delivered")
+                logger.debug(
+                    f"Remote message from {message.sender} to "
+                    f"{recipient} not delivered"
+                )
 
         # Step 3: Process messages
         for person in agents:
             person.process_messages()
 
-    def get_remote_person_id_map(self, remote_person_ids: list[int]) -> dict[int, int]:
+    def get_remote_person_id_map(
+        self, remote_person_ids: list[int]
+    ) -> dict[int, int]:
         """Get the remote person ID map."""
         remote_person_id_map = {}
 
@@ -1020,24 +1265,37 @@ class CasmPop(Model):
         received_buffers = self.comm.alltoall(send_buffers)
         send_buffers = [[] for _ in range(self.size)]  # reset send_buffers
 
-        all_messages = [msg for buffer in received_buffers for msg in buffer]
+        all_messages = [
+            msg for buffer in received_buffers for msg in buffer
+        ]
         for person_id in all_messages:
             if person_id in self.person_id_map:
                 for rank in range(self.size):
                     if rank != self.rank:
-                        person_uid = self.person_id_map[person_id]
-                        msg = {"id": person_id, "uid": person_uid}
+                        person_uid = self.person_id_map[
+                            person_id
+                        ]
+                        msg = {
+                            "id": person_id,
+                            "uid": person_uid,
+                        }
                         send_buffers[rank].append(msg)
 
         # 3. Send remote person ID->UID map to other ranks
         received_buffers = self.comm.alltoall(send_buffers)
-        all_messages = [msg for buffer in received_buffers for msg in buffer]
+        all_messages = [
+            msg for buffer in received_buffers for msg in buffer
+        ]
         for msg in all_messages:
             remote_person_id_map[msg["id"]] = msg["uid"]
 
         return remote_person_id_map
 
-    def exchange_messages(self, remote_person_ids: list[int], messages_to_send: list[Message]) -> list[Message]:
+    def exchange_messages(
+        self,
+        remote_person_ids: list[int],
+        messages_to_send: list[Message],
+    ) -> list[Message]:
         """Exchange messages between processors using MPI."""
         remote_person_id_map = self.get_remote_person_id_map(remote_person_ids)
 
@@ -1086,6 +1344,8 @@ Models.add_model(CasmPop.__module__ + "." + CasmPop.__name__, CasmPop)
 
 
 # utility functions
-def update_activities_data(activities_data: namedtuple, **kwargs) -> namedtuple:
+def update_activities_data(
+    activities_data: namedtuple, **kwargs
+) -> namedtuple:
     """Update the activities data."""
     return activities_data._replace(**kwargs)

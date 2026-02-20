@@ -34,6 +34,25 @@ class PersonLogData:
 class ArtSocModel(CasmPop):
     """ArtSocModel class"""
 
+    @classmethod
+    def get_default_parameters(cls) -> dict:
+        """Get the default parameters for the ArtSocModel."""
+        params = super().get_default_parameters()
+        params.update(
+            {
+                "start.datetime": '2025-06-02 00:00:00',
+                "duration.hours": 168,
+                "timezone": 'America/New_York',
+                "time.step.minutes": 60,
+                "places.table": 'dmv_population_rti.places_100',
+                "activities.table": 'dmv_population_rti.activities_100',
+                "contacts.table": 'dmv_population_rti.contacts_100',
+                "persons.table": 'dmv_population_rti.persons_100',
+                "agent_log_file": 'output/agent_log.parquet',
+            }
+        )
+        return params
+
     def __init__(self, comm: MPI.Intracomm, params: dict):
         """Constructor for the ArtSocModel class"""
         super().__init__(comm, params)
@@ -49,7 +68,9 @@ class ArtSocModel(CasmPop):
         CasmPop.setPlaceClass(Place, PlaceData)
 
         # register the activities
-        CasmPop.register_planned_activity_names(["sp_hh_id", "sp_work_id", "sp_school_id"])
+        CasmPop.register_planned_activity_names(
+            ["sp_hh_id", "sp_work_id", "sp_school_id"]
+        )
         CasmPop.register_activity_names(["home", "work", "school"])
 
         logger.info("Now running initialize population for CasmPop...")
@@ -74,7 +95,12 @@ class ArtSocModel(CasmPop):
         # create a DataFrame for the agent logs
         logger.info("Logging agents' data...")
 
-        agent_log_df = pl.DataFrame([self.get_person_log_data(person) for person in self.context.agents(agent_type=0)])
+        agent_log_df = pl.DataFrame(
+            [
+                self.get_person_log_data(person)
+                for person in self.context.agents(agent_type=0)
+            ]
+        )
 
         # convert the DataFrame to an Arrow Table
         agent_log_table = agent_log_df.to_arrow()
@@ -104,4 +130,6 @@ class ArtSocModel(CasmPop):
 
 
 # Register ArtSocModel
-Models.add_model(ArtSocModel.__module__ + "." + ArtSocModel.__name__, ArtSocModel)
+Models.add_model(
+    ArtSocModel.__module__ + "." + ArtSocModel.__name__, ArtSocModel
+)
