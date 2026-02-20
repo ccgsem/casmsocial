@@ -142,7 +142,9 @@ def partition_with_metispy(
 
     logger.info(f"Network partitioned and saved to {output_dir}")
     logger.info(f"Ready for MPI execution with {n_ranks} processes")
-    logger.info(f"Use: mpirun -n {n_ranks} python -m casmsocial config/enhanced_heat_risk_mpi.yaml")
+    logger.info(
+        f"Use: mpirun -n {n_ranks} python -m wake_county_heat_risk config/enhanced_heat_risk_mpi.yaml  # see wake-county-heat-risk repo"
+    )
 
 
 def main(

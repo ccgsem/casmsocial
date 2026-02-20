@@ -223,8 +223,10 @@ def main(
     partition_persons(persons_file_path, partition_map, spid_to_graphid, output_dir_path, imputation, num_partitions)
 
     logger.info("Partitioning complete! Ready for MPI execution.")
-    logger.info("Use config: config/enhanced_heat_risk_mpi.yaml")
-    logger.info(f"Run with: mpirun -n {num_partitions} python -m casmsocial config/enhanced_heat_risk_mpi.yaml")
+    logger.info("Use config: config/enhanced_heat_risk_mpi.yaml  (see wake-county-heat-risk repo)")
+    logger.info(
+        f"Run with: mpirun -n {num_partitions} python -m wake_county_heat_risk config/enhanced_heat_risk_mpi.yaml"
+    )
 
 
 if __name__ == "__main__":
