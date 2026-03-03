@@ -1,11 +1,11 @@
-model.name: 'casmsocial.dcsim.dcsocialmodel.ArtSocModel'
+model.name: 'casmsocial.casmpop.CasmPop'
 random.seed: 42
 start.datetime: '2025-06-02 00:00:00'
 duration.hours: 168
 timezone: 'America/New_York'
 time.step.minutes: 60
-places.table: 'dmv_population_rti.places_100'
-activities.table: 'dmv_population_rti.activities_100'
-contacts.table: 'dmv_population_rti.contacts_100'
-persons.table: 'dmv_population_rti.persons_100'
-agent_log_file: 'output/agent_log.parquet'
+places.table: 'rti_synth_pop_v2_dmv_100.places'
+activities.table: 'rti_synth_pop_v2_dmv_100.activities'
+contacts.table: 'rti_synth_pop_v2_dmv_100.contacts'
+persons.table: 'rti_synth_pop_v2_dmv_100.persons'
+observers.agent_log_file: 'output/agent_log.parquet'

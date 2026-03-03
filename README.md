@@ -22,23 +22,15 @@ make install
 
 To build a Docker image for `casmsocial`:
 
-* on the MITRE network
-
-    ```bash
-    docker build -t casmsocial . -f Dockerfile-mitre
-    ```
-
-* off the MITRE network
-
-    ```bash
-    docker build -t casmsocial . -f Dockerfile
-    ```
+```bash
+docker build -t casmsocial . -f Dockerfile
+```
 
 ## Launch the modeling environment:
 First create the virtual environments with
 
 ```bash
-% python -m venv .vent
+% python -m venv .venv
 ```
 
 To launch the virtualenv, run
@@ -53,7 +45,6 @@ There are three ways to run the model
 
 1. Run from the command line using `uv run`
 2. Run fromm the command line using virtualenv
-3. Run from
 
 To run (option 1):
 
@@ -79,7 +70,7 @@ docker run \
         -v `pwd`/config:/app/config \
         -v ~/Library/CloudStorage/Box-Box/Predicting_Population_Response/data:/app/data \
         --rm -it --entrypoint bash casmsocial
-root@d332db7567f5:/app# uv run mpirun -n 1 python -m casmsocial config/casmsocial_wc.yaml
+root@d332db7567f5:/app# uv run mpirun -n 1 python -m casmsocial config/casmsocial.yaml
 ```
 
 ## Code Quality
