@@ -61,7 +61,7 @@ make docs-test           # Test documentation build
 
 **Model Interface:**
 - Abstract `Model` class defines `start()` and `step()` methods
-- Concrete models in subdirectories: `dcsim/`, `heat_risk/`
+- Concrete models in subdirectories: `citysim/`
 - Models use MPI communicators for distributed simulation
 
 **Data Architecture:**

@@ -8,10 +8,10 @@ Note: Heat risk models have been moved to the ``wake-county-heat-risk`` package.
 """
 
 # Re-export the most commonly used entry points.
-from casmsocial.dcsim.dcsocialmodel import ArtSocModel
+from casmsocial.citysim.citysocialmodel import CitySocialModel
 from casmsocial.sim_time import SimTime
 
 __all__ = [
-    "ArtSocModel",
+    "CitySocialModel",
     "SimTime",
 ]

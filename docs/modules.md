@@ -1,1 +1,1 @@
-::: casmsocial.foo
+::: casmsocial.casmpop

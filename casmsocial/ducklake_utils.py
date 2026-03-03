@@ -9,28 +9,13 @@ import pathlib
 import duckdb
 
 
-def add_ducklake_insights_secrets(conn: duckdb.DuckDBPyConnection, ducklake_path: pathlib.Path) -> None:
-    """Add DuckLake insights secrets to the DuckDB connection.
-    Args:
-        conn (duckdb.DuckDBPyConnection): DuckDB connection object.
-    """
-    ducklake_path.mkdir(parents=True, exist_ok=True)
-    # catalog_path = "".join(["ducklake:sqlite:", str(ducklake_path / "metadata.sqlite")])
-    # database_name = "insights_ducklake"
-    # data_url = "".join(["file://", str(ducklake_path / "storage")])
-    conn.execute(
-        """
-    CREATE SECRET IF NOT EXISTS insights_ducklake_secret (
-        TYPE ducklake,
-        METADATA_PATH )
-        VALUES ('file://{}/metadata.sqlite');"""
-    )
-
-
-def get_ducklake_connection(ducklake_path: pathlib.Path) -> duckdb.DuckDBPyConnection:
+def get_ducklake_connection(
+    ducklake_path: pathlib.Path, database_name: str = "insights_ducklake"
+) -> duckdb.DuckDBPyConnection:
     """Get a DuckLake connection using a context manager.
     Args:
         ducklake_path (pathlib.Path): Path to the DuckLake database directory.
+        database_name (str): Name of the DuckLake database to attach.
     Returns:
         duckdb.DuckDBPyConnection: DuckDB connection object.
     """
@@ -38,7 +23,6 @@ def get_ducklake_connection(ducklake_path: pathlib.Path) -> duckdb.DuckDBPyConne
     ducklake_path.mkdir(exist_ok=True)
     catalog_path = "".join(["ducklake:sqlite:", str(ducklake_path / "metadata.sqlite")])
     data_url = "".join(["file://", str(ducklake_path / "storage")])
-    database_name = "insights_ducklake"
 
     # create duckdb connection
     conn = duckdb.connect()
