@@ -1,0 +1,63 @@
+Use `docs/agent_communication_design.md` as the source of truth and implement the first working version of the communication architecture.
+
+Goals:
+- Preserve the existing `Person` and `Place` implementations where practical.
+- Add a `CommunicationManager` that handles:
+  - local delivery
+  - remote one-way delivery
+  - remote two-way delivery with acknowledgments
+  - MPI rank-based buffering and exchange
+- Rebuild place membership after movement each tick.
+- Ensure person ownership follows the rank of the current place.
+- Keep communication decision-making on `Person` and transport / routing in `CommunicationManager`.
+
+Concrete tasks:
+1. Read `docs/agent_communication_design.md`.
+2. Inspect the existing codebase for:
+   - `Person`
+   - `Place`
+   - movement logic
+   - rank migration / synchronization logic
+   - current model step lifecycle
+3. Integrate the scaffold in `model/communication/` or the nearest existing package structure.
+4. Add the following data structures:
+   - `MessageIntent`
+   - `CommMessage`
+   - `AckMessage`
+5. Extend `Person` with:
+   - `place_id`
+   - `inbox`
+   - `pending_acks`
+   - `decide_messages(model)`
+   - `receive(msg)`
+   - `process_inbox(model)`
+6. Keep `Place` lightweight. Do not turn it into the inter-rank transport layer.
+7. Add a model-level place-membership index and refresh it after movement.
+8. Implement communication in phases:
+   - movement
+   - synchronization / migration
+   - place-membership rebuild
+   - message intent collection
+   - local delivery
+   - remote message exchange
+   - ack generation
+   - ack exchange
+   - inbox processing
+9. Add a minimal multi-rank example runnable with `mpiexec`.
+10. Add tests for:
+   - local same-place delivery
+   - remote one-way delivery
+   - remote two-way delivery with ack receipt
+
+Implementation constraints:
+- Do not use a repast4py network projection as the primary transport layer in this first implementation.
+- Use explicit remote message buffering and MPI exchange.
+- Keep the code modular and typed.
+- Prefer small, composable methods over large monolithic step functions.
+- Add docstrings and TODO notes where integration with the existing codebase is still needed.
+
+Expected output:
+- Working implementation integrated into the project structure
+- Minimal runnable example
+- Basic tests
+- Notes on any assumptions made while mapping the scaffold into the current codebase

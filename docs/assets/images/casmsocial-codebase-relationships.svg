@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1100" viewBox="0 0 1600 1100" role="img" aria-labelledby="title desc">
+  <title id="title">CASM social simulation codebase relationships</title>
+  <desc id="desc">Layered architecture diagram showing relationships between casmsocial, wake-county-heat-risk, casmdb, casmservice, synthetic-population, and living-populations-wb.</desc>
+  <defs>
+    <marker id="arrow-hard" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#6f7678"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#4d79dc"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#8e44ad"/>
+    </marker>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+      .sans { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .layer { fill: #858585; font-size: 21px; font-weight: 600; }
+      .label { fill: #333333; font-size: 20px; }
+      .small { fill: #333333; font-size: 18px; }
+      .title-blue { fill: #4d79dc; font-size: 26px; font-weight: 700; }
+      .title-orange { fill: #e8761a; font-size: 26px; font-weight: 700; }
+      .title-purple { fill: #8e44ad; font-size: 26px; font-weight: 700; }
+      .title-teal { fill: #2b8a8a; font-size: 24px; font-weight: 700; }
+      .title-gray { fill: #6f7678; font-size: 23px; font-weight: 700; }
+      .ok { fill: #18a957; font-size: 19px; }
+      .bad { fill: #d93025; font-size: 19px; }
+      .muted { fill: #6c7375; font-size: 17px; }
+      .edge { fill: none; stroke: #6f7678; stroke-width: 2.5; marker-end: url(#arrow-hard); }
+      .edge-soft { fill: none; stroke: #8e44ad; stroke-width: 2.5; stroke-dasharray: 9 7; marker-end: url(#arrow-purple); }
+      .edge-blue { fill: none; stroke: #4d79dc; stroke-width: 2.5; stroke-dasharray: 9 7; marker-end: url(#arrow-blue); }
+      .edge-light { fill: none; stroke: #9aaeb0; stroke-width: 2.2; stroke-dasharray: 7 7; marker-end: url(#arrow-hard); }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="1100" fill="#ffffff"/>
+  <rect x="70" y="35" width="1460" height="1010" rx="16" fill="#f7f7f7" stroke="#d5d5d5" stroke-width="2"/>
+
+  <text x="95" y="75" class="layer sans">LAYER</text>
+  <line x1="270" y1="105" x2="1470" y2="105" stroke="#d7d7d7" stroke-width="2" stroke-dasharray="7 7"/>
+  <line x1="270" y1="300" x2="1470" y2="300" stroke="#d7d7d7" stroke-width="2" stroke-dasharray="7 7"/>
+  <line x1="270" y1="475" x2="1470" y2="475" stroke="#d7d7d7" stroke-width="2" stroke-dasharray="7 7"/>
+  <line x1="270" y1="700" x2="1470" y2="700" stroke="#d7d7d7" stroke-width="2" stroke-dasharray="7 7"/>
+  <line x1="270" y1="860" x2="1470" y2="860" stroke="#d7d7d7" stroke-width="2" stroke-dasharray="7 7"/>
+
+  <text x="95" y="205" class="layer mono">Data Products</text>
+  <text x="95" y="395" class="layer mono">Registry</text>
+  <text x="95" y="590" class="layer mono">Simulation</text>
+  <text x="95" y="785" class="layer mono">Orchestration</text>
+  <text x="95" y="950" class="layer mono">Outputs / APIs</text>
+
+  <rect x="310" y="135" width="330" height="135" rx="12" fill="#ffffff" stroke="#2b8a8a" stroke-width="4"/>
+  <text x="475" y="172" text-anchor="middle" class="title-teal mono">synthetic-population</text>
+  <text x="475" y="206" text-anchor="middle" class="label mono">population + ETL pipeline</text>
+  <text x="475" y="234" text-anchor="middle" class="small mono">persons · activities · places</text>
+  <text x="475" y="260" text-anchor="middle" class="bad mono">× No Dockerfile / CI</text>
+
+  <rect x="680" y="145" width="250" height="115" rx="12" fill="#ffffff" stroke="#9aaeb0" stroke-width="4"/>
+  <text x="805" y="182" text-anchor="middle" class="title-gray mono">DuckLake</text>
+  <text x="805" y="215" text-anchor="middle" class="label mono">wake_county_heat</text>
+  <text x="805" y="242" text-anchor="middle" class="small mono">model input tables</text>
+
+  <rect x="970" y="135" width="330" height="135" rx="12" fill="#ffffff" stroke="#2b8a8a" stroke-width="4"/>
+  <text x="1135" y="172" text-anchor="middle" class="title-teal mono">living-populations-wb</text>
+  <text x="1135" y="206" text-anchor="middle" class="label mono">notebooks + workbench</text>
+  <text x="1135" y="234" text-anchor="middle" class="small mono">analysis · validation · prep</text>
+  <text x="1135" y="260" text-anchor="middle" class="bad mono">× No Dockerfile / CI</text>
+
+  <rect x="625" y="330" width="360" height="130" rx="12" fill="#ffffff" stroke="#4d79dc" stroke-width="4"/>
+  <text x="805" y="370" text-anchor="middle" class="title-blue mono">casmdb</text>
+  <text x="805" y="405" text-anchor="middle" class="label mono">DuckDB · FastAPI :8000</text>
+  <text x="805" y="433" text-anchor="middle" class="small mono">ScenarioDB · REST API</text>
+  <text x="805" y="456" text-anchor="middle" class="ok mono">✓ Dockerfile · CI</text>
+
+  <rect x="300" y="520" width="390" height="160" rx="12" fill="#ffffff" stroke="#e8761a" stroke-width="4"/>
+  <text x="495" y="558" text-anchor="middle" class="title-orange mono">casmsocial</text>
+  <text x="495" y="594" text-anchor="middle" class="label mono">repast4py · MPI</text>
+  <text x="495" y="623" text-anchor="middle" class="label mono">ABM framework · CLI</text>
+  <text x="495" y="652" text-anchor="middle" class="ok mono">✓ Dockerfile · CI</text>
+  <text x="495" y="675" text-anchor="middle" class="small mono">PyPI: casmsocial</text>
+
+  <rect x="880" y="520" width="440" height="160" rx="12" fill="#ffffff" stroke="#e8761a" stroke-width="4"/>
+  <text x="1100" y="558" text-anchor="middle" class="title-orange mono">wake-county-heat-risk</text>
+  <text x="1100" y="594" text-anchor="middle" class="label mono">extends casmsocial</text>
+  <text x="1100" y="623" text-anchor="middle" class="label mono">HeatRiskModel2 · policies</text>
+  <text x="1100" y="652" text-anchor="middle" class="ok mono">✓ Dockerfile · CI</text>
+  <text x="1100" y="675" text-anchor="middle" class="small mono">local dev path dep on casmsocial</text>
+
+  <rect x="610" y="730" width="455" height="130" rx="12" fill="#ffffff" stroke="#8e44ad" stroke-width="4"/>
+  <text x="837" y="770" text-anchor="middle" class="title-purple mono">casmservice</text>
+  <text x="837" y="805" text-anchor="middle" class="label mono">ZeroC Ice RPC · Solara GUI</text>
+  <text x="837" y="833" text-anchor="middle" class="small mono">casmserver · casmgui · Slice IDL</text>
+  <text x="837" y="856" text-anchor="middle" class="ok mono">✓ Dockerfile · CI</text>
+
+  <rect x="330" y="900" width="270" height="90" rx="10" fill="#ffffff" stroke="#9aaeb0" stroke-width="3"/>
+  <text x="465" y="935" text-anchor="middle" class="title-gray mono">LLM provider APIs</text>
+  <text x="465" y="966" text-anchor="middle" class="small mono">Anthropic / policy adapters</text>
+
+  <rect x="1080" y="900" width="300" height="90" rx="10" fill="#ffffff" stroke="#9aaeb0" stroke-width="3"/>
+  <text x="1230" y="935" text-anchor="middle" class="title-gray mono">Run outputs</text>
+  <text x="1230" y="966" text-anchor="middle" class="small mono">Parquet · DuckLake observability</text>
+
+  <path class="edge" d="M 640 202 C 655 202, 665 202, 680 202"/>
+  <path class="edge" d="M 970 202 C 955 202, 945 202, 930 202"/>
+
+  <path class="edge-light" d="M 740 260 C 640 350, 555 430, 515 520"/>
+  <path class="edge-light" d="M 885 260 C 985 350, 1065 430, 1085 520"/>
+
+  <path class="edge" d="M 880 600 L 690 600"/>
+  <text x="785" y="588" text-anchor="middle" class="title-orange mono" font-size="18">extends</text>
+
+  <path class="edge-blue" d="M 610 520 C 620 495, 650 480, 690 460"/>
+  <path class="edge-blue" d="M 1045 520 C 1010 490, 970 472, 930 460"/>
+
+  <path class="edge" d="M 805 730 L 805 460"/>
+  <path class="edge-soft" d="M 760 730 C 690 700, 625 680, 590 680"/>
+  <path class="edge-soft" d="M 1025 730 C 1160 755, 1340 730, 1320 625"/>
+
+  <path class="edge-light" d="M 495 680 C 495 760, 480 835, 465 900"/>
+
+  <path class="edge" d="M 620 680 C 650 885, 930 965, 1080 945"/>
+  <path class="edge" d="M 1080 935 C 1010 910, 960 875, 925 860"/>
+
+  <rect x="1190" y="320" width="300" height="175" rx="10" fill="#ffffff" stroke="#d0d0d0" stroke-width="2"/>
+  <text x="1340" y="358" text-anchor="middle" class="label sans" font-weight="700">Legend</text>
+  <line x1="1220" y1="386" x2="1265" y2="386" stroke="#4f5556" stroke-width="3"/>
+  <text x="1275" y="393" class="small mono">hard dependency</text>
+  <line x1="1220" y1="418" x2="1265" y2="418" stroke="#8e44ad" stroke-width="3" stroke-dasharray="8 6"/>
+  <text x="1275" y="425" class="small mono">script / runtime</text>
+  <text x="1220" y="459" class="ok mono">✓ Dockerfile / CI</text>
+  <text x="1220" y="486" class="bad mono">× no Dockerfile / CI</text>
+</svg>

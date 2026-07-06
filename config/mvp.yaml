@@ -1,0 +1,61 @@
+# MVP smoke scenario.
+# Run with one MPI rank, for example:
+# uv run mpirun -n 1 python -m casmsocial config/mvp.yaml
+model.name: 'casmsocial.casmpop.CasmPop'
+random.seed: 42
+# Optional. Defaults to seed_<random.seed> when omitted.
+# simulation.run_id: 'seed_42'
+start.datetime: '2025-06-02 00:00:00'
+duration.hours: 24
+timezone: 'America/New_York'
+time.step.minutes: 60
+
+# Small DMV sample tables used by the default demo configuration.
+places.table: 'rti_synth_pop_v2_dmv_100.places'
+households.table: 'rti_synth_pop_v2_dmv_100.hh'
+activities.table: 'rti_synth_pop_v2_dmv_100.activities'
+contacts.table: 'rti_synth_pop_v2_dmv_100.contacts'
+contacts.enabled: false
+communication.enabled: true
+persons.table: 'rti_synth_pop_v2_dmv_100.persons'
+
+# Use the local no-network behavior engine. Remote providers stay disabled
+# because the adapter is local and no anthropic settings are provided.
+behavior.engine: 'llm'
+behavior.llm.enabled: true
+behavior.llm.adapter: 'local'
+behavior.llm.deliberation_interval: 60
+behavior.llm.max_memory_events: 20
+behavior.llm.signal_cap: 1.5
+behavior.llm.memory_decay: 0.65
+behavior.activity_semantics.social_ids: []
+behavior.activity_semantics.flexible_ids: []
+behavior.activity_semantics.mandatory_ids: []
+behavior.activity_semantics.travel_sensitive_ids: []
+
+# Keep MVP routing independent from prebuilt road artifacts.
+roads.enabled: false
+roads.nodes.file: ''
+roads.edges.file: ''
+roads.place_snap.file: ''
+roads.mode: 'drive'
+roads.time_model: 'validated_gap'
+
+# Single-rank MVP runs do not require a partition table.
+partition.table: ''
+partition.default_rank: 0
+partition.require_full_coverage: false
+
+observers.output_dir: 'data/output'
+observers.agent_log.enabled: true
+observers.agent_log_file: 'mvp_agent_log.parquet'
+observers.behavior_log.enabled: true
+observers.behavior_log_file: 'mvp_behavior_log.parquet'
+observers.delta_agent_state.enabled: false
+observers.delta_agent_state_file: 'mvp_agent_state_delta.parquet'
+observers.delta_agent_state_audit_file: 'mvp_agent_state_delta_audit.parquet'
+
+logging.rank0_only: true
+logging.level: 'INFO'
+profiling.phase_timings.enabled: false
+profiling.phase_timings.sample_stride: 512

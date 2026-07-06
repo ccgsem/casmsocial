@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  pull_request:
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-and-test:
+    name: Check and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CC: mpicc
+      CXX: mpicxx
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmetis-dev libopenmpi-dev openmpi-bin
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      - name: Run quality checks
+        run: make check
+
+      - name: Run tests
+        run: make test
+
+      - name: Run MVP proof suite
+        run: make mvp-all
+
+      - name: List MVP output artifact paths
+        id: mvp-artifacts
+        run: |
+          {
+            echo 'paths<<EOF'
+            make mvp-artifacts
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload MVP output
+        uses: actions/upload-artifact@v7
+        with:
+          name: mvp-output
+          path: ${{ steps.mvp-artifacts.outputs.paths }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Download MVP output artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: mvp-output
+          path: downloaded-mvp-output
+
+      - name: Verify downloaded MVP output artifact
+        run: uv run python scripts/verify_mvp_manifest.py --manifest downloaded-mvp-output/mvp_manifest.json --artifact-root downloaded-mvp-output
+
+  docker-build:
+    name: Docker build (prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build prod image
+        run: docker build --target prod -t casmsocial:ci .
+
+      - name: Smoke test -- models register, venv is on PATH
+        run: |
+          docker run --rm casmsocial:ci python -c "import casmsocial.casmpop; from casmsocial.factory import Models; models = Models.get_models(); assert 'casmsocial.casmpop.CasmPop' in models, models; print('OK:', sorted(models))"
+
+      - name: Build tools image (partitioning extra)
+        # pymetis has prebuilt wheels on manylinux x86_64 (this runner's
+        # platform), so this validates the `tools` stage even though it
+        # currently can't be built on arm64 -- pymetis must compile METIS
+        # from source there and a meson/mpicxx interaction breaks (known,
+        # documented limitation; see Dockerfile's `tools` stage comment).
+        run: docker build --target tools -t casmsocial:ci-tools .
+
+      - name: Smoke test -- pymetis importable in tools image
+        run: docker run --rm casmsocial:ci-tools python -c "import pymetis; print('OK')"

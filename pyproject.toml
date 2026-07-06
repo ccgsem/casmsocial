@@ -1,0 +1,179 @@
+[project]
+name = "casmsocial"
+version = "2.5.4"
+description = "casmsocial is a Python framework for implementing agent-based models that simulate the dynamics of a synthetic population"
+authors = [{ name = "Jon C. Cline", email = "jon.c.cline@gmail.com" }]
+readme = "README.md"
+keywords = ['python']
+requires-python = ">=3.10,<3.14"
+classifiers = [
+    "Intended Audience :: Developers",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "duckdb>=1.5.4",
+    "loguru>=0.7.3",
+    "polars>=1.41.2",
+    "pyarrow>=24.0.0",
+    "pydantic>=2.13.4",
+    "python-dotenv>=1.2.2",
+    "rasterio>=1.4.4; python_version >= '3.10' and python_version < '3.12'",
+    "rasterio>=1.5.0; python_version >= '3.12'",
+    "repast4py>=1.2.1",
+    "rioxarray>=0.19.0; python_version >= '3.10' and python_version < '3.12'",
+    "rioxarray>=0.22.0; python_version >= '3.12'",
+    "scipy>=1.15.3; python_version >= '3.10' and python_version < '3.11'",
+    "scipy>=1.17.1; python_version >= '3.11'",
+    # repast4py depends on torch; declaring it here lets uv pin CPU wheels.
+    "torch>=2.12.1",
+    "typer>=0.26.7",
+    "xarray>=2025.6.1; python_version >= '3.10' and python_version < '3.11'",
+    "xarray>=2026.4.0; python_version >= '3.11'",
+]
+
+[project.optional-dependencies]
+# Live LLM provider for the remote behavior adapter
+# (casmsocial.remote_llm_adapter.AnthropicBehaviorLLMAdapter). Optional so
+# the core install stays lean for users running only the deterministic
+# LocalBehaviorLLMAdapter.
+remote = ["anthropic>=0.109.2"]
+# Live Arrow/Ice observation server (casmsocial.arrow_server), letting a
+# casmservice client pull observer output tables from a running simulation.
+# Optional so the core install stays lean for deployments that don't need it.
+# zeroc-ice only publishes wheels for Python >= 3.12.
+service = ["zeroc-ice>=3.8.0; python_version >= '3.12'"]
+# Offline graph-partitioning CLI (casmsocial.network_partitioner_ducklake),
+# used to precompute partitions.metis_place_partitions ahead of a run. Not
+# imported by the simulation runtime (casmsocial.__main__/casmpop.py).
+# Optional because pymetis has no prebuilt wheel for every platform (e.g.
+# manylinux aarch64 at the time of writing) and must compile METIS from
+# source there -- keeping it out of the core install lets the runtime image
+# build reliably everywhere.
+partitioning = [
+    "pymetis>=2025.2.2",
+]
+
+[tool.uv]
+system-certs = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[project.urls]
+Homepage = "https://ccgsem.github.io/casmsocial/"
+Repository = "https://github.com/ccgsem/casmsocial"
+Documentation = "https://ccgsem.github.io/casmsocial/"
+
+[dependency-groups]
+dev = [
+    "black>=26.5.1",
+    "flake8>=7.3.0",
+    "isort>=8.0.1",
+    "pytest>=9.1.0",
+    "pre-commit>=4.6.0",
+    "tox-uv>=1.35.2",
+    "mypy>=2.1.0",
+    "ruff>=0.15.17",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.6",
+    "mkdocstrings[python]>=1.0.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.setuptools]
+py-modules = ["casmsocial"]
+
+[tool.black]
+line-length = 120
+target-version = ["py310", "py311", "py312", "py313"]
+extend-exclude = "/(dist|build|docs)/"
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["casmsocial"]
+combine_as_imports = true
+
+[tool.flake8]
+max-line-length = 120
+extend-exclude = [".venv", "dist", "build", "docs"]
+extend-ignore = ["E203", "W503"]
+
+[tool.mypy]
+# Incremental type-check gate. Expand this list as legacy dynamic modules are
+# typed enough for strict checking.
+files = [
+    "casmsocial/activities.py",
+    "casmsocial/communication/types.py",
+    "casmsocial/ducklake_utils.py",
+    "casmsocial/llm_adapter.py",
+    "casmsocial/remote_llm_adapter.py",
+    "casmsocial/road_network.py",
+    "scripts/clean_mvp_artifacts.py",
+    "scripts/create_mvp_ducklake.py",
+    "scripts/load_agent_state_delta_ducklake.py",
+    "scripts/report_agent_state_delta_ducklake.py",
+    "scripts/reconstruct_agent_state.py",
+    "scripts/summarize_mvp_output.py",
+    "scripts/validate_agent_state_delta.py",
+    "scripts/validate_mvp_output.py",
+]
+disallow_untyped_defs = true
+disallow_any_unimported = true
+no_implicit_optional = true
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+show_error_codes = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+fix = true
+force-exclude = true
+
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    "W",
+    # pyflakes
+    "F",
+    # isort
+    "I",
+    # pyupgrade
+    "UP",
+]
+ignore = [
+    # LineTooLong
+    "E501",
+    # DoNotAssignLambda
+    "E731",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["casmsocial"]
+
+[tool.ruff.format]
+preview = true

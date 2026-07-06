@@ -1,0 +1,22 @@
+x-casmsocial-mpi-service: &casmsocial-mpi-service
+  image: casmsocial-mpi-compose:local
+  build:
+    context: .
+    target: compose-mpi
+  working_dir: /workspace/casmsocial
+  volumes:
+    - .:/workspace/casmsocial
+  environment:
+    CASMSOCIAL_DATA_PATH: ${CASMSOCIAL_MPI_DATA_PATH:-examples/mvp}
+    CASMSOCIAL_DUCKLAKE_PATH: ${CASMSOCIAL_MPI_DUCKLAKE_PATH:-examples/mvp/mvp.ducklake}
+  command: ["/usr/sbin/sshd", "-D", "-e"]
+  init: true
+
+services:
+  rank0:
+    <<: *casmsocial-mpi-service
+    hostname: rank0
+
+  rank1:
+    <<: *casmsocial-mpi-service
+    hostname: rank1
