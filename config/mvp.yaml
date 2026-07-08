@@ -1,4 +1,6 @@
 # MVP smoke scenario.
+# Runtime launch config for direct local runs.
+# Canonical casmdb scenario definitions live in scenarios/casmsocial/.
 # Run with one MPI rank, for example:
 # uv run mpirun -n 1 python -m casmsocial config/mvp.yaml
 model.name: 'casmsocial.casmpop.CasmPop'

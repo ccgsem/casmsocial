@@ -1,3 +1,5 @@
+# Runtime launch config for direct local runs.
+# Canonical casmdb scenario definitions live in scenarios/casmsocial/.
 model.name: 'casmsocial.casmpop.CasmPop'
 random.seed: 42
 # Optional. Defaults to seed_<random.seed> when omitted.

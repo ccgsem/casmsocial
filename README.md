@@ -50,6 +50,11 @@ There are three ways to run the model
 2. Run from the command line using virtualenv
 3. Run in the Docker image
 
+The files in `config/` are runtime launch configs for direct local runs.
+Canonical casmdb scenario definitions are maintained in
+`scenarios/casmsocial/*.yaml` and registered with
+`scripts/register_casmsocial.py`.
+
 To run (option 1):
 
 ```bash

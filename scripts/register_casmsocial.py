@@ -1,7 +1,8 @@
 """Register the casmsocial model and its canonical scenarios in a casmdb database.
 
-This script is the authoritative source for casmsocial's casmdb registration.
-Run it once per environment (or re-run to update) to seed the registry.
+The YAML files under scenarios/casmsocial are the authoritative source for
+casmsocial's canonical scenarios. Run this script once per environment (or
+re-run to update) to validate those files and seed the registry.
 
 It is intentionally casmsocial-specific — casmdb itself is model-agnostic.
 
@@ -28,11 +29,13 @@ import argparse
 import json
 import sys
 from datetime import date
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
+import yaml
 from loguru import logger
 
 # ---------------------------------------------------------------------------
@@ -41,6 +44,15 @@ from loguru import logger
 
 CASMSOCIAL_MODEL_NAME = "casmsocial"
 CASMSOCIAL_FACTORY_KEY = "casmsocial.citysim.citysocialmodel.CitySocialModel"
+SCENARIO_DIR = Path(__file__).resolve().parent.parent / "scenarios" / "casmsocial"
+REQUIRED_SCENARIO_FIELDS = {"scenario_name", "model_name", "description", "parameters"}
+REQUIRED_SCENARIO_PARAMETER_KEYS = {
+    "model.name",
+    "places.table",
+    "households.table",
+    "persons.table",
+    "activities.table",
+}
 
 
 def _get_version() -> str:
@@ -66,53 +78,76 @@ def _get_version() -> str:
 # ---------------------------------------------------------------------------
 # Canonical scenario definitions
 #
-# scenario_parameters stores only the keys that differ from
-# CasmPop.get_default_parameters().  run_scenario.py merges defaults first,
-# so omitted keys automatically pick up their defaults.
+# scenario_parameters stores the canonical scenario parameter layer.
+# run_scenario.py merges defaults first, so omitted keys still pick up their
+# defaults, but the YAML files should explicitly include keys that identify
+# data tables and model identity.
 #
 # model.name is always included to ensure the correct subclass is instantiated
 # (CasmPop.get_default_parameters() returns "casmsocial.casmpop.CasmPop" as
 # the default, which would bypass CitySocialModel).
+#
+# The YAML files in scenarios/casmsocial are the source of truth. This script
+# only validates and registers them; do not duplicate scenario definitions here.
 # ---------------------------------------------------------------------------
 
 
+def _load_scenario_specs(scenario_dir: Path = SCENARIO_DIR) -> dict[str, dict[str, Any]]:
+    """Load canonical scenario specs from YAML files keyed by scenario name."""
+    if not scenario_dir.exists():
+        raise FileNotFoundError(f"Scenario directory does not exist: {scenario_dir}")
+
+    specs: dict[str, dict[str, Any]] = {}
+    for path in sorted(scenario_dir.glob("*.yaml")):
+        raw = yaml.safe_load(path.read_text()) or {}
+        if not isinstance(raw, dict):
+            raise ValueError(f"{path}: scenario file must contain a mapping")
+
+        missing_fields = REQUIRED_SCENARIO_FIELDS - set(raw)
+        if missing_fields:
+            raise ValueError(f"{path}: missing required fields {sorted(missing_fields)}")
+
+        name = raw["scenario_name"]
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"{path}: scenario_name must be a non-empty string")
+        if name in specs:
+            raise ValueError(f"{path}: duplicate scenario_name {name!r}")
+        if path.stem != name:
+            raise ValueError(f"{path}: file stem must match scenario_name {name!r}")
+
+        model_name = raw["model_name"]
+        if model_name != CASMSOCIAL_MODEL_NAME:
+            raise ValueError(f"{path}: model_name must be {CASMSOCIAL_MODEL_NAME!r}")
+
+        description = raw["description"]
+        if not isinstance(description, str):
+            raise ValueError(f"{path}: description must be a string")
+
+        params = raw["parameters"]
+        if not isinstance(params, dict):
+            raise ValueError(f"{path}: parameters must be a mapping")
+
+        missing_params = REQUIRED_SCENARIO_PARAMETER_KEYS - set(params)
+        if missing_params:
+            raise ValueError(f"{path}: missing required parameters {sorted(missing_params)}")
+
+        if params["model.name"] != CASMSOCIAL_FACTORY_KEY:
+            raise ValueError(f"{path}: parameters.model.name must be {CASMSOCIAL_FACTORY_KEY!r}")
+
+        specs[name] = {
+            "description": description,
+            "parameters": params,
+        }
+
+    if not specs:
+        raise ValueError(f"No scenario YAML files found in {scenario_dir}")
+
+    return specs
+
+
 def _build_scenarios() -> dict[str, dict[str, Any]]:
-    """Return the canonical scenario parameter deltas keyed by scenario name."""
-    return {
-        "base": {
-            # Uses all CasmPop defaults (dmv_100 tables) with CitySocialModel
-            "model.name": CASMSOCIAL_FACTORY_KEY,
-        },
-        "dmv": {
-            "model.name": CASMSOCIAL_FACTORY_KEY,
-            "places.table": "rti_synth_pop_v2_dmv.places",
-            "activities.table": "rti_synth_pop_v2_dmv.activities",
-            "contacts.table": "rti_synth_pop_v2_dmv.contacts",
-            "persons.table": "rti_synth_pop_v2_dmv.persons",
-        },
-        "dmv_100": {
-            # Explicit — same tables as defaults, but makes intent unambiguous
-            "model.name": CASMSOCIAL_FACTORY_KEY,
-            "places.table": "rti_synth_pop_v2_dmv_100.places",
-            "activities.table": "rti_synth_pop_v2_dmv_100.activities",
-            "contacts.table": "rti_synth_pop_v2_dmv_100.contacts",
-            "persons.table": "rti_synth_pop_v2_dmv_100.persons",
-        },
-        "dc": {
-            "model.name": CASMSOCIAL_FACTORY_KEY,
-            "places.table": "rti_synth_pop_v2_dc.places",
-            "activities.table": "rti_synth_pop_v2_dc.activities",
-            "contacts.table": "rti_synth_pop_v2_dc.contacts",
-            "persons.table": "rti_synth_pop_v2_dc.persons",
-        },
-        "dc_5000": {
-            "model.name": CASMSOCIAL_FACTORY_KEY,
-            "places.table": "rti_synth_pop_v2_dc_5000.places",
-            "activities.table": "rti_synth_pop_v2_dc_5000.activities",
-            "contacts.table": "rti_synth_pop_v2_dc_5000.contacts",
-            "persons.table": "rti_synth_pop_v2_dc_5000.persons",
-        },
-    }
+    """Return canonical scenario parameter layers keyed by scenario name."""
+    return {name: spec["parameters"] for name, spec in _load_scenario_specs().items()}
 
 
 def _build_model_record(version: str, resources_uri: str) -> dict[str, Any]:
@@ -374,18 +409,6 @@ def _upsert_scenario(
             logger.info("Updated scenario {!r} for {!r} {}", scenario_name, model_name, model_version)
 
 
-# Scenario descriptions
-_DESCRIPTIONS: dict[str, str] = {
-    "base": ("Baseline scenario using default dmv_100 synthetic population tables."),
-    "dmv": ("Full DC-Maryland-Virginia metro area synthetic population (all ages, all zones)."),
-    "dmv_100": (
-        "DC-Maryland-Virginia metro area synthetic population — same tables as the default "
-        "base scenario; included for explicitness."
-    ),
-    "dc": ("District of Columbia synthetic population (all ages, all zones)."),
-    "dc_5000": ("DC synthetic population sampled to 5,000 persons — suitable for rapid iteration."),
-}
-
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -443,7 +466,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     version = args.version or _get_version()
-    scenarios = _build_scenarios()
+    scenario_specs = _load_scenario_specs()
+    scenarios = {name: spec["parameters"] for name, spec in scenario_specs.items()}
+    descriptions = {name: spec["description"] for name, spec in scenario_specs.items()}
     model_record = _build_model_record(version, args.resources_uri)
 
     if args.dry_run:
@@ -453,7 +478,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\nScenarios ({len(scenarios)}):")
         for name, params in scenarios.items():
             print(f"\n  [{name}]")
-            print(f"  description: {_DESCRIPTIONS.get(name, '')}")
+            print(f"  description: {descriptions.get(name, '')}")
             print(f"  parameters:  {json.dumps(params, indent=4)}")
         return 0
 
@@ -467,7 +492,7 @@ def main(argv: list[str] | None = None) -> int:
                 model_name=CASMSOCIAL_MODEL_NAME,
                 model_version=version,
                 scenario_params=scenario_params,
-                description=_DESCRIPTIONS.get(scenario_name, ""),
+                description=descriptions.get(scenario_name, ""),
             )
     finally:
         db.close()

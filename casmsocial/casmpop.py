@@ -3537,51 +3537,6 @@ class CasmPop(Model):
 Models.add_model(CasmPop.__module__ + "." + CasmPop.__name__, CasmPop)
 
 
-# 4. Create dictionary mapping of model experiment parameters
-# This can be used to run the model with different parameters, e.g. for
-# sensitivity analysis or calibration
-# Each key in the dictionary is a string describing the experiment, and the
-# value is a dictionary of parameters to update from the default parameters
-
-model_parameters = CasmPop.get_default_parameters()
-
-experiment_parameters = {
-    "base": model_parameters,
-    "dmv": {
-        **model_parameters,
-        "places.table": "rti_synth_pop_v2_dmv.places",
-        "households.table": "rti_synth_pop_v2_dmv.hh",
-        "activities.table": "rti_synth_pop_v2_dmv.activities",
-        "contacts.table": "rti_synth_pop_v2_dmv.contacts",
-        "persons.table": "rti_synth_pop_v2_dmv.persons",
-    },
-    "dmv_100": {
-        **model_parameters,
-        "places.table": "rti_synth_pop_v2_dmv_100.places",
-        "households.table": "rti_synth_pop_v2_dmv_100.hh",
-        "activities.table": "rti_synth_pop_v2_dmv_100.activities",
-        "contacts.table": "rti_synth_pop_v2_dmv_100.contacts",
-        "persons.table": "rti_synth_pop_v2_dmv_100.persons",
-    },
-    "dc": {
-        **model_parameters,
-        "places.table": "rti_synth_pop_v2_dc.places",
-        "households.table": "rti_synth_pop_v2_dc.hh",
-        "activities.table": "rti_synth_pop_v2_dc.activities",
-        "contacts.table": "rti_synth_pop_v2_dc.contacts",
-        "persons.table": "rti_synth_pop_v2_dc.persons",
-    },
-    "dc_5000": {
-        **model_parameters,
-        "places.table": "rti_synth_pop_v2_dc_5000.places",
-        "households.table": "rti_synth_pop_v2_dc_5000.hh",
-        "activities.table": "rti_synth_pop_v2_dc_5000.activities",
-        "contacts.table": "rti_synth_pop_v2_dc_5000.contacts",
-        "persons.table": "rti_synth_pop_v2_dc_5000.persons",
-    },
-}
-
-
 # utility functions
 def update_activities_data(activities_data: namedtuple, **kwargs) -> namedtuple:
     """Update the activities data."""
