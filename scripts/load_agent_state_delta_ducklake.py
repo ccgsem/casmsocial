@@ -18,10 +18,10 @@ from casmsocial.ducklake_utils import get_ducklake_connection
 DEFAULT_DUCKLAKE_PATH = Path("examples/mvp/mvp.ducklake")
 DEFAULT_DATABASE_NAME = "insights_ducklake"
 DEFAULT_SCHEMA_NAME = "mvp_observability"
-DEFAULT_DELTA_LOG_PATH = Path("output/mvp_agent_state_delta.parquet")
-DEFAULT_AUDIT_LOG_PATH = Path("output/mvp_agent_state_delta_audit.parquet")
-DEFAULT_RECONSTRUCTED_LOG_PATH = Path("output/mvp_agent_state_reconstructed.parquet")
-DEFAULT_VALIDATION_REPORT_PATH = Path("output/mvp_delta_state_validation.json")
+DEFAULT_DELTA_LOG_PATH = Path("data/output/mvp_agent_state_delta.parquet")
+DEFAULT_AUDIT_LOG_PATH = Path("data/output/mvp_agent_state_delta_audit.parquet")
+DEFAULT_RECONSTRUCTED_LOG_PATH = Path("data/output/mvp_agent_state_reconstructed.parquet")
+DEFAULT_VALIDATION_REPORT_PATH = Path("data/output/mvp_delta_state_validation.json")
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 

@@ -22,7 +22,7 @@ from casmsocial.person import Person, ScheduleBehaviorEngine
 
 DEFAULT_CONFIG_PATH = Path("config/mvp.yaml")
 DEFAULT_DUCKLAKE_PATH = Path("examples/mvp/mvp.ducklake")
-DEFAULT_REPORT_PATH = Path("output/mvp_routed_plan_validation.json")
+DEFAULT_REPORT_PATH = Path("data/output/mvp_routed_plan_validation.json")
 DEFAULT_EXPECTED_AGENTS = 2
 DEFAULT_EXPECTED_LEGS = 4
 DEFAULT_MODE = "drive"

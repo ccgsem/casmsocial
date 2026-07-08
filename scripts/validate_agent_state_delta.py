@@ -30,9 +30,9 @@ from scripts.validate_mvp_output import (
     validate_mvp_output,
 )
 
-DEFAULT_DELTA_AGENT_LOG_PATH = Path("output/mvp_delta_state_agent_log.parquet")
-DEFAULT_DELTA_BEHAVIOR_LOG_PATH = Path("output/mvp_delta_state_behavior_log.parquet")
-DEFAULT_DELTA_VALIDATION_REPORT_PATH = Path("output/mvp_delta_state_validation.json")
+DEFAULT_DELTA_AGENT_LOG_PATH = Path("data/output/mvp_delta_state_agent_log.parquet")
+DEFAULT_DELTA_BEHAVIOR_LOG_PATH = Path("data/output/mvp_delta_state_behavior_log.parquet")
+DEFAULT_DELTA_VALIDATION_REPORT_PATH = Path("data/output/mvp_delta_state_validation.json")
 
 KEY_COLUMNS: tuple[str, ...] = ("run_id", "tick", "rank", "agent_id")
 FLOAT_COLUMNS: tuple[str, ...] = (

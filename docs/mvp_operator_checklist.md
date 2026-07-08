@@ -19,9 +19,9 @@ Markdown summary.
 
 After a successful run, these generated artifacts should exist:
 
-- `output/mvp_summary.md`
-- `output/mvp_agent_log.parquet`
-- `output/mvp_behavior_log.parquet`
+- `data/output/mvp_summary.md`
+- `data/output/mvp_agent_log.parquet`
+- `data/output/mvp_behavior_log.parquet`
 - `examples/mvp/mvp.ducklake`
 
 The generated MVP DuckLake contains the standard people, household, place,
@@ -33,14 +33,14 @@ activity, and partition fixtures plus a tiny routable road fixture:
 The validation output should report:
 
 ```text
-MVP agent log valid: output/mvp_agent_log.parquet (rows=48, runs=1, agents=2, ticks=24, ranks=1)
-MVP behavior log valid: output/mvp_behavior_log.parquet (rows=48, runs=1, agents=2, ticks=24, ranks=1)
-MVP summary written: output/mvp_summary.md (rows=48, runs=1, agents=2, ticks=24, ranks=1)
+MVP agent log valid: data/output/mvp_agent_log.parquet (rows=48, runs=1, agents=2, ticks=24, ranks=1)
+MVP behavior log valid: data/output/mvp_behavior_log.parquet (rows=48, runs=1, agents=2, ticks=24, ranks=1)
+MVP summary written: data/output/mvp_summary.md (rows=48, runs=1, agents=2, ticks=24, ranks=1)
 ```
 
 ## Inspect
 
-Open `output/mvp_summary.md` first. It gives the run shape, decision counts,
+Open `data/output/mvp_summary.md` first. It gives the run shape, decision counts,
 memory-event counts, applied plan-adjustment count, and signal averages without
 requiring parquet tooling.
 
@@ -62,7 +62,7 @@ make mvp-2rank
 ```
 
 The two-rank smoke path enables `partitions.mvp_two_rank_place_partitions`,
-validates output from both ranks, and writes separate `output/mvp_2rank_*`
+validates output from both ranks, and writes separate `data/output/mvp_2rank_*`
 artifacts.
 
 For a containerized MPI launcher check that avoids the local host MPI stack,
@@ -89,9 +89,9 @@ make mvp-routed
 ```
 
 The routed smoke path enables the road tables, validates the generated logs,
-writes separate `output/mvp_routed_*` artifacts, and checks routed leg metadata
+writes separate `data/output/mvp_routed_*` artifacts, and checks routed leg metadata
 for the expected road nodes, distances, and travel times. It also writes
-`output/mvp_routed_plan_validation.json` with the routed-leg validation summary.
+`data/output/mvp_routed_plan_validation.json` with the routed-leg validation summary.
 
 Use this helper to prove the MVP process can build road artifacts from OSM XML
 and run against those generated files:
@@ -100,11 +100,11 @@ and run against those generated files:
 make mvp-built-roads
 ```
 
-The built-road smoke path writes `output/mvp_built_road_*.parquet`,
-`output/mvp_built_place_road_snap.parquet`, and
-`output/mvp_built_road_artifacts.json`, runs the routed MVP scenario against
-those generated files, and writes separate `output/mvp_built_roads_*` run
-artifacts plus `output/mvp_built_roads_plan_validation.json`.
+The built-road smoke path writes `data/output/mvp_built_road_*.parquet`,
+`data/output/mvp_built_place_road_snap.parquet`, and
+`data/output/mvp_built_road_artifacts.json`, runs the routed MVP scenario against
+those generated files, and writes separate `data/output/mvp_built_roads_*` run
+artifacts plus `data/output/mvp_built_roads_plan_validation.json`.
 
 Use this helper to prove changed-only agent-state logging can be reconstructed
 and matched against full MVP agent and behavior logs:
@@ -114,16 +114,16 @@ make mvp-delta-state
 ```
 
 The delta-state smoke path enables `DeltaAgentStateLogger`, writes
-`output/mvp_agent_state_delta.parquet` and
-`output/mvp_agent_state_delta_audit.parquet`, reconstructs dense state rows at
-`output/mvp_agent_state_reconstructed.parquet`, and writes
-`output/mvp_delta_state_validation.json`. The validation report includes row
+`data/output/mvp_agent_state_delta.parquet` and
+`data/output/mvp_agent_state_delta_audit.parquet`, reconstructs dense state rows at
+`data/output/mvp_agent_state_reconstructed.parquet`, and writes
+`data/output/mvp_delta_state_validation.json`. The validation report includes row
 reduction, file-size reduction, and changed-agent counts by run and tick so the output
 volume savings are visible alongside correctness. The target also loads those
 outputs into `examples/mvp/mvp.ducklake` under `mvp_observability` with tables
 for the delta rows, audit rows, reconstructed rows, validation summary, and
 changed-agent counts by run and tick. It then writes
-`output/mvp_agent_state_delta_ducklake_report.md` with copyable SQL examples
+`data/output/mvp_agent_state_delta_ducklake_report.md` with copyable SQL examples
 and query results over those tables.
 
 To reload existing delta-state artifacts into DuckLake without rerunning the
@@ -132,10 +132,10 @@ simulation:
 ```bash
 uv run python scripts/load_agent_state_delta_ducklake.py \
   --ducklake-path examples/mvp/mvp.ducklake \
-  --delta-log output/mvp_agent_state_delta.parquet \
-  --audit-log output/mvp_agent_state_delta_audit.parquet \
-  --reconstructed-log output/mvp_agent_state_reconstructed.parquet \
-  --validation-report output/mvp_delta_state_validation.json
+  --delta-log data/output/mvp_agent_state_delta.parquet \
+  --audit-log data/output/mvp_agent_state_delta_audit.parquet \
+  --reconstructed-log data/output/mvp_agent_state_reconstructed.parquet \
+  --validation-report data/output/mvp_delta_state_validation.json
 ```
 
 To regenerate only the query report from already-loaded DuckLake tables:
@@ -156,7 +156,7 @@ make mvp-manifest
 ```
 
 The manifest validates all five output sets and writes
-`output/mvp_manifest.json` with run summaries, artifact sizes, and SHA-256
+`data/output/mvp_manifest.json` with run summaries, artifact sizes, and SHA-256
 checksums. The manifest also covers the routed plan validation reports,
 generated road Parquets, road-build report, and delta-state reconstruction
 artifacts and DuckLake query report.
@@ -174,7 +174,7 @@ make mvp-all
 ```
 
 This runs the standard, two-rank, routed, built-road, and delta-state smoke
-paths, then writes and verifies `output/mvp_manifest.json`.
+paths, then writes and verifies `data/output/mvp_manifest.json`.
 
 List the artifact paths retained locally and uploaded by CI with:
 

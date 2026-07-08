@@ -13,7 +13,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--without-manifest",
         action="store_true",
-        help="Exclude output/mvp_manifest.json from the listed paths.",
+        help="Exclude data/output/mvp_manifest.json from the listed paths.",
     )
     return parser.parse_args(argv)
 

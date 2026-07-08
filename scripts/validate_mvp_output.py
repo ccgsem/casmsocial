@@ -11,8 +11,8 @@ from typing import Any, cast
 import pyarrow as pa
 import pyarrow.dataset as ds
 
-DEFAULT_AGENT_LOG_PATH = Path("output/mvp_agent_log.parquet")
-DEFAULT_BEHAVIOR_LOG_PATH = Path("output/mvp_behavior_log.parquet")
+DEFAULT_AGENT_LOG_PATH = Path("data/output/mvp_agent_log.parquet")
+DEFAULT_BEHAVIOR_LOG_PATH = Path("data/output/mvp_behavior_log.parquet")
 DEFAULT_EXPECTED_AGENTS = 2
 DEFAULT_EXPECTED_TICKS = 24
 DEFAULT_EXPECTED_RANKS = 1

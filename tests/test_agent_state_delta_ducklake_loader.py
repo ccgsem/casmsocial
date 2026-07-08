@@ -69,11 +69,11 @@ def _write_validation_report(path: Path) -> None:
                 "version": 1,
                 "generated_at": "2026-06-01T00:00:00+00:00",
                 "paths": {
-                    "agent_log": "output/mvp_delta_state_agent_log.parquet",
-                    "behavior_log": "output/mvp_delta_state_behavior_log.parquet",
-                    "delta_log": "output/mvp_agent_state_delta.parquet",
-                    "audit_log": "output/mvp_agent_state_delta_audit.parquet",
-                    "reconstructed_log": "output/mvp_agent_state_reconstructed.parquet",
+                    "agent_log": "data/output/mvp_delta_state_agent_log.parquet",
+                    "behavior_log": "data/output/mvp_delta_state_behavior_log.parquet",
+                    "delta_log": "data/output/mvp_agent_state_delta.parquet",
+                    "audit_log": "data/output/mvp_agent_state_delta_audit.parquet",
+                    "reconstructed_log": "data/output/mvp_agent_state_reconstructed.parquet",
                 },
                 "validation": {
                     "delta_rows": 2,

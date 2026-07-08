@@ -52,9 +52,9 @@ mvp: mvp-clean ## Clean artifacts, create the local MVP DuckLake, run the scenar
 mvp-2rank: ## Run the MVP smoke scenario with two MPI ranks
 	@echo "🚀 Removing generated MVP two-rank artifacts"
 	@uv run python scripts/clean_mvp_artifacts.py \
-	output/mvp_2rank_summary.md \
-	output/mvp_2rank_agent_log.parquet \
-	output/mvp_2rank_behavior_log.parquet \
+	data/output/mvp_2rank_summary.md \
+	data/output/mvp_2rank_agent_log.parquet \
+	data/output/mvp_2rank_behavior_log.parquet \
 	examples/mvp/mvp.ducklake
 	@echo "🚀 Creating MVP DuckLake"
 	@uv run python scripts/create_mvp_ducklake.py
@@ -65,23 +65,23 @@ mvp-2rank: ## Run the MVP smoke scenario with two MPI ranks
 	'{"partition.table":"partitions.mvp_two_rank_place_partitions","partition.require_full_coverage":true,"observers.agent_log_file":"mvp_2rank_agent_log.parquet","observers.behavior_log_file":"mvp_2rank_behavior_log.parquet"}'
 	@echo "🚀 Validating MVP two-rank output logs"
 	@uv run python scripts/validate_mvp_output.py \
-	--agent-log output/mvp_2rank_agent_log.parquet \
-	--behavior-log output/mvp_2rank_behavior_log.parquet \
+	--agent-log data/output/mvp_2rank_agent_log.parquet \
+	--behavior-log data/output/mvp_2rank_behavior_log.parquet \
 	--expected-ranks 2
 	@echo "🚀 Summarizing MVP two-rank output"
 	@uv run python scripts/summarize_mvp_output.py \
-	--behavior-log output/mvp_2rank_behavior_log.parquet \
-	--output output/mvp_2rank_summary.md \
+	--behavior-log data/output/mvp_2rank_behavior_log.parquet \
+	--output data/output/mvp_2rank_summary.md \
 	--expected-ranks 2
 
 .PHONY: mvp-routed
 mvp-routed: ## Run the MVP smoke scenario with road-network routing enabled
 	@echo "🚀 Removing generated MVP routed artifacts"
 	@uv run python scripts/clean_mvp_artifacts.py \
-	output/mvp_routed_summary.md \
-	output/mvp_routed_agent_log.parquet \
-	output/mvp_routed_behavior_log.parquet \
-	output/mvp_routed_plan_validation.json \
+	data/output/mvp_routed_summary.md \
+	data/output/mvp_routed_agent_log.parquet \
+	data/output/mvp_routed_behavior_log.parquet \
+	data/output/mvp_routed_plan_validation.json \
 	examples/mvp/mvp.ducklake
 	@echo "🚀 Creating MVP DuckLake"
 	@uv run python scripts/create_mvp_ducklake.py
@@ -92,72 +92,72 @@ mvp-routed: ## Run the MVP smoke scenario with road-network routing enabled
 	'{"roads.enabled":true,"roads.nodes.file":"rti_synth_pop_v2_dmv_100.road_nodes","roads.edges.file":"rti_synth_pop_v2_dmv_100.road_edges","roads.place_snap.file":"rti_synth_pop_v2_dmv_100.place_road_snap","observers.agent_log_file":"mvp_routed_agent_log.parquet","observers.behavior_log_file":"mvp_routed_behavior_log.parquet"}'
 	@echo "🚀 Validating MVP routed output logs"
 	@uv run python scripts/validate_mvp_output.py \
-	--agent-log output/mvp_routed_agent_log.parquet \
-	--behavior-log output/mvp_routed_behavior_log.parquet
+	--agent-log data/output/mvp_routed_agent_log.parquet \
+	--behavior-log data/output/mvp_routed_behavior_log.parquet
 	@echo "🚀 Summarizing MVP routed output"
 	@uv run python scripts/summarize_mvp_output.py \
-	--behavior-log output/mvp_routed_behavior_log.parquet \
-	--output output/mvp_routed_summary.md
+	--behavior-log data/output/mvp_routed_behavior_log.parquet \
+	--output data/output/mvp_routed_summary.md
 	@echo "🚀 Validating MVP routed plan metadata"
 	@uv run python scripts/validate_mvp_routed_plans.py \
-	--output output/mvp_routed_plan_validation.json
+	--output data/output/mvp_routed_plan_validation.json
 
 .PHONY: mvp-built-roads
 mvp-built-roads: ## Build MVP road artifacts from OSM XML and run the routed smoke scenario against them
 	@echo "🚀 Removing generated MVP built-road artifacts"
 	@uv run python scripts/clean_mvp_artifacts.py \
-	output/mvp_built_road_nodes.parquet \
-	output/mvp_built_road_edges.parquet \
-	output/mvp_built_place_road_snap.parquet \
-	output/mvp_built_road_artifacts.json \
-	output/mvp_built_roads_summary.md \
-	output/mvp_built_roads_agent_log.parquet \
-	output/mvp_built_roads_behavior_log.parquet \
-	output/mvp_built_roads_plan_validation.json \
+	data/output/mvp_built_road_nodes.parquet \
+	data/output/mvp_built_road_edges.parquet \
+	data/output/mvp_built_place_road_snap.parquet \
+	data/output/mvp_built_road_artifacts.json \
+	data/output/mvp_built_roads_summary.md \
+	data/output/mvp_built_roads_agent_log.parquet \
+	data/output/mvp_built_roads_behavior_log.parquet \
+	data/output/mvp_built_roads_plan_validation.json \
 	examples/mvp/mvp.ducklake
 	@echo "🚀 Building MVP road artifacts from OSM XML"
 	@uv run python scripts/build_road_network.py \
 	--osm-file examples/mvp/roads.osm \
 	--places-file examples/mvp/road_builder_places.csv \
-	--nodes-out output/mvp_built_road_nodes.parquet \
-	--edges-out output/mvp_built_road_edges.parquet \
-	--snaps-out output/mvp_built_place_road_snap.parquet \
-	--report-out output/mvp_built_road_artifacts.json
+	--nodes-out data/output/mvp_built_road_nodes.parquet \
+	--edges-out data/output/mvp_built_road_edges.parquet \
+	--snaps-out data/output/mvp_built_place_road_snap.parquet \
+	--report-out data/output/mvp_built_road_artifacts.json
 	@echo "🚀 Creating MVP DuckLake"
 	@uv run python scripts/create_mvp_ducklake.py
 	@echo "🚀 Running MVP scenario with generated road artifacts"
 	@CASMSOCIAL_DATA_PATH=examples/mvp \
 	CASMSOCIAL_DUCKLAKE_PATH=examples/mvp/mvp.ducklake \
 	uv run mpirun -n 1 python -m casmsocial config/mvp.yaml \
-	'{"roads.enabled":true,"roads.nodes.file":"../../output/mvp_built_road_nodes.parquet","roads.edges.file":"../../output/mvp_built_road_edges.parquet","roads.place_snap.file":"../../output/mvp_built_place_road_snap.parquet","observers.agent_log_file":"mvp_built_roads_agent_log.parquet","observers.behavior_log_file":"mvp_built_roads_behavior_log.parquet"}'
+	'{"roads.enabled":true,"roads.nodes.file":"../../data/output/mvp_built_road_nodes.parquet","roads.edges.file":"../../data/output/mvp_built_road_edges.parquet","roads.place_snap.file":"../../data/output/mvp_built_place_road_snap.parquet","observers.agent_log_file":"mvp_built_roads_agent_log.parquet","observers.behavior_log_file":"mvp_built_roads_behavior_log.parquet"}'
 	@echo "🚀 Validating MVP built-road output logs"
 	@uv run python scripts/validate_mvp_output.py \
-	--agent-log output/mvp_built_roads_agent_log.parquet \
-	--behavior-log output/mvp_built_roads_behavior_log.parquet
+	--agent-log data/output/mvp_built_roads_agent_log.parquet \
+	--behavior-log data/output/mvp_built_roads_behavior_log.parquet
 	@echo "🚀 Summarizing MVP built-road output"
 	@uv run python scripts/summarize_mvp_output.py \
-	--behavior-log output/mvp_built_roads_behavior_log.parquet \
-	--output output/mvp_built_roads_summary.md
+	--behavior-log data/output/mvp_built_roads_behavior_log.parquet \
+	--output data/output/mvp_built_roads_summary.md
 	@echo "🚀 Validating MVP built-road plan metadata"
 	@uv run python scripts/validate_mvp_routed_plans.py \
-	--roads-nodes-file ../../output/mvp_built_road_nodes.parquet \
-	--roads-edges-file ../../output/mvp_built_road_edges.parquet \
-	--roads-place-snap-file ../../output/mvp_built_place_road_snap.parquet \
+	--roads-nodes-file ../../data/output/mvp_built_road_nodes.parquet \
+	--roads-edges-file ../../data/output/mvp_built_road_edges.parquet \
+	--roads-place-snap-file ../../data/output/mvp_built_place_road_snap.parquet \
 	--skip-distance-check \
-	--output output/mvp_built_roads_plan_validation.json
+	--output data/output/mvp_built_roads_plan_validation.json
 
 .PHONY: mvp-delta-state
 mvp-delta-state: ## Run the MVP smoke scenario with delta agent-state logging enabled
 	@echo "🚀 Removing generated MVP delta-state artifacts"
 	@uv run python scripts/clean_mvp_artifacts.py \
-	output/mvp_delta_state_summary.md \
-	output/mvp_delta_state_agent_log.parquet \
-	output/mvp_delta_state_behavior_log.parquet \
-	output/mvp_agent_state_delta.parquet \
-	output/mvp_agent_state_delta_audit.parquet \
-	output/mvp_agent_state_reconstructed.parquet \
-	output/mvp_delta_state_validation.json \
-	output/mvp_agent_state_delta_ducklake_report.md \
+	data/output/mvp_delta_state_summary.md \
+	data/output/mvp_delta_state_agent_log.parquet \
+	data/output/mvp_delta_state_behavior_log.parquet \
+	data/output/mvp_agent_state_delta.parquet \
+	data/output/mvp_agent_state_delta_audit.parquet \
+	data/output/mvp_agent_state_reconstructed.parquet \
+	data/output/mvp_delta_state_validation.json \
+	data/output/mvp_agent_state_delta_ducklake_report.md \
 	examples/mvp/mvp.ducklake
 	@echo "🚀 Creating MVP DuckLake"
 	@uv run python scripts/create_mvp_ducklake.py
@@ -168,34 +168,34 @@ mvp-delta-state: ## Run the MVP smoke scenario with delta agent-state logging en
 	'{"observers.agent_log_file":"mvp_delta_state_agent_log.parquet","observers.behavior_log_file":"mvp_delta_state_behavior_log.parquet","observers.delta_agent_state.enabled":true,"observers.delta_agent_state_file":"mvp_agent_state_delta.parquet","observers.delta_agent_state_audit_file":"mvp_agent_state_delta_audit.parquet"}'
 	@echo "🚀 Summarizing MVP delta-state output"
 	@uv run python scripts/summarize_mvp_output.py \
-	--behavior-log output/mvp_delta_state_behavior_log.parquet \
-	--output output/mvp_delta_state_summary.md
+	--behavior-log data/output/mvp_delta_state_behavior_log.parquet \
+	--output data/output/mvp_delta_state_summary.md
 	@echo "🚀 Validating MVP delta-state reconstruction"
 	@uv run python scripts/validate_agent_state_delta.py \
-	--agent-log output/mvp_delta_state_agent_log.parquet \
-	--behavior-log output/mvp_delta_state_behavior_log.parquet \
-	--delta-log output/mvp_agent_state_delta.parquet \
-	--audit-log output/mvp_agent_state_delta_audit.parquet \
-	--reconstructed-output output/mvp_agent_state_reconstructed.parquet \
-	--report-output output/mvp_delta_state_validation.json \
+	--agent-log data/output/mvp_delta_state_agent_log.parquet \
+	--behavior-log data/output/mvp_delta_state_behavior_log.parquet \
+	--delta-log data/output/mvp_agent_state_delta.parquet \
+	--audit-log data/output/mvp_agent_state_delta_audit.parquet \
+	--reconstructed-output data/output/mvp_agent_state_reconstructed.parquet \
+	--report-output data/output/mvp_delta_state_validation.json \
 	--overwrite
 	@echo "🚀 Loading MVP delta-state outputs into DuckLake"
 	@uv run python scripts/load_agent_state_delta_ducklake.py \
 	--ducklake-path examples/mvp/mvp.ducklake \
-	--delta-log output/mvp_agent_state_delta.parquet \
-	--audit-log output/mvp_agent_state_delta_audit.parquet \
-	--reconstructed-log output/mvp_agent_state_reconstructed.parquet \
-	--validation-report output/mvp_delta_state_validation.json
+	--delta-log data/output/mvp_agent_state_delta.parquet \
+	--audit-log data/output/mvp_agent_state_delta_audit.parquet \
+	--reconstructed-log data/output/mvp_agent_state_reconstructed.parquet \
+	--validation-report data/output/mvp_delta_state_validation.json
 	@echo "🚀 Reporting MVP delta-state DuckLake queries"
 	@uv run python scripts/report_agent_state_delta_ducklake.py \
 	--ducklake-path examples/mvp/mvp.ducklake \
-	--output output/mvp_agent_state_delta_ducklake_report.md
+	--output data/output/mvp_agent_state_delta_ducklake_report.md
 
 .PHONY: mvp-delta-state-report
 mvp-delta-state-report: ## Write query examples over loaded MVP delta-state DuckLake tables
 	@uv run python scripts/report_agent_state_delta_ducklake.py \
 	--ducklake-path examples/mvp/mvp.ducklake \
-	--output output/mvp_agent_state_delta_ducklake_report.md
+	--output data/output/mvp_agent_state_delta_ducklake_report.md
 
 .PHONY: mvp-manifest
 mvp-manifest: ## Write a manifest for the generated MVP artifacts

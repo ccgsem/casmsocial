@@ -195,11 +195,11 @@ generated files.
 
 It also includes `make mvp-delta-state`, which enables changed-only agent-state
 logging, reconstructs dense state rows, and validates them against the full MVP
-agent and behavior logs. The generated `output/mvp_delta_state_validation.json`
+agent and behavior logs. The generated `data/output/mvp_delta_state_validation.json`
 reports row and file-size reduction plus changed-agent counts by run and tick. The same
 target also loads the delta outputs into `examples/mvp/mvp.ducklake` under the
 `mvp_observability` schema for interactive inspection and writes
-`output/mvp_agent_state_delta_ducklake_report.md` with example queries and
+`data/output/mvp_agent_state_delta_ducklake_report.md` with example queries and
 results.
 
 ## Behavior Logging
@@ -281,10 +281,10 @@ metrics into the local MVP DuckLake:
 ```bash
 uv run python scripts/load_agent_state_delta_ducklake.py \
   --ducklake-path examples/mvp/mvp.ducklake \
-  --delta-log output/mvp_agent_state_delta.parquet \
-  --audit-log output/mvp_agent_state_delta_audit.parquet \
-  --reconstructed-log output/mvp_agent_state_reconstructed.parquet \
-  --validation-report output/mvp_delta_state_validation.json
+  --delta-log data/output/mvp_agent_state_delta.parquet \
+  --audit-log data/output/mvp_agent_state_delta_audit.parquet \
+  --reconstructed-log data/output/mvp_agent_state_reconstructed.parquet \
+  --validation-report data/output/mvp_delta_state_validation.json
 ```
 
 This creates `mvp_observability.agent_state_delta`,
@@ -305,7 +305,7 @@ or run the script directly:
 ```bash
 uv run python scripts/report_agent_state_delta_ducklake.py \
   --ducklake-path examples/mvp/mvp.ducklake \
-  --output output/mvp_agent_state_delta_ducklake_report.md
+  --output data/output/mvp_agent_state_delta_ducklake_report.md
 ```
 
 Interpretation of the adjustment fields:

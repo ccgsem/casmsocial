@@ -19,7 +19,7 @@ from scripts.validate_mvp_output import (
     validate_behavior_log,
 )
 
-DEFAULT_SUMMARY_PATH = Path("output/mvp_summary.md")
+DEFAULT_SUMMARY_PATH = Path("data/output/mvp_summary.md")
 
 
 def _column_values(table: Any, column_name: str) -> list[Any]:

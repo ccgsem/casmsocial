@@ -17,7 +17,7 @@ from scripts.validate_mvp_output import (
     validate_mvp_output,
 )
 
-DEFAULT_MANIFEST_PATH = Path("output/mvp_manifest.json")
+DEFAULT_MANIFEST_PATH = Path("data/output/mvp_manifest.json")
 
 
 @dataclass(frozen=True)
@@ -34,52 +34,52 @@ class MvpRunSpec:
 DEFAULT_RUN_SPECS: tuple[MvpRunSpec, ...] = (
     MvpRunSpec(
         name="single_rank",
-        summary_path=Path("output/mvp_summary.md"),
-        agent_log_path=Path("output/mvp_agent_log.parquet"),
-        behavior_log_path=Path("output/mvp_behavior_log.parquet"),
+        summary_path=Path("data/output/mvp_summary.md"),
+        agent_log_path=Path("data/output/mvp_agent_log.parquet"),
+        behavior_log_path=Path("data/output/mvp_behavior_log.parquet"),
         expected_ranks=1,
     ),
     MvpRunSpec(
         name="two_rank",
-        summary_path=Path("output/mvp_2rank_summary.md"),
-        agent_log_path=Path("output/mvp_2rank_agent_log.parquet"),
-        behavior_log_path=Path("output/mvp_2rank_behavior_log.parquet"),
+        summary_path=Path("data/output/mvp_2rank_summary.md"),
+        agent_log_path=Path("data/output/mvp_2rank_agent_log.parquet"),
+        behavior_log_path=Path("data/output/mvp_2rank_behavior_log.parquet"),
         expected_ranks=2,
     ),
     MvpRunSpec(
         name="routed",
-        summary_path=Path("output/mvp_routed_summary.md"),
-        agent_log_path=Path("output/mvp_routed_agent_log.parquet"),
-        behavior_log_path=Path("output/mvp_routed_behavior_log.parquet"),
+        summary_path=Path("data/output/mvp_routed_summary.md"),
+        agent_log_path=Path("data/output/mvp_routed_agent_log.parquet"),
+        behavior_log_path=Path("data/output/mvp_routed_behavior_log.parquet"),
         expected_ranks=1,
-        validation_report_path=Path("output/mvp_routed_plan_validation.json"),
+        validation_report_path=Path("data/output/mvp_routed_plan_validation.json"),
     ),
     MvpRunSpec(
         name="built_roads",
-        summary_path=Path("output/mvp_built_roads_summary.md"),
-        agent_log_path=Path("output/mvp_built_roads_agent_log.parquet"),
-        behavior_log_path=Path("output/mvp_built_roads_behavior_log.parquet"),
+        summary_path=Path("data/output/mvp_built_roads_summary.md"),
+        agent_log_path=Path("data/output/mvp_built_roads_agent_log.parquet"),
+        behavior_log_path=Path("data/output/mvp_built_roads_behavior_log.parquet"),
         expected_ranks=1,
-        validation_report_path=Path("output/mvp_built_roads_plan_validation.json"),
+        validation_report_path=Path("data/output/mvp_built_roads_plan_validation.json"),
         extra_artifact_paths=(
-            Path("output/mvp_built_road_nodes.parquet"),
-            Path("output/mvp_built_road_edges.parquet"),
-            Path("output/mvp_built_place_road_snap.parquet"),
-            Path("output/mvp_built_road_artifacts.json"),
+            Path("data/output/mvp_built_road_nodes.parquet"),
+            Path("data/output/mvp_built_road_edges.parquet"),
+            Path("data/output/mvp_built_place_road_snap.parquet"),
+            Path("data/output/mvp_built_road_artifacts.json"),
         ),
     ),
     MvpRunSpec(
         name="delta_state",
-        summary_path=Path("output/mvp_delta_state_summary.md"),
-        agent_log_path=Path("output/mvp_delta_state_agent_log.parquet"),
-        behavior_log_path=Path("output/mvp_delta_state_behavior_log.parquet"),
+        summary_path=Path("data/output/mvp_delta_state_summary.md"),
+        agent_log_path=Path("data/output/mvp_delta_state_agent_log.parquet"),
+        behavior_log_path=Path("data/output/mvp_delta_state_behavior_log.parquet"),
         expected_ranks=1,
-        validation_report_path=Path("output/mvp_delta_state_validation.json"),
+        validation_report_path=Path("data/output/mvp_delta_state_validation.json"),
         extra_artifact_paths=(
-            Path("output/mvp_agent_state_delta.parquet"),
-            Path("output/mvp_agent_state_delta_audit.parquet"),
-            Path("output/mvp_agent_state_reconstructed.parquet"),
-            Path("output/mvp_agent_state_delta_ducklake_report.md"),
+            Path("data/output/mvp_agent_state_delta.parquet"),
+            Path("data/output/mvp_agent_state_delta_audit.parquet"),
+            Path("data/output/mvp_agent_state_reconstructed.parquet"),
+            Path("data/output/mvp_agent_state_delta_ducklake_report.md"),
         ),
     ),
 )

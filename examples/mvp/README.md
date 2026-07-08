@@ -23,9 +23,9 @@ uv run python scripts/summarize_mvp_output.py
 
 Expected outputs:
 
-- `output/mvp_summary.md`
-- `output/mvp_agent_log.parquet`
-- `output/mvp_behavior_log.parquet`
+- `data/output/mvp_summary.md`
+- `data/output/mvp_agent_log.parquet`
+- `data/output/mvp_behavior_log.parquet`
 
 The behavior log is the primary MVP artifact. It records one row per person per
 tick with the local behavior engine's latest decision, summary, memory event,
@@ -45,10 +45,10 @@ Run that routed smoke path with:
 make mvp-routed
 ```
 
-This enables the road tables, writes separate `output/mvp_routed_*` artifacts,
+This enables the road tables, writes separate `data/output/mvp_routed_*` artifacts,
 validates the normal output logs, and checks that the model built routed legs
 with the expected node, distance, and travel-time metadata. It also writes
-`output/mvp_routed_plan_validation.json`.
+`data/output/mvp_routed_plan_validation.json`.
 
 Run the generated-road-artifact smoke path with:
 
@@ -58,9 +58,9 @@ make mvp-built-roads
 
 This builds Parquet road artifacts from `examples/mvp/roads.osm` and
 `examples/mvp/road_builder_places.csv`, runs the routed MVP scenario against
-those generated files, and writes `output/mvp_built_*` artifacts plus
-`output/mvp_built_road_artifacts.json` and
-`output/mvp_built_roads_plan_validation.json`.
+those generated files, and writes `data/output/mvp_built_*` artifacts plus
+`data/output/mvp_built_road_artifacts.json` and
+`data/output/mvp_built_roads_plan_validation.json`.
 
 Revalidate existing MVP logs with:
 
@@ -88,7 +88,7 @@ make mvp-2rank
 
 This target enables `partitions.mvp_two_rank_place_partitions`, validates that
 both ranks write output, and stores the generated artifacts in
-`output/mvp_2rank_*`.
+`data/output/mvp_2rank_*`.
 
 Run the changed-only agent-state smoke path with:
 
@@ -96,17 +96,17 @@ Run the changed-only agent-state smoke path with:
 make mvp-delta-state
 ```
 
-This writes `output/mvp_agent_state_delta.parquet`,
-`output/mvp_agent_state_delta_audit.parquet`,
-`output/mvp_agent_state_reconstructed.parquet`, and
-`output/mvp_delta_state_validation.json`. It also loads those outputs into the
+This writes `data/output/mvp_agent_state_delta.parquet`,
+`data/output/mvp_agent_state_delta_audit.parquet`,
+`data/output/mvp_agent_state_reconstructed.parquet`, and
+`data/output/mvp_delta_state_validation.json`. It also loads those outputs into the
 local DuckLake as `mvp_observability.agent_state_delta`,
 `mvp_observability.agent_state_delta_audit`,
 `mvp_observability.agent_state_reconstructed`,
 `mvp_observability.agent_state_delta_validation`, and
 `mvp_observability.agent_state_delta_changes_by_tick` with run-aware change
 counts. The target also writes
-`output/mvp_agent_state_delta_ducklake_report.md` with example SQL and result
+`data/output/mvp_agent_state_delta_ducklake_report.md` with example SQL and result
 tables.
 
 Regenerate only that DuckLake query report with:

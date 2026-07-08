@@ -20,7 +20,7 @@ from scripts.load_agent_state_delta_ducklake import (
     DEFAULT_SCHEMA_NAME,
 )
 
-DEFAULT_REPORT_PATH = Path("output/mvp_agent_state_delta_ducklake_report.md")
+DEFAULT_REPORT_PATH = Path("data/output/mvp_agent_state_delta_ducklake_report.md")
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 REQUIRED_TABLES: tuple[str, ...] = (
     "agent_state_delta",
