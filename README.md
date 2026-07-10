@@ -51,6 +51,15 @@ There are three ways to run the model
 3. Run in the Docker image
 
 The files in `config/` are runtime launch configs for direct local runs.
+The default direct-run config, `config/casmsocial.yaml`, uses the committed Wake
+County Heat deployment fixture. Materialize it before the first run:
+
+```bash
+uv run python scripts/materialize_wake_county_heat_fixture.py \
+  --fixture-path testdata/wake_county_heat_1000_households \
+  --ducklake-path data/datalakehouse
+```
+
 Canonical casmdb scenario definitions are maintained in
 `scenarios/casmsocial/*.yaml` and registered with
 `scripts/register_casmsocial.py`.
