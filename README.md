@@ -141,6 +141,35 @@ The Compose file uses `CASMSOCIAL_MPI_DATA_PATH` and
 `CASMSOCIAL_MPI_DUCKLAKE_PATH` as optional overrides so the repository `.env`
 does not accidentally inject host-only paths into the containers.
 
+### Wake County Heat Deployment Fixture
+
+The minimum Wake County Heat deployment fixture lives under
+`testdata/wake_county_heat_1000_households`. It can rebuild the local DuckLake
+tables in `data/datalakehouse` and can also validate the production-style
+DuckLake shape with a Postgres catalog and MinIO-backed S3 storage.
+
+Local DuckLake materialization:
+
+```bash
+uv run python scripts/materialize_wake_county_heat_fixture.py \
+  --fixture-path testdata/wake_county_heat_1000_households \
+  --ducklake-path data/datalakehouse
+```
+
+Production-style Compose validation:
+
+```bash
+UV_INSECURE_HOST=download.pytorch.org docker compose \
+  -f docker-compose.ducklake-fixture.yaml \
+  -p casmsocial-ducklake-fixture \
+  up --build --abort-on-container-exit \
+  --exit-code-from ducklake-fixture-loader \
+  ducklake-fixture-loader
+```
+
+See [docs/wake_county_heat_fixture.md](docs/wake_county_heat_fixture.md) for
+expected row counts, environment overrides, and cleanup notes.
+
 ## Code Quality
 
 The repository ships with dedicated helpers for the standard Python code-quality trio:

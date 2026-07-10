@@ -71,6 +71,9 @@ COPY . /app
 # Sync the project
 RUN uv sync --frozen
 
+# Cache DuckDB extensions used by local and production-style DuckLake loaders.
+RUN /app/.venv/bin/python -c "import duckdb; conn = duckdb.connect(); conn.execute('INSTALL sqlite; INSTALL spatial; INSTALL ducklake; INSTALL postgres; INSTALL httpfs')"
+
 # uv sync installs into /app/.venv, not the system Python -- put it on PATH
 # so mpirun's bare `python` resolves to the venv where casmsocial/mpi4py/
 # repast4py are actually installed.
