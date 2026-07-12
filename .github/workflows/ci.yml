@@ -55,6 +55,9 @@ jobs:
       - name: Run tests
         run: make test
 
+      - name: Run Wake County Heat deployment smoke
+        run: make wake-county-heat
+
       - name: Run MVP proof suite
         run: make mvp-all
 

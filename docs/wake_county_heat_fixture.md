@@ -45,9 +45,7 @@ Use this path to create or replace the four fixture tables in the local
 DuckLake deployment under `data/datalakehouse`:
 
 ```bash
-uv run python scripts/materialize_wake_county_heat_fixture.py \
-  --fixture-path testdata/wake_county_heat_1000_households \
-  --ducklake-path data/datalakehouse
+make wake-county-heat-materialize
 ```
 
 `data/datalakehouse` is generated runtime state and is intentionally ignored by
@@ -66,14 +64,12 @@ To validate the full local deployment path, including the shipped
 `config/casmsocial.yaml` and a one-hour model smoke run, use:
 
 ```bash
-uv run python scripts/validate_wake_county_heat_deployment.py \
-  --fixture-path testdata/wake_county_heat_1000_households \
-  --ducklake-path data/datalakehouse
+make wake-county-heat
 ```
 
 The validation rematerializes the fixture, runs the default config with a
 one-hour override, and checks that the agent log contains 2,223 agents for one
-tick.
+tick. GitHub Actions runs this same target in the main CI workflow.
 
 ## Postgres Catalog And S3 Storage
 
@@ -84,12 +80,7 @@ The Compose stack builds the casmsocial production image, starts Postgres and
 MinIO, creates the bucket, and runs the fixture loader:
 
 ```bash
-UV_INSECURE_HOST=download.pytorch.org docker compose \
-  -f docker-compose.ducklake-fixture.yaml \
-  -p casmsocial-ducklake-fixture \
-  up --build --abort-on-container-exit \
-  --exit-code-from ducklake-fixture-loader \
-  ducklake-fixture-loader
+make wake-county-heat-compose
 ```
 
 `UV_INSECURE_HOST=download.pytorch.org` is needed in environments whose
@@ -107,10 +98,7 @@ The loader redacts the Postgres password in its summary output.
 Stop the stack after validation:
 
 ```bash
-docker compose \
-  -f docker-compose.ducklake-fixture.yaml \
-  -p casmsocial-ducklake-fixture \
-  down
+make wake-county-heat-compose-down
 ```
 
 This removes containers and the network but preserves the named volumes:

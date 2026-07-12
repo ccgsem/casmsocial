@@ -160,28 +160,20 @@ DuckLake shape with a Postgres catalog and MinIO-backed S3 storage.
 Local DuckLake materialization:
 
 ```bash
-uv run python scripts/materialize_wake_county_heat_fixture.py \
-  --fixture-path testdata/wake_county_heat_1000_households \
-  --ducklake-path data/datalakehouse
+make wake-county-heat-materialize
 ```
 
 Local deployment smoke validation:
 
 ```bash
-uv run python scripts/validate_wake_county_heat_deployment.py \
-  --fixture-path testdata/wake_county_heat_1000_households \
-  --ducklake-path data/datalakehouse
+make wake-county-heat
 ```
 
 Production-style Compose validation:
 
 ```bash
-UV_INSECURE_HOST=download.pytorch.org docker compose \
-  -f docker-compose.ducklake-fixture.yaml \
-  -p casmsocial-ducklake-fixture \
-  up --build --abort-on-container-exit \
-  --exit-code-from ducklake-fixture-loader \
-  ducklake-fixture-loader
+make wake-county-heat-compose
+make wake-county-heat-compose-down
 ```
 
 See [docs/wake_county_heat_fixture.md](docs/wake_county_heat_fixture.md) for
