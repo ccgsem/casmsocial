@@ -165,6 +165,14 @@ uv run python scripts/materialize_wake_county_heat_fixture.py \
   --ducklake-path data/datalakehouse
 ```
 
+Local deployment smoke validation:
+
+```bash
+uv run python scripts/validate_wake_county_heat_deployment.py \
+  --fixture-path testdata/wake_county_heat_1000_households \
+  --ducklake-path data/datalakehouse
+```
+
 Production-style Compose validation:
 
 ```bash

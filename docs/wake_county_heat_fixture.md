@@ -62,6 +62,19 @@ uv run python scripts/materialize_wake_county_heat_fixture.py \
   --ducklake-path data/datalakehouse_wake_county_heat_fixture_check
 ```
 
+To validate the full local deployment path, including the shipped
+`config/casmsocial.yaml` and a one-hour model smoke run, use:
+
+```bash
+uv run python scripts/validate_wake_county_heat_deployment.py \
+  --fixture-path testdata/wake_county_heat_1000_households \
+  --ducklake-path data/datalakehouse
+```
+
+The validation rematerializes the fixture, runs the default config with a
+one-hour override, and checks that the agent log contains 2,223 agents for one
+tick.
+
 ## Postgres Catalog And S3 Storage
 
 Use this path to prove the production-style DuckLake deployment shape: Postgres
