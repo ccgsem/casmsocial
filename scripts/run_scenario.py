@@ -11,7 +11,7 @@ Usage (single rank)::
         --scenario-db http://localhost:8000 \\
         --model casmsocial \\
         --model-version 2.4.0 \\
-        --scenario dmv_100
+        --scenario wake_county_heat
 
 Usage (multi-rank via MPI)::
 
@@ -19,7 +19,7 @@ Usage (multi-rank via MPI)::
         --scenario-db /path/to/models.db \\
         --model casmsocial \\
         --model-version 2.4.0 \\
-        --scenario dmv_100 \\
+        --scenario wake_county_heat \\
         --param duration.hours=48 \\
         --param behavior.engine=schedule
 
@@ -29,7 +29,7 @@ Usage (catalog-only check)::
         --scenario-db http://localhost:8000 \\
         --model casmsocial \\
         --model-version 2.4.0 \\
-        --scenario dmv_100 \\
+        --scenario wake_county_heat \\
         --resolve-only
 
 Parameter precedence (lowest → highest):
@@ -244,7 +244,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--scenario",
         required=True,
         metavar="NAME",
-        help="Scenario name as registered in casmdb (e.g. 'dmv_100').",
+        help="Scenario name as registered in casmdb (e.g. 'wake_county_heat').",
     )
     parser.add_argument(
         "--param",
@@ -261,7 +261,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--resolve-only",
         "--dry-run",
         action="store_true",
-        help=("Resolve and validate catalog parameters, then exit without " "starting the simulation."),
+        help=("Resolve and validate catalog parameters, then exit without starting the simulation."),
     )
     parser.add_argument(
         "--print-params",

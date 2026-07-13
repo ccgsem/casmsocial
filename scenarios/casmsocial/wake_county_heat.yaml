@@ -1,0 +1,12 @@
+scenario_name: wake_county_heat
+model_name: casmsocial
+description: Public Wake County Heat deployment fixture scenario.
+parameters:
+  model.name: casmsocial.citysim.citysocialmodel.CitySocialModel
+  places.table: wake_county_heat.places
+  households.table: wake_county_heat.hh_1000_households
+  persons.table: wake_county_heat.persons_1000_households
+  activities.table: wake_county_heat.activities_1000_households
+  contacts.table: ''
+  contacts.enabled: false
+  communication.enabled: false

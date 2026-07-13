@@ -19,9 +19,10 @@ uv run mpirun -n 1 python -m casmsocial config/casmsocial.yaml
 `mvp.yaml` is a smaller self-contained smoke configuration backed by
 `scripts/create_mvp_ducklake.py`.
 
-Canonical casmsocial scenarios live in `scenarios/casmsocial/*.yaml`. Update
-those files when changing the named scenarios registered in casmdb by
-`scripts/register_casmsocial.py`.
+Canonical casmsocial scenarios live in `scenarios/casmsocial/*.yaml`. The
+public registered scenario is `wake_county_heat`, backed by the same fixture as
+`config/casmsocial.yaml`. Update those files when changing the named scenarios
+registered in casmdb by `scripts/register_casmsocial.py`.
 
 Use `config/*.yaml` when running the simulator directly, for example:
 

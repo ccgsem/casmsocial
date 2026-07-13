@@ -60,8 +60,8 @@ uv run python scripts/materialize_wake_county_heat_fixture.py \
   --ducklake-path data/datalakehouse
 ```
 
-Canonical casmdb scenario definitions are maintained in
-`scenarios/casmsocial/*.yaml` and registered with
+The public casmdb scenario is `wake_county_heat`, maintained in
+`scenarios/casmsocial/wake_county_heat.yaml` and registered with
 `scripts/register_casmsocial.py`.
 
 To run (option 1):

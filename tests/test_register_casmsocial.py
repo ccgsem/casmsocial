@@ -28,6 +28,21 @@ def test_build_scenarios_uses_yaml_parameters():
         assert scenarios[name] == spec["parameters"]
 
 
+def test_registered_scenarios_use_public_wake_county_heat_fixture():
+    specs = _load_scenario_specs()
+
+    assert set(specs) == {"wake_county_heat"}
+    params = specs["wake_county_heat"]["parameters"]
+    assert params["places.table"] == "wake_county_heat.places"
+    assert params["households.table"] == "wake_county_heat.hh_1000_households"
+    assert params["persons.table"] == "wake_county_heat.persons_1000_households"
+    assert params["activities.table"] == "wake_county_heat.activities_1000_households"
+    assert params["contacts.table"] == ""
+    assert params["contacts.enabled"] is False
+    assert params["communication.enabled"] is False
+    assert not any(str(value).startswith(("rti_synth_pop_v2_dmv", "rti_synth_pop_v2_dc")) for value in params.values())
+
+
 def test_default_direct_run_config_uses_public_wake_county_heat_fixture():
     params = yaml.safe_load(Path("config/casmsocial.yaml").read_text(encoding="utf-8"))
 

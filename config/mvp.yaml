@@ -12,7 +12,7 @@ duration.hours: 24
 timezone: 'America/New_York'
 time.step.minutes: 60
 
-# Small DMV sample tables used by the default demo configuration.
+# Small self-contained MVP sample tables created by scripts/create_mvp_ducklake.py.
 places.table: 'rti_synth_pop_v2_dmv_100.places'
 households.table: 'rti_synth_pop_v2_dmv_100.hh'
 activities.table: 'rti_synth_pop_v2_dmv_100.activities'

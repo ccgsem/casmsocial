@@ -13,7 +13,7 @@ DEFAULT_DUCKLAKE_PATH = Path("examples/mvp/mvp.ducklake")
 
 
 def create_mvp_tables(conn: duckdb.DuckDBPyConnection) -> None:
-    """Create or replace the sample DMV tables on an open DuckDB connection."""
+    """Create or replace the self-contained MVP sample tables on an open DuckDB connection."""
     conn.execute("CREATE SCHEMA IF NOT EXISTS rti_synth_pop_v2_dmv_100")
     conn.execute("CREATE SCHEMA IF NOT EXISTS partitions")
     conn.execute("""
@@ -144,7 +144,7 @@ def create_mvp_ducklake(
     ducklake_path: Path = DEFAULT_DUCKLAKE_PATH,
     database_name: str = "insights_ducklake",
 ) -> None:
-    """Create or replace the sample DMV tables consumed by config/mvp.yaml."""
+    """Create or replace the self-contained MVP sample tables consumed by config/mvp.yaml."""
     ducklake_path = ducklake_path.expanduser()
     ducklake_path.parent.mkdir(parents=True, exist_ok=True)
 

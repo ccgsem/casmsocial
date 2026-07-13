@@ -95,7 +95,7 @@ else:
 The matching step for **household and person ownership** is the same idea, one
 join further. `Household` is a social-unit agent loaded from the physical source
 table named by the `households.table` config key. In current DMV-style inputs
-that table is `hh`; the runtime materializes a temporary `households` table
+that table is often named `hh`; the runtime materializes a temporary `households` table
 after normalizing aliases. `Household.place_id` links the social unit to the
 physical `Place`. If a household row omits `place_id`, casmsocial treats `sp_id`
 as the physical place id. The temp `household_ranks` table preserves the
