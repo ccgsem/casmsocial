@@ -56,4 +56,11 @@ For containerized MinIO, the endpoint should be the Docker service name and port
 
 ## Data Review Note
 
-This fixture contains synthetic population, household, activity, and place records. It also includes precise coordinate/location fields, so data-owner and policy clearance should be confirmed before pushing this fixture to shared remotes.
+This fixture contains synthetic population, household, activity, and place
+records. It also includes precise coordinate/location fields.
+
+The current manifest status is `pending_data_owner_approval`. Use the fixture
+for casmsocial deployment testing, CI smoke validation, and adapter-pattern
+documentation only. Do not mirror it, publish it as a release asset, package it
+into downstream artifacts, or treat it as an approved public dataset until the
+data owner decision, date, and evidence URI are recorded in `manifest.yaml`.

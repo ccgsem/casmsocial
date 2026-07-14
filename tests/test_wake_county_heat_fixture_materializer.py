@@ -111,6 +111,18 @@ def test_validate_fixture_rejects_checksum_mismatch(tmp_path: Path) -> None:
         materializer.validate_fixture(fixture_path)
 
 
+def test_committed_fixture_records_pending_data_approval_boundary() -> None:
+    manifest_path = Path("testdata/wake_county_heat_1000_households/manifest.yaml")
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    classification = manifest["data_classification"]
+
+    assert classification["status"] == "pending_data_owner_approval"
+    assert classification["approval"]["decision"] == "not recorded"
+    assert classification["approval"]["evidence_uri"] == ""
+    assert "github.com/ccgsem/casmsocial" in classification["current_sharing_boundary"]["known_repository_locations"]
+    assert "Do not mirror" in classification["current_sharing_boundary"]["broader_redistribution"]
+
+
 def test_get_ducklake_postgres_s3_connection_attaches_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     conn = _RecordingConnection()
     monkeypatch.setattr(materializer.duckdb, "connect", lambda: conn)

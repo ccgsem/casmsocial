@@ -17,8 +17,18 @@ The fixture materializes these tables under the `wake_county_heat` schema:
 | `places` | 380,396 |
 
 The fixture contains synthetic population, household, activity, and place
-records. It also contains coordinate/location fields, so confirm data-owner and
-policy clearance before pushing or mirroring it outside approved repositories.
+records. It also contains coordinate/location fields.
+
+## Data Approval Status
+
+The current manifest status is `pending_data_owner_approval`. The fixture is
+used for casmsocial deployment testing, CI smoke validation, and adapter-pattern
+documentation. Its known repository locations are recorded in
+`manifest.yaml`.
+
+Until the data owner decision, date, and evidence URI are recorded in the
+manifest, do not mirror the fixture, publish it as a release asset, package it
+into downstream artifacts, or treat it as an approved public dataset.
 
 ## Fixture Package
 

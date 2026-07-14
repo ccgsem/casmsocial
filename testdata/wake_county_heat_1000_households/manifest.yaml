@@ -13,9 +13,21 @@ intended_deployments:
   - production_ducklake_postgres_catalog_s3_storage
 data_classification:
   status: pending_data_owner_approval
+  approval:
+    owner: "not recorded"
+    decision: "not recorded"
+    decision_date: null
+    evidence_uri: ""
+  current_sharing_boundary:
+    use: "casmsocial deployment testing, CI smoke validation, and adapter-pattern documentation."
+    known_repository_locations:
+      - "github.com/ccgsem/casmsocial"
+      - "gitlab.mitre.org/livingpopulation/casmsocial"
+    broader_redistribution: "Do not mirror, publish as a release asset, package into downstream artifacts, or use as an approved public dataset until data-owner approval is recorded in this manifest."
+    approval_update_required: "Before wider reuse, update data_classification.status, approval.owner, approval.decision, approval.decision_date, and approval.evidence_uri."
   notes:
     - "Synthetic population fixture with demographic, household, activity, and place records."
-    - "Includes precise coordinate/location fields; confirm policy clearance before pushing to shared remotes."
+    - "Includes precise coordinate/location fields; maintain the sharing boundary above until data-owner approval is recorded."
 tables:
   - name: persons_1000_households
     source_table: wake_county_heat.persons_1000_households
