@@ -48,6 +48,17 @@ mvp: mvp-clean ## Clean artifacts, create the local MVP DuckLake, run the scenar
 	@echo "🚀 Summarizing MVP output"
 	@uv run python scripts/summarize_mvp_output.py
 
+.PHONY: dc-metro-synthetic-100
+dc-metro-synthetic-100: ## Generate, materialize, and smoke-run the fictional DC metro 100-household scenario
+	@echo "🚀 Generating DC metro synthetic fixture"
+	@uv run python scripts/create_dc_metro_synthetic_fixture.py \
+		--ducklake-path data/datalakehouse_dc_metro_synthetic_100
+	@echo "🚀 Running DC metro synthetic scenario"
+	@CASMSOCIAL_DUCKLAKE_PATH=data/datalakehouse_dc_metro_synthetic_100 \
+	uv run mpirun -n 1 python -m casmsocial config/dc_metro_synthetic_100.yaml
+	@echo "🚀 Validating DC metro synthetic agent log"
+	@uv run python -c "import duckdb; row = duckdb.sql(\"SELECT count(DISTINCT agent_id) FROM read_parquet('data/output/dc_metro_synthetic_100_agent_log.parquet')\").fetchone(); assert row[0] == 250, row"
+
 .PHONY: mvp-2rank
 mvp-2rank: ## Run the MVP smoke scenario with two MPI ranks
 	@echo "🚀 Removing generated MVP two-rank artifacts"

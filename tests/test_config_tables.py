@@ -12,6 +12,10 @@ CONFIG_TABLE_KEYS = (
     "activities.table",
 )
 
+# These configs have a matching Make target that creates a dedicated DuckLake
+# fixture rather than using the developer-local default DuckLake below.
+SELF_CONTAINED_FIXTURE_CONFIGS = {"dc_metro_synthetic_100.yaml"}
+
 
 def _storage_path_for_table(storage_dir: Path, table_name: str) -> Path:
     parts = table_name.split(".")
@@ -26,6 +30,9 @@ def test_shipped_config_input_tables_exist_in_local_ducklake_storage():
 
     missing: list[str] = []
     for config_path in sorted(Path("config").glob("*.yaml")):
+        if config_path.name in SELF_CONTAINED_FIXTURE_CONFIGS:
+            continue
+
         params = yaml.safe_load(config_path.read_text()) or {}
         for key in CONFIG_TABLE_KEYS:
             table_name = params.get(key)

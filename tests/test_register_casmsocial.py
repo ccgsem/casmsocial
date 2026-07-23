@@ -4,7 +4,14 @@ from scripts.register_casmsocial import CASMSOCIAL_FACTORY_KEY, _build_scenarios
 def test_register_casmsocial_loads_canonical_scenario_yaml_files():
     specs = _load_scenario_specs()
 
-    assert set(specs) == {"base", "dmv", "dmv_100", "dc", "dc_5000"}
+    assert set(specs) == {
+        "base",
+        "dmv",
+        "dmv_100",
+        "dc",
+        "dc_5000",
+        "dc_metro_synthetic_100",
+    }
     for name, spec in specs.items():
         assert spec["description"]
         params = spec["parameters"]

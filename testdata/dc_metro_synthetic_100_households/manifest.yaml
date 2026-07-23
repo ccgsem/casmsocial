@@ -1,0 +1,121 @@
+version: 1
+fixture_id: dc_metro_synthetic_100_households
+description: Deterministic fictional DC metro population for local CASMSocial scenario
+  tests.
+generated_by: scripts/create_dc_metro_synthetic_fixture.py
+data_classification:
+  status: synthetic_fixture
+  sharing_boundary: Local CASMSocial development and simulation only.
+  notes:
+  - This fixture is generated from code and is not derived from OSF microdata.
+  - Coordinates are fictional points for simulation mechanics, not real homes, workplaces,
+    or schools.
+source:
+  schema: dc_metro_synthetic_100
+  reference_area: fictional DC metro
+tables:
+- name: persons
+  source_table: dc_metro_synthetic_100.persons
+  file: tables/persons.parquet
+  format: parquet
+  compression: zstd
+  rows: 250
+  size_bytes: 2659
+  sha256: 56e1f023d8602e87f42fa72cac67c22a8d708cdd94764d05c8344446c9b83082
+  columns:
+  - name: sp_id
+    type: BIGINT
+    nullable: true
+  - name: sp_hh_id
+    type: BIGINT
+    nullable: true
+  - name: sp_work_id
+    type: BIGINT
+    nullable: true
+  - name: sp_school_id
+    type: BIGINT
+    nullable: true
+- name: hh
+  source_table: dc_metro_synthetic_100.hh
+  file: tables/hh.parquet
+  format: parquet
+  compression: zstd
+  rows: 100
+  size_bytes: 3005
+  sha256: 2494e0b1b075cae17e82e9c4bd125b75816e9c8b35993b3dc8087a2debd91740
+  columns:
+  - name: sp_id
+    type: BIGINT
+    nullable: true
+  - name: sp_home_id
+    type: BIGINT
+    nullable: true
+  - name: hh_size
+    type: INTEGER
+    nullable: true
+  - name: hh_income
+    type: DOUBLE
+    nullable: true
+  - name: hh_type
+    type: VARCHAR
+    nullable: true
+  - name: hh_race
+    type: VARCHAR
+    nullable: true
+  - name: hh_age
+    type: INTEGER
+    nullable: true
+- name: activities
+  source_table: dc_metro_synthetic_100.activities
+  file: tables/activities.parquet
+  format: parquet
+  compression: zstd
+  rows: 750
+  size_bytes: 4134
+  sha256: 8eab8fee7abbaa5c62e89d754d8a755408637973d4f8a59621f32d34e6f1c412
+  columns:
+  - name: sp_persons_id
+    type: BIGINT
+    nullable: true
+  - name: activity_id
+    type: INTEGER
+    nullable: true
+  - name: activity_sequence
+    type: INTEGER
+    nullable: true
+  - name: starttime_min
+    type: INTEGER
+    nullable: true
+  - name: endtime_min
+    type: INTEGER
+    nullable: true
+  - name: sp_act_id
+    type: BIGINT
+    nullable: true
+- name: places
+  source_table: dc_metro_synthetic_100.places
+  file: tables/places.parquet
+  format: parquet
+  compression: zstd
+  rows: 116
+  size_bytes: 2853
+  sha256: 7461d291702207552484a7076e036b46130782f8ad547d237044adc952866df7
+  columns:
+  - name: sp_id
+    type: BIGINT
+    nullable: true
+  - name: rank
+    type: INTEGER
+    nullable: true
+  - name: place_type
+    type: VARCHAR
+    nullable: true
+  - name: place_name
+    type: VARCHAR
+    nullable: true
+  - name: latitude
+    type: DOUBLE
+    nullable: true
+  - name: longitude
+    type: DOUBLE
+    nullable: true

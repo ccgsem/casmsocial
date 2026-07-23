@@ -1,0 +1,29 @@
+# Direct local-run configuration for the deterministic DC metro synthetic fixture.
+model.name: 'casmsocial.citysim.citysocialmodel.CitySocialModel'
+random.seed: 47900
+start.datetime: '2025-06-02 00:00:00'
+duration.hours: 24
+timezone: 'America/New_York'
+time.step.minutes: 60
+
+places.table: 'dc_metro_synthetic_100.places'
+households.table: 'dc_metro_synthetic_100.hh'
+persons.table: 'dc_metro_synthetic_100.persons'
+activities.table: 'dc_metro_synthetic_100.activities'
+contacts.table: ''
+contacts.enabled: false
+communication.enabled: false
+
+behavior.engine: 'schedule'
+roads.enabled: false
+partition.table: ''
+partition.default_rank: 0
+partition.require_full_coverage: false
+
+observers.output_dir: 'data/output'
+observers.agent_log.enabled: true
+observers.agent_log_file: 'dc_metro_synthetic_100_agent_log.parquet'
+observers.behavior_log.enabled: false
+observers.delta_agent_state.enabled: false
+logging.rank0_only: true
+logging.level: 'INFO'

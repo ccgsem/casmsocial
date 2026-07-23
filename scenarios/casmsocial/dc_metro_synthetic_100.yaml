@@ -1,0 +1,14 @@
+scenario_name: dc_metro_synthetic_100
+model_name: casmsocial
+description: Deterministic fictional DC metro 100-household local simulation fixture.
+parameters:
+  model.name: casmsocial.citysim.citysocialmodel.CitySocialModel
+  places.table: dc_metro_synthetic_100.places
+  households.table: dc_metro_synthetic_100.hh
+  persons.table: dc_metro_synthetic_100.persons
+  activities.table: dc_metro_synthetic_100.activities
+  contacts.table: ''
+  contacts.enabled: false
+  communication.enabled: false
+  behavior.engine: schedule
+  roads.enabled: false
