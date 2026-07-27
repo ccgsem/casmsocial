@@ -39,6 +39,7 @@ from casmsocial.activities import (
     validate_leg_against_schedule,
 )
 from casmsocial.communication import CommunicationManager, MessageIntent
+from casmsocial.communication.types import MessageKind, build_message_payload
 from casmsocial.data_utilities import (
     check_if_table_exists,
     convert_to_int,
@@ -55,6 +56,7 @@ from casmsocial.person import BehaviorEngineV2, LLMBehaviorEngine, Person, Perso
 from casmsocial.place import Place, PlaceData, PlacesProjectionV2
 from casmsocial.road_network import RoadNetwork
 from casmsocial.sim_time import SimTime
+from casmsocial.social_interactions import PresenceInterval, SocialTie, generate_in_person_events
 
 
 # Custom exceptions for CasmPop
@@ -68,6 +70,10 @@ class MissingRequiredTableError(Exception):
     def __init__(self, keys):
         keys_str = ", ".join(str(k) for k in keys) if isinstance(keys, list | tuple) else str(keys)
         super().__init__(f"Missing required table(s): {keys_str}")
+
+
+class InvalidSocialNetworkTableError(ValueError):
+    """Raised when potential social ties do not satisfy the input contract."""
 
 
 class InvalidTimeStepError(Exception):
@@ -255,7 +261,8 @@ class SimEnvironment(Environment):
                 model.sync_place_projection_memberships,
             )
 
-        # theModel.make_contacts(tick)
+        # Potential social ties are loaded at startup; behavior layers derive
+        # time-resolved interactions from schedules, co-location, and messages.
 
     def at_end(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Actions to perform at the end of the simulation."""
@@ -378,6 +385,7 @@ OBSERVER_OUTPUT_FILE_DEFAULTS = {
     "observers.behavior_log_file": "behavior_log.parquet",
     "observers.delta_agent_state_file": "agent_state_delta.parquet",
     "observers.delta_agent_state_audit_file": "agent_state_delta_audit.parquet",
+    "observers.social_interaction_log_file": "social_interactions.parquet",
 }
 
 
@@ -525,6 +533,59 @@ class AgentLogger(Observer):
         if self._last_table is None:
             return {}
         return {"agent_log": self._last_table}
+
+
+class SocialInteractionLogger(Observer):
+    """Write privacy-safe per-tick counts of social interaction activity."""
+
+    def __init__(self, name, model: Model = None):
+        super().__init__(name, model)
+        self.log_file = _observer_output_path(model, "observers.social_interaction_log_file")
+        self._last_table: pa.Table | None = None
+
+    def on_step(self, model: Model) -> None:
+        if not model._param_enabled("observers.social_interaction_log.enabled", False):
+            return
+
+        counts: dict[tuple[str, str], int] = {}
+        for event in getattr(model, "interaction_events", []):
+            key = (event.channel, event.network_kind)
+            counts[key] = counts.get(key, 0) + 1
+        for intent in getattr(model, "remote_social_message_intents", []):
+            metadata = intent.payload.get("metadata", {})
+            network_kind = str(metadata.get("network_kind", "unknown"))
+            key = ("remote", network_kind)
+            counts[key] = counts.get(key, 0) + 1
+        if not counts:
+            self._last_table = None
+            return
+
+        rows = [
+            {
+                "run_id": _model_run_id(model),
+                "random_seed": _model_random_seed(model),
+                "tick": int(model.cal.tick),
+                "rank": int(model.comm.Get_rank()),
+                "channel": channel,
+                "network_kind": network_kind,
+                "event_count": event_count,
+            }
+            for (channel, network_kind), event_count in sorted(counts.items())
+        ]
+        table = pl.DataFrame(rows).to_arrow()
+        self._last_table = table
+        ds.write_dataset(
+            data=table,
+            base_dir=self.log_file,
+            format="parquet",
+            partitioning=HivePartitioning(_output_partition_schema()),
+            existing_data_behavior="overwrite_or_ignore",
+        )
+
+    def get_output_tables(self, model: Model) -> dict[str, pa.Table]:
+        if self._last_table is None:
+            return {}
+        return {"social_interactions": self._last_table}
 
 
 class BehaviorLogger(Observer):
@@ -764,8 +825,10 @@ class CasmPop(Model):
             "places.table": "rti_synth_pop_v2_dmv_100.places",
             "households.table": "",
             "activities.table": "rti_synth_pop_v2_dmv_100.activities",
-            "contacts.table": "rti_synth_pop_v2_dmv_100.contacts",
-            "contacts.enabled": False,
+            "social_networks.table": "",
+            "social_networks.enabled": False,
+            "social_networks.remote_messages.enabled": False,
+            "social_networks.remote_messages.interval_minutes": 60,
             "communication.enabled": True,
             "persons.table": "rti_synth_pop_v2_dmv_100.persons",
             "behavior.engine": "default",
@@ -796,6 +859,8 @@ class CasmPop(Model):
             "observers.delta_agent_state.enabled": False,
             "observers.delta_agent_state_file": "agent_state_delta.parquet",
             "observers.delta_agent_state_audit_file": "agent_state_delta_audit.parquet",
+            "observers.social_interaction_log.enabled": False,
+            "observers.social_interaction_log_file": "social_interactions.parquet",
             "observers.arrow_server.enabled": False,
             "observers.arrow_server.host": "127.0.0.1",
             "logging.rank0_only": False,
@@ -817,6 +882,8 @@ class CasmPop(Model):
             "observers.delta_agent_state.enabled": False,
             "observers.delta_agent_state_file": "agent_state_delta.parquet",
             "observers.delta_agent_state_audit_file": "agent_state_delta_audit.parquet",
+            "observers.social_interaction_log.enabled": False,
+            "observers.social_interaction_log_file": "social_interactions.parquet",
             "observers.arrow_server.enabled": False,
             "observers.arrow_server.host": "127.0.0.1",
         }
@@ -966,7 +1033,12 @@ class CasmPop(Model):
 
         self.queries = {}
 
-        self.contact_map = {}
+        # Potential social ties, not scheduled contact events. Actual
+        # in-person and remote interactions are generated by behavior layers.
+        self.social_network_map = {}
+        self.social_ties: list[SocialTie] = []
+        self.interaction_events = []
+        self.remote_social_message_intents: list[MessageIntent] = []
         self.place_to_rank: dict[int, int] = {}
         self.place_members: dict[int, list[tuple[int, int, int]]] = {}
         self.person_uid_map: dict[tuple[int, int, int], Person] = {}
@@ -1088,8 +1160,10 @@ class CasmPop(Model):
             "timezone",
             "time.step.minutes",
             "households.table",
-            "contacts.table",
-            "contacts.enabled",
+            "social_networks.table",
+            "social_networks.enabled",
+            "social_networks.remote_messages.enabled",
+            "social_networks.remote_messages.interval_minutes",
             "communication.enabled",
             "partition.table",
             "partition.default_rank",
@@ -1103,6 +1177,8 @@ class CasmPop(Model):
             "observers.delta_agent_state.enabled",
             "observers.delta_agent_state_file",
             "observers.delta_agent_state_audit_file",
+            "observers.social_interaction_log.enabled",
+            "observers.social_interaction_log_file",
             "observers.arrow_server.enabled",
             "observers.arrow_server.host",
             "logging.rank0_only",
@@ -1120,7 +1196,8 @@ class CasmPop(Model):
         self._set_default_duration_hours()
         self._set_default_timezone()
         self._parse_time_step_minutes()
-        self._set_default_contacts_enabled()
+        self._set_default_social_networks_enabled()
+        self._set_default_social_network_remote_messages()
         self._set_default_communication_enabled()
         self._set_default_partition_params()
         self._set_default_agent_log_enabled()
@@ -1174,9 +1251,15 @@ class CasmPop(Model):
             )
             raise InvalidTimeStepError(self.params["time.step.minutes"])
 
-    def _set_default_contacts_enabled(self) -> None:
-        if self.params["contacts.enabled"] is None:
-            self.params["contacts.enabled"] = False
+    def _set_default_social_networks_enabled(self) -> None:
+        if self.params["social_networks.enabled"] is None:
+            self.params["social_networks.enabled"] = False
+
+    def _set_default_social_network_remote_messages(self) -> None:
+        if self.params["social_networks.remote_messages.enabled"] is None:
+            self.params["social_networks.remote_messages.enabled"] = False
+        if self.params["social_networks.remote_messages.interval_minutes"] is None:
+            self.params["social_networks.remote_messages.interval_minutes"] = 60
 
     def _set_default_communication_enabled(self) -> None:
         if self.params["communication.enabled"] is None:
@@ -1213,6 +1296,8 @@ class CasmPop(Model):
             self.params["observers.behavior_log.enabled"] = False
         if self.params["observers.delta_agent_state.enabled"] is None:
             self.params["observers.delta_agent_state.enabled"] = False
+        if self.params["observers.social_interaction_log.enabled"] is None:
+            self.params["observers.social_interaction_log.enabled"] = False
 
         for key, default_filename in OBSERVER_OUTPUT_FILE_DEFAULTS.items():
             self.params[key] = _observer_output_filename(
@@ -1249,8 +1334,13 @@ class CasmPop(Model):
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return bool(value)
 
-    def _contacts_enabled(self) -> bool:
-        return self._param_enabled("contacts.enabled", False)
+    def _social_networks_enabled(self) -> bool:
+        return self._param_enabled("social_networks.enabled", False)
+
+    def _social_network_remote_messages_enabled(self) -> bool:
+        return self._social_networks_enabled() and self._param_enabled(
+            "social_networks.remote_messages.enabled", False
+        )
 
     def _communication_enabled(self) -> bool:
         return self._param_enabled("communication.enabled", True)
@@ -1312,12 +1402,12 @@ class CasmPop(Model):
             avg_value = sum(values) / len(values)
             logger.info(f"  {phase}: " f"min={min(values):.3f}, " f"avg={avg_value:.3f}, " f"max={max(values):.3f}")
 
-    def _contacts_table_name(self) -> str | None:
-        contacts_table = self.params.get("contacts.table")
-        if contacts_table is None:
+    def _social_networks_table_name(self) -> str | None:
+        social_networks_table = self.params.get("social_networks.table")
+        if social_networks_table is None:
             return None
-        contacts_table = str(contacts_table).strip()
-        return contacts_table or None
+        social_networks_table = str(social_networks_table).strip()
+        return social_networks_table or None
 
     def _households_table_name(self) -> str | None:
         households_table = self.params.get("households.table")
@@ -1380,12 +1470,24 @@ class CasmPop(Model):
             # registered yet (e.g. by a derived class)
             if len(self._observers) == 0 and self._agent_log_enabled():
                 self.add_observer(AgentLogger("AgentLogger", self))
-            if self.params.get("observers.behavior_log.enabled", False):
-                self.add_observer(BehaviorLogger("BehaviorLogger", self))
-            if self._param_enabled("observers.delta_agent_state.enabled", False):
-                self.add_observer(DeltaAgentStateLogger("DeltaAgentStateLogger", self))
         else:
             logger.info("Activity names already registered by derived class...")
+
+        # Optional observers must be registered even when a derived model has
+        # already registered the activity names. Avoid duplicate observers if
+        # a derived model explicitly supplied one.
+        if self.params.get("observers.behavior_log.enabled", False) and not any(
+            isinstance(observer, BehaviorLogger) for observer in self._observers
+        ):
+            self.add_observer(BehaviorLogger("BehaviorLogger", self))
+        if self._param_enabled("observers.delta_agent_state.enabled", False) and not any(
+            isinstance(observer, DeltaAgentStateLogger) for observer in self._observers
+        ):
+            self.add_observer(DeltaAgentStateLogger("DeltaAgentStateLogger", self))
+        if self._param_enabled("observers.social_interaction_log.enabled", False) and not any(
+            isinstance(observer, SocialInteractionLogger) for observer in self._observers
+        ):
+            self.add_observer(SocialInteractionLogger("SocialInteractionLogger", self))
 
         self._start_arrow_server_if_enabled()
 
@@ -1420,23 +1522,26 @@ class CasmPop(Model):
         # add geometry to the places table
         # self.conn.execute(self.queries["add_geometries"])
 
-        # contact_map is a dict of personID->{placeID->[personID]}
-        # i.e. it is a map of personIDs to a list of contacted persons
-        # at each place
-        contacts_table = self._contacts_table_name()
-        if self._contacts_enabled():
-            if contacts_table is None:
-                raise MissingRequiredParameterError("contacts.table")
-            logger.info(f"Loading contact table {contacts_table}...")
-            self.contact_map = self._time_phase("startup.create_contacts", self.create_contacts)
+        # social_network_map is a map of person id to potential social ties.
+        # It intentionally contains no time or place. A relationship is not a
+        # pre-scheduled encounter; behavior layers must create time-resolved
+        # in-person or remote interaction events from these ties.
+        social_networks_table = self._social_networks_table_name()
+        if self._social_networks_enabled():
+            if social_networks_table is None:
+                raise MissingRequiredParameterError("social_networks.table")
+            logger.info(f"Loading social network table {social_networks_table}...")
+            self.social_network_map = self._time_phase(
+                "startup.create_social_networks", self.create_social_networks
+            )
         else:
-            self.contact_map = {}
-            if contacts_table:
-                logger.info("contacts.enabled is false; skipping contacts table load.")
+            self.social_network_map = {}
+            if social_networks_table:
+                logger.info("social_networks.enabled is false; skipping social network table load.")
             else:
-                logger.info("contacts table not specified; skipping contacts table load.")
+                logger.info("social network table not specified; skipping social network table load.")
 
-        logger.debug("rank {}: contacts size={}", self.rank, len(self.contact_map))
+        logger.debug("rank {}: social network size={}", self.rank, len(self.social_network_map))
 
         self.rng = repast4py.random.default_rng
 
@@ -1683,6 +1788,10 @@ class CasmPop(Model):
 
         tick = int(self.cal.tick)
         intents = self.collect_message_intents()
+        self.remote_social_message_intents = []
+        if self._social_network_remote_messages_enabled():
+            self.remote_social_message_intents = self.generate_remote_social_message_intents()
+            intents.extend(self.remote_social_message_intents)
 
         self.communication_manager.clear_buffers()
         if self._global_message_intent_count(len(intents)) == 0:
@@ -2469,35 +2578,39 @@ class CasmPop(Model):
                 """,
         }
 
-        # create the contacts table only when contact behavior is enabled.
-        self._time_phase("startup.create_input_tables.contacts", self._create_contacts_input_table, imputation)
+        # Materialize potential social ties only when a behavior layer uses them.
+        self._time_phase(
+            "startup.create_input_tables.social_networks",
+            self._create_social_networks_input_table,
+            imputation,
+        )
 
-    def _create_contacts_input_table(self, imputation: int | None) -> None:
-        """Create the optional contacts table used by contact-aware behavior."""
-        if self._contacts_enabled():
-            contacts_table = self._contacts_table_name()
-            if contacts_table is None:
-                raise MissingRequiredParameterError("contacts.table")
-            if not check_if_table_exists(self.conn, contacts_table):
-                logger.error(f"Error: contacts table {contacts_table} " "does not exist in the database.")
-                raise MissingRequiredTableError(contacts_table)
+    def _create_social_networks_input_table(self, imputation: int | None) -> None:
+        """Create the optional potential-social-ties table used by behavior."""
+        if self._social_networks_enabled():
+            social_networks_table = self._social_networks_table_name()
+            if social_networks_table is None:
+                raise MissingRequiredParameterError("social_networks.table")
+            if not check_if_table_exists(self.conn, social_networks_table):
+                logger.error(f"Error: social network table {social_networks_table} does not exist in the database.")
+                raise MissingRequiredTableError(social_networks_table)
             if imputation is not None:
-                logger.info(f"Using imputation {imputation} for " f"contacts table {contacts_table}...")
-                contacts_identifier = quote_table_identifier(contacts_table)
+                logger.info(f"Using imputation {imputation} for social network table {social_networks_table}...")
+                social_networks_identifier = quote_table_identifier(social_networks_table)
                 self.conn.execute(f"""
-                    CREATE OR REPLACE TEMPORARY TABLE contacts AS
-                    SELECT * FROM {contacts_identifier}
+                    CREATE OR REPLACE TEMPORARY TABLE social_networks AS
+                    SELECT * FROM {social_networks_identifier}
                     WHERE Imputation = {imputation};
                     """)  # noqa: S608
             else:
-                logger.info(f"Using contacts table {contacts_table}...")
-                contacts_identifier = quote_table_identifier(contacts_table)
+                logger.info(f"Using social network table {social_networks_table}...")
+                social_networks_identifier = quote_table_identifier(social_networks_table)
                 self.conn.execute(
-                    f"CREATE OR REPLACE TEMPORARY TABLE contacts AS "  # noqa: S608
-                    f"SELECT * FROM {contacts_identifier}"
+                    f"CREATE OR REPLACE TEMPORARY TABLE social_networks AS "  # noqa: S608
+                    f"SELECT * FROM {social_networks_identifier}"
                 )
-        elif self._contacts_table_name():
-            logger.info("contacts.enabled is false; skipping contacts table materialization.")
+        elif self._social_networks_table_name():
+            logger.info("social_networks.enabled is false; skipping social network table materialization.")
 
     def _household_row_place_id(self, row: dict) -> int | None:
         """Resolve the physical place id from a household row."""
@@ -3365,28 +3478,152 @@ class CasmPop(Model):
 
         return [act_map]
 
-    def create_contacts(self) -> dict[int, dict[int, int]]:
-        # contactMap looks like:
-        # personID -> { hour_of_day -> [ otherPersonIDs ] }
-        contactMap = {}
+    def create_social_networks(self) -> dict[int, list[tuple[int, str, float | None]]]:
+        """Load canonical, undirected potential social ties.
 
-        # with open(contactFile, 'r', newline='') as f:
-        #     contacts = DictReader(f)
-        # table = pq.read_table(contactFile)
-        table = self.conn.execute("SELECT * FROM contacts").arrow().read_all()
+        The ``social_networks`` table is deliberately timeless: each row says
+        two people can interact, not that they did interact at a particular
+        hour. In-person encounters must be derived from co-location and
+        schedule overlap; remote communication may use the same ties without
+        co-location.
+        """
+        columns = {row[0] for row in self.conn.execute("DESCRIBE social_networks").fetchall()}
+        required_columns = {"person_id_a", "person_id_b", "network_kind"}
+        missing_columns = required_columns - columns
+        if missing_columns:
+            raise MissingRequiredTableError(
+                [f"social_networks.{column}" for column in sorted(missing_columns)]
+            )
 
-        for batch in table.to_batches():
-            d = batch.to_pydict()
-            for source, target, hour_of_the_day in zip(d["from_person"], d["to_person"], d["hour"]):
-                if source not in contactMap:
-                    contactMap[source] = {}
+        tie_strength = "tie_strength" if "tie_strength" in columns else "NULL"
+        rows = self.conn.execute(f"""
+            SELECT person_id_a, person_id_b, network_kind, {tie_strength} AS tie_strength
+            FROM social_networks
+        """).fetchall()
 
-                if hour_of_the_day not in contactMap[source]:
-                    contactMap[source][hour_of_the_day] = []
+        network_map: dict[int, list[tuple[int, str, float | None]]] = {}
+        social_ties: list[SocialTie] = []
+        seen_edges: set[tuple[int, int, str]] = set()
+        for person_id_a, person_id_b, network_kind, strength in rows:
+            if (
+                person_id_a is None
+                or person_id_b is None
+                or network_kind is None
+                or person_id_a >= person_id_b
+            ):
+                raise InvalidSocialNetworkTableError(
+                    "social_networks rows must use non-null canonical endpoints "
+                    "(person_id_a < person_id_b) and a network_kind"
+                )
+            edge_key = (person_id_a, person_id_b, network_kind)
+            if edge_key in seen_edges:
+                raise InvalidSocialNetworkTableError("social_networks contains duplicate canonical ties")
+            seen_edges.add(edge_key)
+            normalized_strength = None if strength is None else float(strength)
+            social_ties.append(
+                SocialTie(person_id_a, person_id_b, network_kind, normalized_strength)
+            )
+            network_map.setdefault(person_id_a, []).append(
+                (person_id_b, network_kind, normalized_strength)
+            )
+            network_map.setdefault(person_id_b, []).append(
+                (person_id_a, network_kind, normalized_strength)
+            )
 
-                contactMap[source][hour_of_the_day].append(target)
+        self.social_ties = social_ties
+        return network_map
 
-        return contactMap
+    def active_planned_presences(self) -> list[PresenceInterval]:
+        """Return local scheduled physical presences for the current tick."""
+        start_minute = int(self.cal.minute_of_day)
+        end_minute = start_minute + int(self.time_step_minutes)
+        presences: list[PresenceInterval] = []
+        for person in _person_agents(self.context):
+            plan_state = person.get_plan_state(self.cal)
+            if not isinstance(plan_state.element, Act):
+                continue
+            place_id = person._place_id_for_activity(plan_state.element.activity_id)
+            if not place_id:
+                continue
+            presences.append(
+                PresenceInterval(
+                    person_id=int(person.id),
+                    place_id=int(place_id),
+                    start_minute=start_minute,
+                    end_minute=end_minute,
+                )
+            )
+        return presences
+
+    def generate_in_person_interactions(self):
+        """Derive local physical events from active plans and potential ties."""
+        return generate_in_person_events(
+            getattr(self, "social_ties", []),
+            self.active_planned_presences(),
+        )
+
+    def _active_person_directory(self) -> dict[int, tuple[tuple[int, int, int], int]]:
+        """Return globally visible ids, UIDs, and places for available people."""
+        active_ids = {presence.person_id for presence in self.active_planned_presences()}
+        local_entries = [
+            (int(person.id), person.uid, int(person.rank_place_id))
+            for person in _person_agents(self.context)
+            if person.id in active_ids
+        ]
+        directory: dict[int, tuple[tuple[int, int, int], int]] = {}
+        for rank_entries in self.comm.allgather(local_entries):
+            for person_id, uid, place_id in rank_entries:
+                directory[int(person_id)] = (tuple(uid), int(place_id))
+        return directory
+
+    def generate_remote_social_message_intents(self) -> list[MessageIntent]:
+        """Select opt-in remote check-ins for available tied people.
+
+        One direction per tie is selected deterministically and alternates by
+        simulation tick. The existing communication manager then handles local
+        and cross-rank routing in the ordinary way.
+        """
+        interval_minutes = int(self.params["social_networks.remote_messages.interval_minutes"])
+        if interval_minutes <= 0:
+            raise ValueError("social_networks.remote_messages.interval_minutes must be positive")
+        if int(self.cal.minute_of_day) % interval_minutes != 0:
+            return []
+
+        directory = self._active_person_directory()
+        local_person_ids = {int(person.id) for person in _person_agents(self.context)}
+        candidates: dict[int, list[tuple[float, int, SocialTie]]] = {}
+        send_from_a = int(self.cal.tick) % 2 == 0
+        for tie in getattr(self, "social_ties", []):
+            sender_id, receiver_id = (
+                (tie.person_id_a, tie.person_id_b) if send_from_a else (tie.person_id_b, tie.person_id_a)
+            )
+            if sender_id not in local_person_ids or sender_id not in directory or receiver_id not in directory:
+                continue
+            candidates.setdefault(sender_id, []).append(
+                (-(tie.tie_strength if tie.tie_strength is not None else 0.0), receiver_id, tie)
+            )
+
+        intents: list[MessageIntent] = []
+        for sender_id, sender_candidates in candidates.items():
+            _, receiver_id, tie = min(sender_candidates)
+            sender_uid, _ = directory[sender_id]
+            receiver_uid, receiver_place_id = directory[receiver_id]
+            intents.append(
+                MessageIntent(
+                    sender_uid=sender_uid,
+                    receiver_uid=receiver_uid,
+                    receiver_place_id=receiver_place_id,
+                    mode="two_way",
+                    payload=build_message_payload(
+                        MessageKind.CHECK_IN,
+                        topic="social_network",
+                        text="Automated social check-in",
+                        trust_weight=tie.tie_strength if tie.tie_strength is not None else 0.5,
+                        metadata={"network_kind": tie.network_kind},
+                    ),
+                )
+            )
+        return intents
 
     def step(self) -> None:
         """Step the model forward one time step."""
@@ -3408,6 +3645,14 @@ class CasmPop(Model):
         # self.get_local_ids()
 
         self._time_phase("tick.environment_step", self.get_environment().step, self.context, self.cal)
+
+        if self._social_networks_enabled():
+            self.interaction_events = self._time_phase(
+                "tick.social_interactions.in_person",
+                self.generate_in_person_interactions,
+            )
+        else:
+            self.interaction_events = []
 
         # sequence of actions
         # 1. sense physical environment
@@ -3475,26 +3720,6 @@ class CasmPop(Model):
             #     logger.error(f"Person {person.id} has no place.")
             #     return
             # self.place_map[person.state.place_id].addPerson(person)
-
-    def make_contacts(self, tick) -> None:
-        for person in self.context.agents():
-            personsContactMap = self.contact_map.get(person.id)
-            if not personsContactMap:  # if person has no network
-                # logger.debug(f"Person {person.id} has no network.")
-                continue
-
-            contactIDs = personsContactMap.get(person.state.place_id)
-            if not contactIDs:
-                # logger.debug(
-                #     f"Person {person.id} has no contacts at "
-                #     f"place {person.state.place_id}.")
-                continue
-
-            contacts = []
-            for contactID in contactIDs:
-                uid = self.person_id_map[contactID]
-                contacts.append(self.context.agent(uid))
-            person.make_contacts(contacts)
 
     def log_agents(self) -> None:
         """Log the agents at the current time step.

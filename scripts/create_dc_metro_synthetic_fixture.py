@@ -61,6 +61,7 @@ def build_fixture(fixture_path: Path = DEFAULT_FIXTURE_PATH) -> dict:
     households: list[dict] = []
     persons: list[dict] = []
     activities: list[dict] = []
+    social_networks: list[dict] = []
     workplaces = [200_001 + index for index in range(12)]
     schools = [300_001 + index for index in range(4)]
 
@@ -106,6 +107,7 @@ def build_fixture(fixture_path: Path = DEFAULT_FIXTURE_PATH) -> dict:
             "hh_race": "synthetic_unspecified",
             "hh_age": 30 + (household_index % 35),
         })
+        household_person_ids: list[int] = []
         for member_index in range(household_size):
             age = 8 + ((household_index * 7 + member_index * 13) % 68)
             if member_index == 0 and age < 18:
@@ -146,7 +148,17 @@ def build_fixture(fixture_path: Path = DEFAULT_FIXTURE_PATH) -> dict:
                     "sp_act_id": home_id,
                 },
             ])
+            household_person_ids.append(person_id)
             person_id += 1
+
+        for offset, person_id_a in enumerate(household_person_ids):
+            for person_id_b in household_person_ids[offset + 1 :]:
+                social_networks.append({
+                    "person_id_a": person_id_a,
+                    "person_id_b": person_id_b,
+                    "network_kind": "household",
+                    "tie_strength": 1.0,
+                })
 
     schemas = {
         "persons": pa.schema([
@@ -180,8 +192,20 @@ def build_fixture(fixture_path: Path = DEFAULT_FIXTURE_PATH) -> dict:
             ("latitude", pa.float64()),
             ("longitude", pa.float64()),
         ]),
+        "social_networks": pa.schema([
+            ("person_id_a", pa.int64()),
+            ("person_id_b", pa.int64()),
+            ("network_kind", pa.string()),
+            ("tie_strength", pa.float64()),
+        ]),
     }
-    data = {"persons": persons, "hh": households, "activities": activities, "places": places}
+    data = {
+        "persons": persons,
+        "hh": households,
+        "activities": activities,
+        "places": places,
+        "social_networks": social_networks,
+    }
     manifest_tables = []
     for name, rows in data.items():
         output = tables_path / f"{name}.parquet"

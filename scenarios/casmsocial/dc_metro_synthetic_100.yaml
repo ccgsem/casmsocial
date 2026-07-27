@@ -7,8 +7,10 @@ parameters:
   households.table: dc_metro_synthetic_100.hh
   persons.table: dc_metro_synthetic_100.persons
   activities.table: dc_metro_synthetic_100.activities
-  contacts.table: ''
-  contacts.enabled: false
-  communication.enabled: false
+  social_networks.table: dc_metro_synthetic_100.social_networks
+  social_networks.enabled: true
+  social_networks.remote_messages.enabled: true
+  social_networks.remote_messages.interval_minutes: 60
+  communication.enabled: true
   behavior.engine: schedule
   roads.enabled: false

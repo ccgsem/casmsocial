@@ -119,3 +119,24 @@ tables:
   - name: longitude
     type: DOUBLE
     nullable: true
+- name: social_networks
+  source_table: dc_metro_synthetic_100.social_networks
+  file: tables/social_networks.parquet
+  format: parquet
+  compression: zstd
+  rows: 250
+  size_bytes: 2504
+  sha256: c8752531c19b0f11a610aa8e5633ddf41ec271eeaec93d1c14e9a5fa080be218
+  columns:
+  - name: person_id_a
+    type: BIGINT
+    nullable: true
+  - name: person_id_b
+    type: BIGINT
+    nullable: true
+  - name: network_kind
+    type: VARCHAR
+    nullable: true
+  - name: tie_strength
+    type: DOUBLE
+    nullable: true

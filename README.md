@@ -68,7 +68,14 @@ quick failure triage, see [docs/mvp_operator_checklist.md](docs/mvp_operator_che
 ### Input Tables
 
 YAML configs identify DuckLake source tables with `places.table`,
-`households.table`, `persons.table`, `activities.table`, and `contacts.table`.
+`households.table`, `persons.table`, `activities.table`, and optionally
+`social_networks.table`. Social-network rows are timeless potential ties, not
+fixed-hour contacts: `person_id_a`, `person_id_b`, and `network_kind` are
+required, while `tie_strength` is optional. Endpoints must be canonical
+(`person_id_a < person_id_b`) and each `(person_id_a, person_id_b,
+network_kind)` may appear once. Simulation behavior derives in-person
+encounters from schedule overlap and co-location; it may derive remote messages
+from the same ties without co-location.
 `Place` agents represent physical locations. `Household` agents represent social
 household units loaded from `households.table`, often named `hh` in input
 schemas; each household links to a physical `Place` and to its member `Person`

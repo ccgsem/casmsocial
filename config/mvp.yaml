@@ -16,8 +16,8 @@ time.step.minutes: 60
 places.table: 'rti_synth_pop_v2_dmv_100.places'
 households.table: 'rti_synth_pop_v2_dmv_100.hh'
 activities.table: 'rti_synth_pop_v2_dmv_100.activities'
-contacts.table: 'rti_synth_pop_v2_dmv_100.contacts'
-contacts.enabled: false
+social_networks.table: ''
+social_networks.enabled: false
 communication.enabled: true
 persons.table: 'rti_synth_pop_v2_dmv_100.persons'
 

@@ -7,4 +7,5 @@ parameters:
   households.table: rti_synth_pop_v2_dc.hh
   persons.table: rti_synth_pop_v2_dc.persons
   activities.table: rti_synth_pop_v2_dc.activities
-  contacts.table: rti_synth_pop_v2_dc.contacts
+  social_networks.table: ''
+  social_networks.enabled: false

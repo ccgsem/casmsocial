@@ -11,8 +11,8 @@ time.step.minutes: 60
 places.table: 'rti_synth_pop_v2_dmv.places'
 households.table: 'rti_synth_pop_v2_dmv.hh'
 activities.table: 'rti_synth_pop_v2_dmv.activities'
-contacts.table: 'rti_synth_pop_v2_dmv.contacts'
-contacts.enabled: false
+social_networks.table: ''
+social_networks.enabled: false
 communication.enabled: false
 persons.table: 'rti_synth_pop_v2_dmv.persons'
 behavior.engine: 'schedule'

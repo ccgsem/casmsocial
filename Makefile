@@ -58,6 +58,8 @@ dc-metro-synthetic-100: ## Generate, materialize, and smoke-run the fictional DC
 	uv run mpirun -n 1 python -m casmsocial config/dc_metro_synthetic_100.yaml
 	@echo "🚀 Validating DC metro synthetic agent log"
 	@uv run python -c "import duckdb; row = duckdb.sql(\"SELECT count(DISTINCT agent_id) FROM read_parquet('data/output/dc_metro_synthetic_100_agent_log.parquet')\").fetchone(); assert row[0] == 250, row"
+	@echo "🚀 Validating aggregate social interaction output"
+	@uv run python -c "import duckdb; rows = duckdb.sql(\"SELECT channel, sum(event_count) FROM read_parquet('data/output/dc_metro_synthetic_100_social_interactions.parquet') GROUP BY channel\").fetchall(); counts = dict(rows); assert counts.get('in_person', 0) > 0 and counts.get('remote', 0) > 0, counts"
 
 .PHONY: mvp-2rank
 mvp-2rank: ## Run the MVP smoke scenario with two MPI ranks

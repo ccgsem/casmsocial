@@ -11,7 +11,13 @@ def test_dc_metro_synthetic_fixture_is_valid_and_referentially_complete(tmp_path
 
     validate_fixture(fixture_path)
     table_rows = {table["name"]: table["rows"] for table in manifest["tables"]}
-    assert table_rows == {"persons": 250, "hh": 100, "activities": 750, "places": 116}
+    assert table_rows == {
+        "persons": 250,
+        "hh": 100,
+        "activities": 750,
+        "places": 116,
+        "social_networks": 250,
+    }
 
     connection = duckdb.connect()
     try:
@@ -28,5 +34,14 @@ def test_dc_metro_synthetic_fixture_is_valid_and_referentially_complete(tmp_path
             ],
         ).fetchone()[0]
         assert missing_activity_places == 0
+        invalid_network_rows = connection.execute(
+            """
+            SELECT count(*)
+            FROM read_parquet(?)
+            WHERE person_id_a >= person_id_b OR network_kind IS NULL
+            """,
+            [str(fixture_path / "tables" / "social_networks.parquet")],
+        ).fetchone()[0]
+        assert invalid_network_rows == 0
     finally:
         connection.close()
