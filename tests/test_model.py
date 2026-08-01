@@ -24,6 +24,7 @@ from casmsocial.casmpop import (
     MissingPartitionAssignmentError,
     MissingRequiredTableError,
     SimEnvironment,
+    ScheduleOccupancyLogger,
     SocialInteractionLogger,
 )
 from casmsocial.communication.types import CommMessage, MessageKind, build_message_payload
@@ -33,7 +34,7 @@ from casmsocial.person import BehaviorEngineV2, LLMBehaviorEngine, Person, Sched
 from casmsocial.place import EnhancedPlacesProjection, Place
 from casmsocial.road_network import RoadRoute
 from casmsocial.sim_time import SimTime
-from casmsocial.social_interactions import InteractionEvent, SocialTie
+from casmsocial.social_interactions import InteractionEvent, PresenceInterval, SocialTie
 
 
 class DummyModel(Model):
@@ -1287,6 +1288,50 @@ def test_social_interaction_logger_writes_only_aggregate_event_counts(tmp_path):
         },
     ]
     assert {"person_id_a", "person_id_b", "place_id", "payload"}.isdisjoint(table.column_names)
+
+
+def test_schedule_occupancy_logger_writes_only_aggregate_counts(tmp_path):
+    log_path = tmp_path / "schedule_occupancy.parquet"
+    model = CasmPop.__new__(CasmPop)
+    model.comm = MPI.COMM_SELF
+    model.params = {
+        "observers.output_dir": str(tmp_path),
+        "observers.schedule_occupancy_log.enabled": True,
+        "observers.schedule_occupancy_log_file": "schedule_occupancy.parquet",
+    }
+    model.cal = SimpleNamespace(tick=12)
+    model.active_planned_presences = lambda: [
+        PresenceInterval(1, 10, 540, 600),
+        PresenceInterval(2, 10, 540, 600),
+        PresenceInterval(3, 11, 540, 600),
+        PresenceInterval(4, 12, 540, 600),
+        PresenceInterval(5, 12, 540, 600),
+        PresenceInterval(6, 12, 540, 600),
+    ]
+    model.interaction_events = [object(), object()]
+    model.remote_social_message_intents = [object()]
+
+    observer = ScheduleOccupancyLogger("ScheduleOccupancyLogger", model)
+    observer.on_step(model)
+
+    table = ds.dataset(log_path, format="parquet", partitioning="hive").to_table()
+    assert table.to_pylist() == [{
+        "random_seed": 42,
+        "active_person_count": 6,
+        "active_place_count": 3,
+        "co_located_person_count": 5,
+        "max_place_occupancy": 3,
+        "places_with_1_person": 1,
+        "places_with_2_to_4_people": 2,
+        "places_with_5_to_9_people": 0,
+        "places_with_10_or_more_people": 0,
+        "in_person_interaction_count": 2,
+        "remote_message_count": 1,
+        "run_id": "seed_42",
+        "tick": 12,
+        "rank": 0,
+    }]
+    assert {"person_id", "person_id_a", "person_id_b", "place_id", "latitude", "longitude"}.isdisjoint(table.column_names)
 
 
 def test_empty_person_bucket_is_treated_as_no_local_people(tmp_path):

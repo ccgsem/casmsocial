@@ -21,6 +21,7 @@ from casmsocial.activities import (
     PlanState,
     activity_at,
     activity_semantics_for,
+    resolve_activity_place,
     resolve_plan_state,
     restore_plans,
     serialize_plans,
@@ -1246,7 +1247,7 @@ class Person(core.Agent):
         for index, element in enumerate(plan):
             if isinstance(element, Act):
                 if element.starttime_min <= minute_of_day <= element.endtime_min:
-                    next_place_id = self._place_id_for_activity(element.activity_id)
+                    next_place_id = self._place_id_for_plan_activity(element)
                     if next_place_id == self.state.place_id:
                         return False
                     return self._transition_to_activity_place_at_minute(
@@ -1374,7 +1375,7 @@ class Person(core.Agent):
 
         current_place = places_proj.get_place_for_agent(self) if hasattr(places_proj, "get_place_for_agent") else None
         origin_place_id = (
-            self._place_id_for_activity(previous_activity.activity_id) if previous_activity is not None else None
+            self._place_id_for_plan_activity(previous_activity) if previous_activity is not None else None
         )
 
         if current_place is None:
@@ -1404,7 +1405,7 @@ class Person(core.Agent):
         if not isinstance(activity, Act):
             return False
 
-        next_place_id = self._place_id_for_activity(activity.activity_id)
+        next_place_id = self._place_id_for_plan_activity(activity)
         return self._transition_to_activity_place_at_minute(activity, next_place_id, places_proj, minute_of_day)
 
     def _transition_to_activity_place_at_minute(
@@ -1469,6 +1470,10 @@ class Person(core.Agent):
         if 0 <= activity_idx < len(places):
             return places[activity_idx]
         return 0
+
+    def _place_id_for_plan_activity(self, activity: Act) -> int:
+        """Resolve an event-specific destination with legacy anchor fallback."""
+        return resolve_activity_place(activity, list(self.state.places)) or 0
 
     def count_colocations(self, cspace):
         # subtract self

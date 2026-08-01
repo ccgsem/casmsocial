@@ -386,6 +386,7 @@ OBSERVER_OUTPUT_FILE_DEFAULTS = {
     "observers.delta_agent_state_file": "agent_state_delta.parquet",
     "observers.delta_agent_state_audit_file": "agent_state_delta_audit.parquet",
     "observers.social_interaction_log_file": "social_interactions.parquet",
+    "observers.schedule_occupancy_log_file": "schedule_occupancy.parquet",
 }
 
 
@@ -586,6 +587,59 @@ class SocialInteractionLogger(Observer):
         if self._last_table is None:
             return {}
         return {"social_interactions": self._last_table}
+
+
+class ScheduleOccupancyLogger(Observer):
+    """Write privacy-safe, per-tick scheduled-occupancy summaries.
+
+    Destination and person identifiers are used only transiently to compute
+    local counts. The persisted output contains no individual, tie, or place
+    identifiers and is therefore appropriate for diagnostic sharing.
+    """
+
+    def __init__(self, name, model: Model = None):
+        super().__init__(name, model)
+        self.log_file = _observer_output_path(model, "observers.schedule_occupancy_log_file")
+        self._last_table: pa.Table | None = None
+
+    def on_step(self, model: Model) -> None:
+        if not model._param_enabled("observers.schedule_occupancy_log.enabled", False):
+            return
+
+        occupancy: dict[int, int] = {}
+        for presence in model.active_planned_presences():
+            occupancy[presence.place_id] = occupancy.get(presence.place_id, 0) + 1
+        counts = list(occupancy.values())
+        row = {
+            "run_id": _model_run_id(model),
+            "random_seed": _model_random_seed(model),
+            "tick": int(model.cal.tick),
+            "rank": int(model.comm.Get_rank()),
+            "active_person_count": sum(counts),
+            "active_place_count": len(counts),
+            "co_located_person_count": sum(count for count in counts if count > 1),
+            "max_place_occupancy": max(counts, default=0),
+            "places_with_1_person": sum(count == 1 for count in counts),
+            "places_with_2_to_4_people": sum(2 <= count <= 4 for count in counts),
+            "places_with_5_to_9_people": sum(5 <= count <= 9 for count in counts),
+            "places_with_10_or_more_people": sum(count >= 10 for count in counts),
+            "in_person_interaction_count": len(getattr(model, "interaction_events", [])),
+            "remote_message_count": len(getattr(model, "remote_social_message_intents", [])),
+        }
+        table = pl.DataFrame([row]).to_arrow()
+        self._last_table = table
+        ds.write_dataset(
+            data=table,
+            base_dir=self.log_file,
+            format="parquet",
+            partitioning=HivePartitioning(_output_partition_schema()),
+            existing_data_behavior="overwrite_or_ignore",
+        )
+
+    def get_output_tables(self, model: Model) -> dict[str, pa.Table]:
+        if self._last_table is None:
+            return {}
+        return {"schedule_occupancy": self._last_table}
 
 
 class BehaviorLogger(Observer):
@@ -861,6 +915,8 @@ class CasmPop(Model):
             "observers.delta_agent_state_audit_file": "agent_state_delta_audit.parquet",
             "observers.social_interaction_log.enabled": False,
             "observers.social_interaction_log_file": "social_interactions.parquet",
+            "observers.schedule_occupancy_log.enabled": False,
+            "observers.schedule_occupancy_log_file": "schedule_occupancy.parquet",
             "observers.arrow_server.enabled": False,
             "observers.arrow_server.host": "127.0.0.1",
             "logging.rank0_only": False,
@@ -884,6 +940,8 @@ class CasmPop(Model):
             "observers.delta_agent_state_audit_file": "agent_state_delta_audit.parquet",
             "observers.social_interaction_log.enabled": False,
             "observers.social_interaction_log_file": "social_interactions.parquet",
+            "observers.schedule_occupancy_log.enabled": False,
+            "observers.schedule_occupancy_log_file": "schedule_occupancy.parquet",
             "observers.arrow_server.enabled": False,
             "observers.arrow_server.host": "127.0.0.1",
         }
@@ -1179,6 +1237,8 @@ class CasmPop(Model):
             "observers.delta_agent_state_audit_file",
             "observers.social_interaction_log.enabled",
             "observers.social_interaction_log_file",
+            "observers.schedule_occupancy_log.enabled",
+            "observers.schedule_occupancy_log_file",
             "observers.arrow_server.enabled",
             "observers.arrow_server.host",
             "logging.rank0_only",
@@ -1298,6 +1358,8 @@ class CasmPop(Model):
             self.params["observers.delta_agent_state.enabled"] = False
         if self.params["observers.social_interaction_log.enabled"] is None:
             self.params["observers.social_interaction_log.enabled"] = False
+        if self.params["observers.schedule_occupancy_log.enabled"] is None:
+            self.params["observers.schedule_occupancy_log.enabled"] = False
 
         for key, default_filename in OBSERVER_OUTPUT_FILE_DEFAULTS.items():
             self.params[key] = _observer_output_filename(
@@ -1488,6 +1550,10 @@ class CasmPop(Model):
             isinstance(observer, SocialInteractionLogger) for observer in self._observers
         ):
             self.add_observer(SocialInteractionLogger("SocialInteractionLogger", self))
+        if self._param_enabled("observers.schedule_occupancy_log.enabled", False) and not any(
+            isinstance(observer, ScheduleOccupancyLogger) for observer in self._observers
+        ):
+            self.add_observer(ScheduleOccupancyLogger("ScheduleOccupancyLogger", self))
 
         self._start_arrow_server_if_enabled()
 
@@ -3542,7 +3608,18 @@ class CasmPop(Model):
             plan_state = person.get_plan_state(self.cal)
             if not isinstance(plan_state.element, Act):
                 continue
-            place_id = person._place_id_for_activity(plan_state.element.activity_id)
+            place_id = plan_state.element.place_id
+            if not place_id:
+                resolver = getattr(person, "_place_id_for_plan_activity", None)
+                if callable(resolver):
+                    place_id = resolver(plan_state.element)
+                else:
+                    legacy_resolver = getattr(person, "_place_id_for_activity", None)
+                    place_id = (
+                        legacy_resolver(plan_state.element.activity_id)
+                        if callable(legacy_resolver)
+                        else None
+                    )
             if not place_id:
                 continue
             presences.append(
