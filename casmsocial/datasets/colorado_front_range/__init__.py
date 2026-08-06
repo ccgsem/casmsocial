@@ -40,6 +40,11 @@ from casmsocial.datasets.colorado_front_range.profiles import (
     load_osm_attribution,
     load_profile,
 )
+from casmsocial.datasets.colorado_front_range.runtime_verification import (
+    aggregate_runtime_output,
+    validate_runtime_runs,
+    verify_profile_runtime,
+)
 from casmsocial.datasets.colorado_front_range.sources import (
     SourceArtifact,
     SourceInventory,
@@ -50,6 +55,7 @@ from casmsocial.datasets.colorado_front_range.sources import (
     load_source_inventory,
     record_artifact,
 )
+from casmsocial.datasets.colorado_front_range.workflow import build_colorado_profile, profile_build_plan
 
 __all__ = [
     "ColoradoDatasetProfile",
@@ -59,9 +65,11 @@ __all__ = [
     "BASE_CAPACITY",
     "MAPPING",
     "artifact_path",
+    "aggregate_runtime_output",
     "assignment_kind",
     "assign_atus_donors",
     "build_ducklake",
+    "build_colorado_profile",
     "build_profile_population",
     "build_profile_runtime",
     "build_profile_destinations",
@@ -80,10 +88,13 @@ __all__ = [
     "load_selected_counties",
     "load_source_inventory",
     "normalize_atus_donor_diaries",
+    "profile_build_plan",
     "record_artifact",
     "scoped_id",
     "stage_atus_donor_diaries",
     "cbsa_by_county_geoid",
     "validate_state_partitions",
+    "validate_runtime_runs",
+    "verify_profile_runtime",
     "write_home_assignments",
 ]

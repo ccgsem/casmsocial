@@ -85,6 +85,9 @@ Homepage = "https://ccgsem.github.io/casmsocial/"
 Repository = "https://github.com/ccgsem/casmsocial"
 Documentation = "https://ccgsem.github.io/casmsocial/"
 
+[project.scripts]
+casmsocial-data = "casmsocial.datasets.cli:app"
+
 [dependency-groups]
 dev = [
     "black>=26.5.1",

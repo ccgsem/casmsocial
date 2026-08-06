@@ -8,7 +8,6 @@ from pathlib import Path
 
 from casmsocial.ducklake_utils import get_ducklake_connection
 
-
 TABLES = ("activities", "persons", "hh", "places")
 PARTITION_TABLE = "partitions.colorado_front_range_fixture_place_partitions"
 

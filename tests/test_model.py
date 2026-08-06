@@ -23,8 +23,8 @@ from casmsocial.casmpop import (
     InvalidSocialNetworkTableError,
     MissingPartitionAssignmentError,
     MissingRequiredTableError,
-    SimEnvironment,
     ScheduleOccupancyLogger,
+    SimEnvironment,
     SocialInteractionLogger,
 )
 from casmsocial.communication.types import CommMessage, MessageKind, build_message_payload

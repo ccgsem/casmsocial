@@ -10,7 +10,6 @@ from casmsocial.factory import Models
 from casmsocial.person import Person, PersonData
 from casmsocial.place import Place, PlaceData
 
-
 PLANNED_ACTIVITY_NAMES = [
     "sp_hh_id", "sp_work_id", "sp_school_id", "sp_daycare_id", "sp_shopping_id",
     "sp_meal_id", "sp_personal_care_id", "sp_social_id", "sp_recreation_id",
