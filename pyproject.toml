@@ -115,6 +115,13 @@ packages = ["casmsocial", "scripts"]
 "scenarios" = "scenarios"
 "THIRD_PARTY_NOTICES.md" = "THIRD_PARTY_NOTICES.md"
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/data",
+    "/testdata",
+    "/examples/mvp/mvp.ducklake",
+]
+
 [tool.setuptools]
 py-modules = ["casmsocial"]
 

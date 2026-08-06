@@ -55,6 +55,12 @@ jobs:
       - name: Run tests
         run: make test
 
+      - name: Build and scan public release artifacts
+        run: |
+          uv build --clear
+          uv run mkdocs build --strict
+          uv run python scripts/verify_release_artifacts.py dist site
+
       - name: Run MVP proof suite
         run: make mvp-all
 
@@ -99,6 +105,9 @@ jobs:
       - name: Smoke test -- models register, venv is on PATH
         run: |
           docker run --rm casmsocial:ci python -c "import casmsocial.casmpop; from casmsocial.factory import Models; models = Models.get_models(); assert 'casmsocial.casmpop.CasmPop' in models, models; print('OK:', sorted(models))"
+
+      - name: Scan prod image project payload for generated datasets
+        run: docker run --rm casmsocial:ci python scripts/verify_release_artifacts.py /app
 
       - name: Build tools image (partitioning extra)
         # pymetis has prebuilt wheels on manylinux x86_64 (this runner's

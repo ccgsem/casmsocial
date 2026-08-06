@@ -8,5 +8,7 @@ __pycache__
 dist
 output
 data
+testdata
+examples/mvp/mvp.ducklake
 .env
 .DS_Store
