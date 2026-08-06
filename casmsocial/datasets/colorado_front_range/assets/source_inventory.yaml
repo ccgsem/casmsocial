@@ -1,0 +1,56 @@
+schema_version: 1
+dataset_id: colorado-front-range-v1
+artifacts:
+  - artifact_id: osf-colorado-population
+    source_id: osf-fpnc2-colorado-2024-09
+    description: Colorado synthetic population, workplaces, and potential social ties.
+    destination: raw/osf-synthetic-population/co.zip
+    access: download
+    url: https://osf.io/download/vq62f/
+    verification: pinned_sha256
+    expected_size: 389429184
+    sha256: b70b06153d9db8d8581322d0394c8f9aa73f19434259b66cfde1510b5840b03f
+  - artifact_id: osf-colorado-education-sites
+    source_id: osf-ts9mg-colorado-education-sites-2024-10
+    description: Colorado school and daycare assignment sites.
+    destination: raw/osf-education-sites/co_edu_sites.zip
+    access: download
+    url: https://osf.io/download/68e4c95137f6fd6cf1de4fec/
+    verification: pinned_sha256
+    expected_size: 562299
+    sha256: 928d88f32de1d65365332f6cc944e0425c42f4620b3c9820a3e9371967523fd9
+  - artifact_id: census-2023-counties
+    source_id: census-tiger-line-counties-2023
+    description: National 2023 TIGER/Line county boundaries.
+    destination: raw/census/tl_2023_us_county.zip
+    access: download
+    url: https://www2.census.gov/geo/tiger/TIGER2023/COUNTY/tl_2023_us_county.zip
+    verification: record_sha256
+  - artifact_id: bls-atus-2024-respondents
+    source_id: bls-atus-2024
+    description: Extracted 2024 ATUS respondent file.
+    destination: raw/atus/2024/atusresp_2024.dat
+    access: manual
+    source_page: https://www.bls.gov/tus/data/datafiles-2024.htm
+    verification: record_sha256
+  - artifact_id: bls-atus-2024-activities
+    source_id: bls-atus-2024
+    description: Extracted 2024 ATUS activity file.
+    destination: raw/atus/2024/atusact_2024.dat
+    access: manual
+    source_page: https://www.bls.gov/tus/data/datafiles-2024.htm
+    verification: record_sha256
+  - artifact_id: bls-atus-2024-roster
+    source_id: bls-atus-2024
+    description: Extracted 2024 ATUS roster file used for donor age and sex.
+    destination: raw/atus/2024/atusrost_2024.dat
+    access: manual
+    source_page: https://www.bls.gov/tus/data/datafiles-2024.htm
+    verification: record_sha256
+  - artifact_id: osm-geofabrik-colorado
+    source_id: geofabrik-colorado-osm-pbf-pinned
+    description: Colorado OpenStreetMap extract used for discretionary destinations.
+    destination: raw/osm/colorado.osm.pbf
+    access: download
+    url: https://download.geofabrik.de/north-america/us/colorado-latest.osm.pbf
+    verification: record_sha256
