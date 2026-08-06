@@ -1,0 +1,28 @@
+schema_version: 1
+scope: python_build_runtime_and_development_dependencies
+reviewed_spdx_identifiers:
+  - 0BSD
+  - Apache-2.0
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - CC0-1.0
+  - ISC
+  - LLVM-exception
+  - MIT
+  - MPL-2.0
+  - PSF-2.0
+  - Python-2.0
+  - Zlib
+license_name_aliases:
+  'License :: OSI Approved :: Apache Software License': Apache-2.0
+  'License :: OSI Approved :: BSD License': BSD-3-Clause
+  'License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)': MPL-2.0
+metadata_overrides:
+  cligj:
+    version: 0.7.2
+    license: BSD-3-Clause
+    evidence: cligj-0.7.2.dist-info/LICENSE and package metadata License=BSD
+  repast4py:
+    version: 1.2.1
+    license: BSD-3-Clause
+    evidence: repast4py-1.2.1.dist-info/licenses/LICENSE.txt and package metadata

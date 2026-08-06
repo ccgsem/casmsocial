@@ -63,13 +63,13 @@ COPY uv.lock /app/uv.lock
 COPY pyproject.toml /app/pyproject.toml
 
 # Install dependencies
-RUN uv sync --frozen --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy the project into the image
 COPY . /app
 
 # Sync the project
-RUN uv sync --frozen
+RUN uv sync --frozen --no-dev
 
 # uv sync installs into /app/.venv, not the system Python -- put it on PATH
 # so mpirun's bare `python` resolves to the venv where casmsocial/mpi4py/
@@ -105,4 +105,4 @@ CMD ["/usr/sbin/sshd", "-D", "-e"]
 # writing) and must compile METIS from source there. Build explicitly with
 # `--target tools` when the partitioner script is needed.
 FROM prod AS tools
-RUN uv sync --frozen --extra partitioning
+RUN uv sync --frozen --no-dev --extra partitioning

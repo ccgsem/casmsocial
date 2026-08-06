@@ -39,6 +39,7 @@ from casmsocial.datasets.colorado_front_range.profiles import (
     load_migrated_code_provenance,
     load_osm_attribution,
     load_profile,
+    load_source_licenses,
 )
 from casmsocial.datasets.colorado_front_range.runtime_verification import (
     aggregate_runtime_output,
@@ -87,6 +88,7 @@ __all__ = [
     "load_boundary",
     "load_selected_counties",
     "load_source_inventory",
+    "load_source_licenses",
     "normalize_atus_donor_diaries",
     "profile_build_plan",
     "record_artifact",

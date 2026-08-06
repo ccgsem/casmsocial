@@ -26,10 +26,20 @@ def test_cli_lists_profile_release_state_as_json():
     assert profiles["six-metro-full"]["release_status"] == "planned"
 
 
-def test_cli_shows_validated_profile():
+def test_cli_shows_validated_profile_and_license_gates():
     profile_result = runner.invoke(app, ["colorado", "show-profile", "example-1k", "--format", "json"])
     assert profile_result.exit_code == 0, profile_result.output
     assert json.loads(profile_result.output)["profile_id"] == "colorado-front-range-example-1k-v1"
+
+    license_result = runner.invoke(app, ["colorado", "licenses", "--format", "json"])
+    assert license_result.exit_code == 0, license_result.output
+    gates = json.loads(license_result.output)["release_gates"]
+    assert {gate["status"] for gate in gates} == {
+        "automated",
+        "automated_review_required",
+        "documented_review_required",
+        "implemented",
+    }
 
 
 def test_cli_rejects_unknown_profile():
@@ -45,6 +55,15 @@ def test_cli_prints_osm_attribution_and_local_only_policy():
     assert "© OpenStreetMap contributors" in result.output
     assert "Local build only" in result.output
     assert "ODbL" in result.output
+
+
+def test_cli_prints_migrated_code_provenance():
+    result = runner.invoke(app, ["colorado", "provenance", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    provenance = json.loads(result.output)
+    assert provenance["authority"]["status"] == "organization_review_required"
+    assert len(provenance["migrations"]) == 12
 
 
 def test_cli_lists_source_acquisition_policies():

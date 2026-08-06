@@ -21,9 +21,11 @@ from casmsocial.datasets.colorado_front_range import (
     get_source_artifact,
     inspect_artifact,
     list_profiles,
+    load_migrated_code_provenance,
     load_osm_attribution,
     load_profile,
     load_source_inventory,
+    load_source_licenses,
     profile_build_plan,
     record_artifact,
     verify_profile_runtime,
@@ -69,10 +71,22 @@ def show_profile(name: str, output_format: str = typer.Option("yaml", "--format"
     typer.echo(_render(profile.model_dump(mode="json"), output_format))
 
 
+@colorado.command("licenses")
+def licenses(output_format: str = typer.Option("yaml", "--format")) -> None:
+    """Print the source-license audit and open release gates."""
+    typer.echo(_render(load_source_licenses(), output_format))
+
+
 @colorado.command("osm-attribution")
 def osm_attribution() -> None:
     """Print the required OSM attribution and local-only distribution notice."""
     typer.echo(load_osm_attribution())
+
+
+@colorado.command("provenance")
+def provenance(output_format: str = typer.Option("yaml", "--format")) -> None:
+    """Print the private-to-public migrated-code provenance record."""
+    typer.echo(_render(load_migrated_code_provenance(), output_format))
 
 
 @colorado.command("sources")

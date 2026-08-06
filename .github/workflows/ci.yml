@@ -61,6 +61,35 @@ jobs:
           uv run mkdocs build --strict
           uv run python scripts/verify_release_artifacts.py dist site
 
+      - name: Generate and verify Python dependency SBOM
+        run: |
+          mkdir -p build/sbom
+          uvx --from cyclonedx-bom==7.3.0 cyclonedx-py environment "$(uv python find)" \
+            --pyproject pyproject.toml \
+            --mc-type application \
+            --spec-version 1.6 \
+            --output-reproducible \
+            --output-format JSON \
+            --output-file build/sbom/casmsocial-python.cdx.json
+          uv run python scripts/verify_python_sbom.py \
+            build/sbom/casmsocial-python.cdx.json \
+            --policy casmsocial/datasets/colorado_front_range/assets/dependency_license_policy.yaml
+
+      - name: Verify migrated-code provenance coverage
+        run: |
+          uv run python scripts/verify_migrated_code_provenance.py \
+            --provenance casmsocial/datasets/colorado_front_range/assets/migrated_code_provenance.yaml \
+            --license-manifest casmsocial/datasets/colorado_front_range/assets/source_licenses.yaml \
+            --repository-root .
+
+      - name: Upload Python dependency SBOM
+        uses: actions/upload-artifact@v7
+        with:
+          name: casmsocial-python-sbom
+          path: build/sbom/casmsocial-python.cdx.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Run MVP proof suite
         run: make mvp-all
 
@@ -108,6 +137,16 @@ jobs:
 
       - name: Scan prod image project payload for generated datasets
         run: docker run --rm casmsocial:ci python scripts/verify_release_artifacts.py /app
+
+      - name: Generate production image SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: casmsocial:ci
+          format: spdx-json
+          output-file: build/sbom/casmsocial-container.spdx.json
+          artifact-name: casmsocial-container-sbom
+          syft-version: v1.44.0
+          upload-artifact-retention: 14
 
       - name: Build tools image (partitioning extra)
         # pymetis has prebuilt wheels on manylinux x86_64 (this runner's

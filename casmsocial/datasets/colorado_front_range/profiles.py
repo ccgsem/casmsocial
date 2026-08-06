@@ -157,3 +157,8 @@ def load_osm_attribution() -> str:
 def load_migrated_code_provenance() -> dict:
     """Return the machine-readable private-to-public code migration record."""
     return _yaml_resource("assets", "migrated_code_provenance.yaml")
+
+
+def load_source_licenses() -> dict:
+    """Return the machine-readable source-license audit."""
+    return _yaml_resource("assets", "source_licenses.yaml")
