@@ -39,6 +39,7 @@ def test_cli_shows_validated_profile_and_license_gates():
         "automated_review_required",
         "documented_review_required",
         "implemented",
+        "organization_review_required",
     }
 
 
@@ -64,6 +65,20 @@ def test_cli_prints_migrated_code_provenance():
     provenance = json.loads(result.output)
     assert provenance["authority"]["status"] == "organization_review_required"
     assert len(provenance["migrations"]) == 12
+
+
+def test_cli_reports_missing_release_approvals():
+    result = runner.invoke(app, ["colorado", "release-readiness", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    readiness = json.loads(result.output)
+    assert readiness["status"] == "review_required"
+    assert readiness["machine_controls"]["status"] == "passed"
+    assert readiness["missing_approvals"] == [
+        "contributor_authority",
+        "container_dependency_license_review",
+        "final_distribution_plan",
+    ]
 
 
 def test_cli_lists_source_acquisition_policies():

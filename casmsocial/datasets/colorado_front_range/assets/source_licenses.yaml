@@ -127,3 +127,7 @@ release_gates:
     status: automated
     requirement: Verify wheels, source distributions, containers, and documentation contain no generated identifier-bearing dataset files.
     control: scripts/verify_release_artifacts.py runs against Python distributions, the documentation site, and the production image in CI.
+  - id: final_distribution_review
+    status: organization_review_required
+    requirement: Approve the final public distribution plan and record the accountable reviewers and evidence.
+    control: The release-readiness policy and attestation contract prevent machine controls from being represented as organizational approval.

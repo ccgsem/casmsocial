@@ -159,6 +159,11 @@ def load_migrated_code_provenance() -> dict:
     return _yaml_resource("assets", "migrated_code_provenance.yaml")
 
 
+def load_release_review_policy() -> dict:
+    """Return the machine-readable release-review and approval policy."""
+    return _yaml_resource("assets", "release_review_policy.yaml")
+
+
 def load_source_licenses() -> dict:
     """Return the machine-readable source-license audit."""
     return _yaml_resource("assets", "source_licenses.yaml")

@@ -151,6 +151,7 @@ files = [
     "casmsocial/llm_adapter.py",
     "casmsocial/remote_llm_adapter.py",
     "casmsocial/road_network.py",
+    "casmsocial/datasets/colorado_front_range/release_readiness.py",
     "scripts/clean_mvp_artifacts.py",
     "scripts/create_mvp_ducklake.py",
     "scripts/load_agent_state_delta_ducklake.py",
@@ -159,6 +160,7 @@ files = [
     "scripts/summarize_mvp_output.py",
     "scripts/validate_agent_state_delta.py",
     "scripts/validate_mvp_output.py",
+    "scripts/verify_release_readiness.py",
 ]
 disallow_untyped_defs = true
 disallow_any_unimported = true

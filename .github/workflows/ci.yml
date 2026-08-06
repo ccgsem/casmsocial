@@ -82,6 +82,9 @@ jobs:
             --license-manifest casmsocial/datasets/colorado_front_range/assets/source_licenses.yaml \
             --repository-root .
 
+      - name: Verify release remains gated on explicit approvals
+        run: uv run python scripts/verify_release_readiness.py --expect-status review_required
+
       - name: Upload Python dependency SBOM
         uses: actions/upload-artifact@v7
         with:

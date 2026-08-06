@@ -39,8 +39,10 @@ from casmsocial.datasets.colorado_front_range.profiles import (
     load_migrated_code_provenance,
     load_osm_attribution,
     load_profile,
+    load_release_review_policy,
     load_source_licenses,
 )
+from casmsocial.datasets.colorado_front_range.release_readiness import evaluate_release_readiness
 from casmsocial.datasets.colorado_front_range.runtime_verification import (
     aggregate_runtime_output,
     validate_runtime_runs,
@@ -79,12 +81,14 @@ __all__ = [
     "build_state_tables",
     "download_artifact",
     "extract_profile_osm_pois",
+    "evaluate_release_readiness",
     "get_source_artifact",
     "inspect_artifact",
     "list_profiles",
     "load_migrated_code_provenance",
     "load_osm_attribution",
     "load_profile",
+    "load_release_review_policy",
     "load_boundary",
     "load_selected_counties",
     "load_source_inventory",

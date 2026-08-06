@@ -136,8 +136,13 @@ DuckLake populated from them.
    distribution, documentation site, and production-image project payload for
    generated dataset files in CI. The source distribution and Docker context
    explicitly exclude local data, test fixtures, and generated DuckLake files.
-5. Have the final distribution plan reviewed by the organization responsible
-   for the public CASMSocial release.
+5. **Machine-readable; organization review required:**
+   `release_review_policy.yaml` fixes the intended public artifacts and the
+   local-only treatment of generated data. The
+   [release-review runbook](colorado_front_range_release_review.md) defines the
+   three explicit approvals and attestation format. Until those records are
+   supplied, `casmsocial-data colorado release-readiness` correctly reports
+   `review_required`; CI must not fabricate or imply their completion.
 
 ## Dependency-inventory evidence
 

@@ -26,6 +26,7 @@ def test_source_license_manifest_preserves_distribution_gates():
         "dependency_license_inventory": "automated_review_required",
         "osm_distribution_policy": "implemented",
         "release_artifact_scan": "automated",
+        "final_distribution_review": "organization_review_required",
     }
     migrated = manifest["software"]["migrated_mydatalakehouse_code"]["migrated_modules"]
     assert migrated == [

@@ -18,6 +18,7 @@ from casmsocial.datasets.colorado_front_range import (
     build_profile_schedules,
     build_state_tables,
     download_artifact,
+    evaluate_release_readiness,
     get_source_artifact,
     inspect_artifact,
     list_profiles,
@@ -87,6 +88,20 @@ def osm_attribution() -> None:
 def provenance(output_format: str = typer.Option("yaml", "--format")) -> None:
     """Print the private-to-public migrated-code provenance record."""
     typer.echo(_render(load_migrated_code_provenance(), output_format))
+
+
+@colorado.command("release-readiness")
+def release_readiness(
+    attestations: Path | None = typer.Option(None, "--attestations"),
+    output_format: str = typer.Option("yaml", "--format"),
+) -> None:
+    """Report machine controls and explicit organizational approvals."""
+    try:
+        approval_data = yaml.safe_load(attestations.read_text(encoding="utf-8")) if attestations else None
+        result = evaluate_release_readiness(approval_data)
+    except (OSError, TypeError, ValueError) as error:
+        raise typer.BadParameter(str(error), param_hint="--attestations") from error
+    typer.echo(_render(result, output_format))
 
 
 @colorado.command("sources")

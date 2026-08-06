@@ -12,6 +12,7 @@ nav:
   - Codebase Relationships: codebase_relationships.md
   - MVP Operator Checklist: mvp_operator_checklist.md
   - Colorado Dataset Licensing: colorado_front_range_data_licensing.md
+  - Colorado Release Review: colorado_front_range_release_review.md
   - Colorado Dataset Acquisition: colorado_front_range_data_acquisition.md
   - Modules: modules.md
 plugins:
