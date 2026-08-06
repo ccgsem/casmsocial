@@ -146,3 +146,14 @@ def load_profile(name: str) -> ColoradoDatasetProfile:
     if name not in list_profiles():
         raise ValueError(f"Unknown Colorado profile {name!r}; choose from {', '.join(list_profiles())}")
     return ColoradoDatasetProfile.model_validate(_yaml_resource("profiles", f"{name}.yaml"))
+
+
+def load_osm_attribution() -> str:
+    """Return the bundled OpenStreetMap attribution and distribution notice."""
+    resource = files(_PACKAGE).joinpath("assets", "OPENSTREETMAP_ATTRIBUTION.md")
+    return resource.read_text(encoding="utf-8").rstrip()
+
+
+def load_migrated_code_provenance() -> dict:
+    """Return the machine-readable private-to-public code migration record."""
+    return _yaml_resource("assets", "migrated_code_provenance.yaml")
