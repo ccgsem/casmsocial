@@ -402,20 +402,15 @@ can trigger `cancel_social_activity`, which removes the next future social activ
 
 ---
 
-## Live Arrow/Ice Observation Server
+## Live Arrow Flight Observation Server
 
 `CasmPop` can optionally host a live Arrow data server inside the simulation
 process, letting an external client (e.g. casmservice) pull an observer's
 most recent output table -- via `CasmPop.get_observer_output_tables()` --
 while the run is still in progress, instead of waiting for parquet files to
-be flushed to disk. This is opt-in and requires the `service` extra:
-
-```bash
-uv sync --extra service
-```
-
-`zeroc-ice` only publishes wheels for Python >= 3.12; the `service` extra is
-unavailable on older interpreters.
+be flushed to disk. It speaks Apache Arrow Flight, which ships inside the
+`pyarrow` wheel -- already a hard dependency here -- so there's no extra to
+install and no optional dependency to manage.
 
 Enable it with:
 
@@ -431,15 +426,6 @@ writes `arrow_endpoint.txt` (`host:port`) into the simulation's current
 working directory, so a launcher such as casmservice's `Repast4pyBackend`
 (which already runs the subprocess with that directory as its `run_dir`) can
 discover where to connect without any additional configuration.
-
-The Ice IDL contract lives at `slice/arrowservice/ArrowService.ice` (kept
-byte-identical to casmservice's copy of the same file -- there is no shared
-package between the two repos, only the wire contract). Regenerate the
-committed Python bindings under `arrowservice/` whenever that file changes:
-
-```bash
-uv run python scripts/build_slice.py
-```
 
 ---
 

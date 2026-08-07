@@ -1115,7 +1115,7 @@ class CasmPop(Model):
         # instance-level observers
         self._observers: list[Observer] = []
 
-        # live Arrow/Ice observation server (optional, rank 0 only)
+        # live Arrow Flight observation server (optional, rank 0 only)
         self._arrow_server_handle = None
 
     def add_observer(self, observer: Observer) -> None:
@@ -1148,7 +1148,7 @@ class CasmPop(Model):
         return tables
 
     def _start_arrow_server_if_enabled(self) -> None:
-        """Start the embedded live Arrow/Ice server on rank 0, if configured.
+        """Start the embedded live Arrow Flight server on rank 0, if configured.
 
         Each MPI rank is a separate process with its own local agents, so
         only rank 0's local observer tables are exposed by the live server
@@ -1161,24 +1161,22 @@ class CasmPop(Model):
         if not self._arrow_server_enabled():
             return
 
-        from casmsocial.arrow_serialization import ArrowServerUnavailableError
+        from casmsocial.arrow_server import start_arrow_server
 
         host = self.params.get("observers.arrow_server.host", "127.0.0.1")
         try:
-            from casmsocial.arrow_server import start_arrow_server
-
             self._arrow_server_handle = start_arrow_server(self, host=host, endpoint_dir=pathlib.Path.cwd())
-        except ArrowServerUnavailableError as exc:
+        except OSError as exc:
             self._arrow_server_handle = None
-            logger.warning(f"Arrow/Ice live observation server not started: {exc}")
+            logger.warning(f"Arrow live observation server not started: {exc}")
             return
         logger.info(
-            f"Arrow/Ice live observation server listening on "
+            f"Arrow live observation server listening on "
             f"{self._arrow_server_handle.host}:{self._arrow_server_handle.port}"
         )
 
     def _stop_arrow_server(self) -> None:
-        """Tear down the embedded live Arrow/Ice server, if it was started."""
+        """Tear down the embedded live Arrow Flight server, if it was started."""
         handle = getattr(self, "_arrow_server_handle", None)
         if handle is None:
             return

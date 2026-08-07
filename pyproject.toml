@@ -53,11 +53,6 @@ data-builder = [
 # the core install stays lean for users running only the deterministic
 # LocalBehaviorLLMAdapter.
 remote = ["anthropic>=0.109.2"]
-# Live Arrow/Ice observation server (casmsocial.arrow_server), letting a
-# casmservice client pull observer output tables from a running simulation.
-# Optional so the core install stays lean for deployments that don't need it.
-# zeroc-ice only publishes wheels for Python >= 3.12.
-service = ["zeroc-ice>=3.8.0; python_version >= '3.12'"]
 # Offline graph-partitioning CLI (casmsocial.network_partitioner_ducklake),
 # used to precompute partitions.metis_place_partitions ahead of a run. Not
 # imported by the simulation runtime (casmsocial.__main__/casmpop.py).
