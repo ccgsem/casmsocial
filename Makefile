@@ -122,7 +122,7 @@ mvp-routed: ## Run the MVP smoke scenario with road-network routing enabled
 	@CASMSOCIAL_DATA_PATH=examples/mvp \
 	CASMSOCIAL_DUCKLAKE_PATH=examples/mvp/mvp.ducklake \
 	uv run mpirun -n 1 python -m casmsocial config/mvp.yaml \
-	'{"roads.enabled":true,"roads.nodes.file":"rti_synth_pop_v2_dmv_100.road_nodes","roads.edges.file":"rti_synth_pop_v2_dmv_100.road_edges","roads.place_snap.file":"rti_synth_pop_v2_dmv_100.place_road_snap","observers.agent_log_file":"mvp_routed_agent_log.parquet","observers.behavior_log_file":"mvp_routed_behavior_log.parquet"}'
+	'{"roads.enabled":true,"roads.nodes.file":"casmsocial_mvp.road_nodes","roads.edges.file":"casmsocial_mvp.road_edges","roads.place_snap.file":"casmsocial_mvp.place_road_snap","observers.agent_log_file":"mvp_routed_agent_log.parquet","observers.behavior_log_file":"mvp_routed_behavior_log.parquet"}'
 	@echo "🚀 Validating MVP routed output logs"
 	@uv run python scripts/validate_mvp_output.py \
 	--agent-log data/output/mvp_routed_agent_log.parquet \

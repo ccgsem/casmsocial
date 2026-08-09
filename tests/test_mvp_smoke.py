@@ -26,7 +26,7 @@ def test_create_mvp_tables_writes_two_rank_partition_table():
 
         households = conn.execute("""
             SELECT sp_id, hh_size
-            FROM rti_synth_pop_v2_dmv_100.hh
+            FROM casmsocial_mvp.hh
             ORDER BY sp_id
             """).fetchall()
         rows = conn.execute("""
@@ -54,17 +54,17 @@ def test_create_mvp_tables_writes_routable_road_artifacts():
 
         nodes = conn.execute("""
             SELECT node_id, x, y
-            FROM rti_synth_pop_v2_dmv_100.road_nodes
+            FROM casmsocial_mvp.road_nodes
             ORDER BY node_id
             """).arrow().read_all().to_pylist()
         edges = conn.execute("""
             SELECT edge_id, from_node_id, to_node_id, length_m, travel_time_min, mode, road_type
-            FROM rti_synth_pop_v2_dmv_100.road_edges
+            FROM casmsocial_mvp.road_edges
             ORDER BY edge_id
             """).arrow().read_all().to_pylist()
         snaps = conn.execute("""
             SELECT place_id, road_node_id
-            FROM rti_synth_pop_v2_dmv_100.place_road_snap
+            FROM casmsocial_mvp.place_road_snap
             ORDER BY place_id
             """).arrow().read_all().to_pylist()
 
@@ -152,9 +152,9 @@ def test_mvp_config_runs_and_writes_behavior_log(tmp_path, monkeypatch):
 def test_mvp_config_builds_routed_plans_with_fixture_tables(tmp_path, monkeypatch):
     params = init_params("config/mvp.yaml", "{}")
     params["roads.enabled"] = True
-    params["roads.nodes.file"] = "rti_synth_pop_v2_dmv_100.road_nodes"
-    params["roads.edges.file"] = "rti_synth_pop_v2_dmv_100.road_edges"
-    params["roads.place_snap.file"] = "rti_synth_pop_v2_dmv_100.place_road_snap"
+    params["roads.nodes.file"] = "casmsocial_mvp.road_nodes"
+    params["roads.edges.file"] = "casmsocial_mvp.road_edges"
+    params["roads.place_snap.file"] = "casmsocial_mvp.place_road_snap"
     params["behavior.engine"] = "schedule"
     params["behavior.llm.enabled"] = False
     params["communication.enabled"] = False
