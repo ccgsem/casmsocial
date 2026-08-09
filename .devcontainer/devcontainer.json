@@ -1,0 +1,53 @@
+{
+  "name": "casmsocial MPI",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": "..",
+    "target": "dev",
+    "args": {
+      "UV_INSECURE_HOST": "download.pytorch.org"
+    }
+  },
+  "workspaceFolder": "/workspace/casmsocial",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/casmsocial,type=bind,consistency=cached",
+  "mounts": [
+    "source=casmsocial-devcontainer-venv,target=/workspace/casmsocial/.venv,type=volume",
+    "source=casmsocial-devcontainer-uv-cache,target=/home/vscode/.cache/uv,type=volume"
+  ],
+  "remoteUser": "vscode",
+  "runArgs": ["--init"],
+  "containerEnv": {
+    "CC": "mpicxx",
+    "CXX": "mpicxx",
+    "UV_LINK_MODE": "copy",
+    "CASMSOCIAL_DATA_PATH": "examples/mvp",
+    "CASMSOCIAL_DUCKLAKE_PATH": "examples/mvp/mvp.ducklake"
+  },
+  "remoteEnv": {
+    "PYTHONPATH": "${containerWorkspaceFolder}",
+    "MPI_CXX_COMPILER": "mpicxx",
+    "VIRTUAL_ENV": "/workspace/casmsocial/.venv",
+    "PATH": "/workspace/casmsocial/.venv/bin:${containerEnv:PATH}"
+  },
+  "postCreateCommand": "./.devcontainer/postCreateCommand.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "editorconfig.editorconfig",
+        "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "python.testing.pytestArgs": ["tests"],
+        "python.testing.unittestEnabled": false,
+        "python.testing.pytestEnabled": true,
+        "python.defaultInterpreterPath": "/workspace/casmsocial/.venv/bin/python",
+        "python.testing.pytestPath": "/workspace/casmsocial/.venv/bin/pytest",
+        "python.analysis.extraPaths": ["${workspaceFolder}"],
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true
+      }
+    }
+  }
+}

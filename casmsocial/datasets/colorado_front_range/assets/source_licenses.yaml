@@ -1,0 +1,133 @@
+schema_version: 1
+audit_date: '2026-08-09'
+audit_scope: colorado_front_range_dataset_builder
+disclaimer: Engineering release audit; not legal advice.
+
+software:
+  casmsocial:
+    license: MIT
+    copyright: Copyright (c) 2025 The MITRE Corporation
+    license_file: LICENSE
+  migrated_mydatalakehouse_code:
+    license: MIT
+    copyright: Copyright (c) 2024 Jon Cline
+    migration_requirement: Preserve the source copyright and MIT permission notice in copied or substantially derived code.
+    release_status: provenance_documented_authority_review_required
+    migrated_modules:
+      - destination: casmsocial/datasets/colorado_front_range/profile_runtime.py
+        sources:
+          - mydatalakehouse/colorado_front_range_routing.py
+          - mydatalakehouse/colorado_front_range_feasibility_routing.py
+          - mydatalakehouse/colorado_front_range_casmsocial_export.py
+        source_commits:
+          colorado_front_range_routing.py: f9b0d2eb9fa830f7004eec1c95c3bdc6bef4abb6
+          colorado_front_range_feasibility_routing.py: f9b0d2eb9fa830f7004eec1c95c3bdc6bef4abb6
+          colorado_front_range_casmsocial_export.py: ec2336af55fb7221922ad972ec1b5f750746f114
+        notice: THIRD_PARTY_NOTICES.md
+      - destination: casmsocial/datasets/colorado_front_range/destination_supply.py
+        sources:
+          - mydatalakehouse/colorado_front_range_osm_pois.py
+          - mydatalakehouse/colorado_front_range_routing.py
+        source_commits:
+          colorado_front_range_osm_pois.py: ecb3b0c729f546c2db1dd4d2eeeab98add6d9c93
+          colorado_front_range_routing.py: f9b0d2eb9fa830f7004eec1c95c3bdc6bef4abb6
+        notice: THIRD_PARTY_NOTICES.md
+      - destination: casmsocial/datasets/colorado_front_range/atus.py
+        sources:
+          - mydatalakehouse/atus_donor_diaries.py
+          - mydatalakehouse/atus_diary_normalization.py
+          - mydatalakehouse/dc_metro_donor_matching.py
+        source_commits:
+          atus_donor_diaries.py: 653250f6789f66315bf442a7252ab8bac85f3277
+          atus_diary_normalization.py: 653250f6789f66315bf442a7252ab8bac85f3277
+          dc_metro_donor_matching.py: 844cb7eba28ff4697b7606899a2eef2eb7bf4193
+        notice: THIRD_PARTY_NOTICES.md
+      - destination: casmsocial/datasets/colorado_front_range/profile_schedules.py
+        source: mydatalakehouse/colorado_front_range_schedules.py
+        source_commit: 00380e58c1a33449d07bd346ce6c0df3eb6ceaf1
+        notice: THIRD_PARTY_NOTICES.md
+      - destination: casmsocial/datasets/colorado_front_range/profile_population.py
+        sources:
+          - mydatalakehouse/colorado_front_range_quality.py
+          - mydatalakehouse/colorado_front_range_pilot.py
+          - mydatalakehouse/colorado_front_range_casmsocial_fixture.py
+        source_commit: ec2336af55fb7221922ad972ec1b5f750746f114
+        notice: THIRD_PARTY_NOTICES.md
+      - destination: casmsocial/datasets/colorado_front_range/osf_ducklake.py
+        source: mydatalakehouse/osf_synthetic_ducklake.py
+        source_commit: 4a9687de19ad192b97139f085d3e348dfe187cbd
+        notice: THIRD_PARTY_NOTICES.md
+      - destination: casmsocial/datasets/colorado_front_range/osf_tables.py
+        source: mydatalakehouse/osf_synthetic_ducklake.py
+        source_commit: 4a9687de19ad192b97139f085d3e348dfe187cbd
+        notice: THIRD_PARTY_NOTICES.md
+
+data_sources:
+  osf_synthetic_population:
+    source_id: osf-fpnc2-colorado-2024-09
+    title: Large-Scale Geographically Explicit Synthetic Population for the United States
+    project_url: https://osf.io/fpnc2/
+    metadata_url: https://api.osf.io/v2/nodes/fpnc2/
+    public: true
+    license: CC0-1.0
+    license_url: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+    verified_from_official_api: '2026-08-01'
+    distribution_policy: Download from the source; do not bundle identifier-bearing tables in CASMSocial releases.
+  osf_education_sites:
+    source_id: osf-ts9mg-colorado-education-sites-2024-10
+    title: Education Sites By State
+    project_url: https://osf.io/ts9mg/
+    metadata_url: https://api.osf.io/v2/nodes/ts9mg/
+    public: true
+    license: CC0-1.0
+    license_url: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+    verified_from_official_api: '2026-08-01'
+    distribution_policy: Download from the source; do not bundle site-level tables in CASMSocial releases.
+  bls_atus:
+    source_id: bls-atus-2024
+    source_url: https://www.bls.gov/tus/data.htm
+    copyright_url: https://www.bls.gov/opub/copyright-information.htm
+    rights: US-federal-public-domain
+    attribution_requested: U.S. Bureau of Labor Statistics, American Time Use Survey
+    distribution_policy: Download official public-use files; ship provenance and citations, not microdata archives.
+  census_tiger_line:
+    source_id: census-tiger-line-counties-2023
+    source_url: https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html
+    documentation_url: https://www.census.gov/programs-surveys/geography/technical-documentation/complete-technical-documentation/tiger-geo-line.html
+    rights: US-federal-public-domain
+    attribution_requested: U.S. Census Bureau
+    special_terms:
+      - Preserve the TIGER/Line legal disclaimer when repackaging.
+      - Do not use TIGER/Line as or within a proprietary product name.
+    distribution_policy: Prefer source download; derived boundary definitions retain citation and disclaimer.
+  openstreetmap:
+    source_id: geofabrik-colorado-osm-pbf-pinned
+    source_url: https://download.geofabrik.de/north-america/us/colorado.html
+    license: ODbL-1.0
+    license_url: https://opendatacommons.org/licenses/odbl/1-0/
+    attribution_url: https://www.openstreetmap.org/copyright
+    required_attribution: © OpenStreetMap contributors
+    selected_distribution_policy: local_build_only
+    distribution_policy: Local build by default; distribution of OSM-derived databases requires ODbL review, attribution, and applicable share-alike/source obligations.
+
+release_gates:
+  - id: migrated_code_provenance
+    status: documented_review_required
+    requirement: Record origin and retained MIT notices for every migrated private-repository module.
+    control: A per-source-file manifest records immutable commits, SHA-256 hashes, authorship, destination coverage, MIT evidence, and the retained notice; public CI verifies coverage and a local audit can re-read the private Git objects.
+  - id: dependency_license_inventory
+    status: automated_review_required
+    requirement: Generate and review the Python and container dependency license/SBOM inventory.
+    control: CI validates CycloneDX Python and SPDX production-image inventories against version-pinned policies and hashed in-image evidence; the container policy remains review_required pending accountable native-license and distribution review.
+  - id: osm_distribution_policy
+    status: implemented
+    requirement: Decide whether releases distribute no OSM-derived data, a Produced Work, or an ODbL derived database, and implement the corresponding notices and source offer.
+    control: The selected local-build-only policy excludes derived data from release artifacts and writes a hashed OpenStreetMap attribution and non-redistribution notice into each destination product.
+  - id: release_artifact_scan
+    status: automated
+    requirement: Verify wheels, source distributions, containers, and documentation contain no generated identifier-bearing dataset files.
+    control: scripts/verify_release_artifacts.py runs against Python distributions, the documentation site, and the production image in CI.
+  - id: final_distribution_review
+    status: organization_review_required
+    requirement: Approve the final public distribution plan and record the accountable reviewers and evidence.
+    control: The release-readiness policy and attestation contract prevent machine controls from being represented as organizational approval.

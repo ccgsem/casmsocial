@@ -1,0 +1,16 @@
+.venv
+.git
+.pytest_cache
+.mypy_cache
+.ruff_cache
+__pycache__
+*.pyc
+dist
+build
+site
+output
+data
+testdata
+examples/mvp/mvp.ducklake
+.env
+.DS_Store

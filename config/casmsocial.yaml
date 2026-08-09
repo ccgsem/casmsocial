@@ -1,0 +1,53 @@
+# Runtime launch config for direct local runs.
+# Canonical casmdb scenario definitions live in scenarios/casmsocial/.
+model.name: 'casmsocial.casmpop.CasmPop'
+random.seed: 42
+# Optional. Defaults to seed_<random.seed> when omitted.
+# simulation.run_id: 'seed_42'
+start.datetime: '2025-06-02 00:00:00'
+duration.hours: 168
+timezone: 'America/New_York'
+time.step.minutes: 60
+places.table: 'wake_county_heat.places'
+households.table: 'wake_county_heat.hh_1000_households'
+activities.table: 'wake_county_heat.activities_1000_households'
+social_networks.table: ''
+social_networks.enabled: false
+communication.enabled: false
+persons.table: 'wake_county_heat.persons_1000_households'
+behavior.engine: 'default'
+behavior.llm.enabled: false
+behavior.llm.deliberation_interval: 60
+behavior.llm.max_memory_events: 20
+behavior.llm.signal_cap: 1.5
+behavior.llm.memory_decay: 0.65
+# Adapter behind the LLM engine. "local" is deterministic and has no
+# external dependencies. "anthropic" calls Claude via the optional
+# `anthropic` package (`uv sync --extra remote`); set the
+# `behavior.llm.anthropic.*` keys below and an ANTHROPIC_API_KEY env var
+# (or behavior.llm.anthropic.api_key) when using it.
+behavior.llm.adapter: 'local'
+# behavior.llm.anthropic.model: 'claude-haiku-4-5-20251001'
+# behavior.llm.anthropic.api_key: null   # leave null to read ANTHROPIC_API_KEY from env
+# behavior.llm.anthropic.max_tokens: 1024
+roads.enabled: false
+roads.nodes.file: ''
+roads.edges.file: ''
+roads.place_snap.file: ''
+roads.mode: 'drive'
+roads.time_model: 'validated_gap'
+partition.table: ''
+partition.default_rank: 0
+partition.require_full_coverage: false
+observers.output_dir: 'data/output'
+observers.agent_log.enabled: true
+observers.agent_log_file: 'agent_log.parquet'
+observers.behavior_log.enabled: false
+observers.behavior_log_file: 'behavior_log.parquet'
+observers.delta_agent_state.enabled: false
+observers.delta_agent_state_file: 'agent_state_delta.parquet'
+observers.delta_agent_state_audit_file: 'agent_state_delta_audit.parquet'
+logging.rank0_only: false
+logging.level: 'INFO'
+profiling.phase_timings.enabled: false
+profiling.phase_timings.sample_stride: 512

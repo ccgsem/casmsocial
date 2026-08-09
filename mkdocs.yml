@@ -1,0 +1,58 @@
+site_name: casmsocial
+repo_url: https://github.com/ccgsem/casmsocial
+site_url: https://ccgsem.github.io/casmsocial
+site_description: casmsocial is a Python framework for implementing agent-based models that simulate the dynamics of a synthetic population
+site_author: Jon Cline
+edit_uri: edit/develop/docs/
+repo_name: ccgsem/casmsocial
+copyright: Copyright (c) 2025 The MITRE Corporation.
+
+nav:
+  - Home: index.md
+  - Codebase Relationships: codebase_relationships.md
+  - MVP Operator Checklist: mvp_operator_checklist.md
+  - Wake County Heat Fixture: wake_county_heat_fixture.md
+  - Colorado Dataset Licensing: colorado_front_range_data_licensing.md
+  - Colorado Release Review: colorado_front_range_release_review.md
+  - Colorado Dataset Acquisition: colorado_front_range_data_acquisition.md
+  - Modules: modules.md
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["casmsocial"]
+theme:
+  name: material
+  feature:
+    tabs: true
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: white
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ccgsem/casmsocial
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/casmsocial
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
