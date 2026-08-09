@@ -5,7 +5,7 @@ site_description: casmsocial is a Python framework for implementing agent-based 
 site_author: Jon Cline
 edit_uri: edit/develop/docs/
 repo_name: ccgsem/casmsocial
-copyright: Copyright (c) 2025 The MITRE Corporation.
+copyright: © 2026 The MITRE Corporation
 
 nav:
   - Home: index.md

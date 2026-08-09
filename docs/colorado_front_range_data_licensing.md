@@ -19,7 +19,7 @@ repository.
 
 | Material | Verified status | Public-release treatment |
 |---|---|---|
-| CASMSocial code | MIT, Copyright 2025 The MITRE Corporation | Retain the repository `LICENSE`. |
+| CASMSocial code | MIT, © 2026 The MITRE Corporation | Retain the repository `LICENSE`. |
 | Code migrated from `mydatalakehouse` | MIT, Copyright 2024 Jon Cline | Compatible with MIT distribution; preserve its copyright and permission notice in copied or substantially derived code and record file provenance. |
 | OSF synthetic population (`fpnc2`) | Public OSF project; official API reports CC0 1.0 | Downloader and transformations may be public. Download at build time; do not bundle generated identifier-bearing tables. |
 | OSF education sites (`ts9mg`) | Public OSF project; official API reports CC0 1.0 | Same treatment as the population archive. |
