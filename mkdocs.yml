@@ -10,6 +10,7 @@ copyright: © 2026 The MITRE Corporation
 nav:
   - Home: index.md
   - Codebase Relationships: codebase_relationships.md
+  - Public Release Review: public_release_review.md
   - MVP Operator Checklist: mvp_operator_checklist.md
   - Colorado Dataset Licensing: colorado_front_range_data_licensing.md
   - Colorado Release Review: colorado_front_range_release_review.md
