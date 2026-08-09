@@ -33,10 +33,11 @@ def test_build_scenarios_uses_yaml_parameters():
     assert scenarios["dmv_100"]["households.table"] == "rti_synth_pop_v2_dmv_100.hh"
 
 
-def test_build_model_record_reports_repository_mit_license():
+def test_build_model_record_reports_repository_license_and_public_contact():
     record = _build_model_record("2.5.5", "https://example.test/casmsocial")
 
     assert record["model_license"] == "MIT"
+    assert record["model_authors"] == [{"name": "Jon C. Cline", "email": "jcline@mitre.org"}]
 
 
 def test_casmpop_does_not_publish_legacy_experiment_registry():

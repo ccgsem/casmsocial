@@ -163,7 +163,7 @@ def _build_model_record(version: str, resources_uri: str) -> dict[str, Any]:
             "using repast4py, MPI, and DuckDB/DuckLake."
         ),
         "model_authors": [
-            {"name": "Jon Cline", "email": "jon.c.cline@gmail.com"},
+            {"name": "Jon C. Cline", "email": "jcline@mitre.org"},
         ],
         "model_resources_uri": resources_uri,
         "model_metadata": {
