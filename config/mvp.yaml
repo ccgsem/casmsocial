@@ -12,14 +12,14 @@ duration.hours: 24
 timezone: 'America/New_York'
 time.step.minutes: 60
 
-# Small DMV sample tables used by the default demo configuration.
-places.table: 'rti_synth_pop_v2_dmv_100.places'
-households.table: 'rti_synth_pop_v2_dmv_100.hh'
-activities.table: 'rti_synth_pop_v2_dmv_100.activities'
+# Small, locally generated tables used by the self-contained MVP demo.
+places.table: 'casmsocial_mvp.places'
+households.table: 'casmsocial_mvp.hh'
+activities.table: 'casmsocial_mvp.activities'
 social_networks.table: ''
 social_networks.enabled: false
 communication.enabled: true
-persons.table: 'rti_synth_pop_v2_dmv_100.persons'
+persons.table: 'casmsocial_mvp.persons'
 
 # Use the local no-network behavior engine. Remote providers stay disabled
 # because the adapter is local and no anthropic settings are provided.
