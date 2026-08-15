@@ -146,20 +146,72 @@ DuckLake populated from them.
 
 ## Dependency-inventory evidence
 
-The 2026-08-03 Step 7 audit used CycloneDX Python 7.3.0 for the Python
-environment and Docker Scout's SPDX 2.3 exporter for the production image. The
+The 2026-08-09 Step 4 audit used CycloneDX Python 7.3.0 for the Python
+environment and Syft 1.44.0's SPDX 2.3 exporter for the production image. The
 reproducible Python inventory contained 106 components and passed the reviewed
-license policy with two version-pinned metadata overrides (`cligj` and
-`repast4py`). Both overrides point to BSD license files installed with their
-packages.
+license policy with 12 version-pinned metadata overrides. `cligj` and
+`repast4py` omit usable license identifiers; ten other packages publish the
+ambiguous `License :: OSI Approved :: BSD License` classifier. The gate no
+longer assumes that classifier means BSD-3-Clause: each affected version points
+to its installed license evidence. This matters because Numba 0.66.0 is
+BSD-2-Clause while the other reviewed ambiguous-classifier packages are
+BSD-3-Clause.
 
-Removing development groups from the production image reduced its Python
-installation from 103 dependencies to 50 before installing CASMSocial. The
-resulting image inventory contains 1,145 SPDX packages: 562 Debian, 506 Cargo,
-73 Python, two RPM, one OCI, and one generic component. Docker Scout reports
-564 packages without a machine-readable concluded or declared license, so the
-native/container license review remains an explicit organizational release
-gate rather than being represented as complete.
+The optional Shapely 2.1.2 wheel is BSD-3-Clause and bundles GEOS under
+LGPL-2.1, as recorded by its installed `LICENSE_GEOS`. Shapely is used only by
+the `data-builder` extra and is not present in the CASMSocial wheel or current
+production image. Any future artifact that redistributes that wheel must retain
+the bundled notice and include the LGPL obligations in its distribution review.
+
+Step 5 separates dependency compilation from the production runtime. The
+builder uses a digest-pinned `uv` image and retains the compilers, headers,
+native `-dev` packages, package-manager cache, and Rust executable metadata.
+The final image starts from a clean Python runtime and receives only the
+non-editable virtual environment, application payload, CA certificates,
+`libexpat1`, and the MPICH runtime. CI rejects `uv`, C/C++ compilers, the uv
+cache, and the named build-only Debian packages in the production target. It
+also imports the compiled Rasterio, Torch, mpi4py, and repast4py dependencies
+under a one-rank MPI launch.
+
+Step 6 removes system `pip` and 14 Windows-only launcher binaries vendored by
+pip and setuptools; none is needed by the Linux runtime. The resulting arm64
+audit image is 623 MB, down from 1.02 GB before the builder/runtime split. Its
+regenerated inventory contains 187 SPDX packages: 121 Debian, 64 Python, one
+OCI scan-subject record, and one generic Python runtime record. There are no
+Cargo or untyped-package records.
+
+Syft leaves seven records without either a machine-readable concluded or
+declared license. `container_dependency_license_policy.yaml` classifies six by
+exact package type, name, and version: annotated-types, DuckDB, Loguru, and
+markdown-it-py are MIT; Jinja2 is BSD-3-Clause; and the Python 3.12.13 runtime
+uses PSF-2.0 while retaining its complete incorporated-software license file.
+Every override points to an authoritative upstream URL and one or more hashed
+files inside the image. Because Loguru's wheel declares only an MIT classifier,
+CASMSocial also retains the
+[tagged Loguru 0.7.3 license](https://github.com/Delgan/loguru/blob/0.7.3/LICENSE)
+as a packaged third-party asset. The seventh record is the SPDX document root
+for the OCI archive being scanned, not an additional dependency.
+[Python's official documentation](https://docs.python.org/3.12/license.html)
+confirms the primary PSF License Version 2 and warns that incorporated
+components have separate terms, which is why the complete installed
+`LICENSE.txt` remains controlling evidence.
+
+The policy verifier rejects Cargo, an unclassified missing license, version
+drift, changed evidence hashes, non-root OCI exceptions, or a native package
+without declared or concluded metadata. The audited image passes with six
+overrides, one scanner subject, and zero violations. Its conservative native
+review patterns flag 117 of 121 Debian records because their aggregate
+copyright expressions mention GPL/LGPL terms or custom `LicenseRef` entries.
+That count is a review queue, not a finding that 117 runtime binaries impose a
+particular obligation on CASMSocial; Debian copyright expressions can cover
+source files that are not present in a given binary package.
+
+The metadata-classification and toolchain-removal blockers are resolved, but
+the production-container license review remains an explicit organizational
+gate. An accountable reviewer must assess the native binary composition,
+retained notices, and any source-availability obligations for the intended
+distribution. Automated inventory generation and a passing policy do not
+approve public container distribution.
 
 CI regenerates both inventories on every change. It uploads the CycloneDX and
 SPDX documents as workflow artifacts for 14 days; generated SBOM files are not

@@ -24,7 +24,9 @@ machine controls `passed` and these three missing approvals:
 1. `contributor_authority`: confirms authority to publish code migrated from the
    private repository.
 2. `container_dependency_license_review`: confirms review of the generated
-   Python and production-container inventories for the intended distribution.
+   Python and production-container inventories, the machine-readable container
+   policy, retained notices, and native-package review queue for the intended
+   distribution.
 3. `final_distribution_plan`: approves public release of code and build
    artifacts under the local-only data policy.
 
@@ -79,5 +81,10 @@ different release version is rejected.
 
 The authoritative contract is
 `casmsocial/datasets/colorado_front_range/assets/release_review_policy.yaml`.
+The container evidence record should reference the CI-produced SPDX artifact,
+the passing `verify_container_sbom.py` summary, the reviewed native-package
+decisions, and any notice or source-availability actions required for the
+chosen container distribution. A policy result of `review_required` is
+intentional and cannot substitute for that approval.
 The broader source and dependency rationale is in the
 [Colorado dataset licensing audit](colorado_front_range_data_licensing.md).
