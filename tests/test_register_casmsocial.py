@@ -10,7 +10,6 @@ def test_register_casmsocial_loads_canonical_scenario_yaml_files():
         "dmv_100",
         "dc",
         "dc_5000",
-        "dc_metro_synthetic_100",
     }
     for name, spec in specs.items():
         assert spec["description"]

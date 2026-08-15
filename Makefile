@@ -48,18 +48,16 @@ mvp: mvp-clean ## Clean artifacts, create the local MVP DuckLake, run the scenar
 	@echo "🚀 Summarizing MVP output"
 	@uv run python scripts/summarize_mvp_output.py
 
-.PHONY: dc-metro-synthetic-100
-dc-metro-synthetic-100: ## Generate, materialize, and smoke-run the fictional DC metro 100-household scenario
-	@echo "🚀 Generating DC metro synthetic fixture"
-	@uv run python scripts/create_dc_metro_synthetic_fixture.py \
-		--ducklake-path data/datalakehouse_dc_metro_synthetic_100
-	@echo "🚀 Running DC metro synthetic scenario"
-	@CASMSOCIAL_DUCKLAKE_PATH=data/datalakehouse_dc_metro_synthetic_100 \
-	uv run mpirun -n 1 python -m casmsocial config/dc_metro_synthetic_100.yaml
-	@echo "🚀 Validating DC metro synthetic agent log"
-	@uv run python -c "import duckdb; row = duckdb.sql(\"SELECT count(DISTINCT agent_id) FROM read_parquet('data/output/dc_metro_synthetic_100_agent_log.parquet')\").fetchone(); assert row[0] == 250, row"
-	@echo "🚀 Validating aggregate social interaction output"
-	@uv run python -c "import duckdb; rows = duckdb.sql(\"SELECT channel, sum(event_count) FROM read_parquet('data/output/dc_metro_synthetic_100_social_interactions.parquet') GROUP BY channel\").fetchall(); counts = dict(rows); assert counts.get('in_person', 0) > 0 and counts.get('remote', 0) > 0, counts"
+.PHONY: colorado-front-range-fixture
+colorado-front-range-fixture: ## Materialize a validated local Colorado runtime and run its smoke configuration
+	@test -n "$(COLORADO_FRONT_RANGE_RUNTIME_DIR)" || (echo "Set COLORADO_FRONT_RANGE_RUNTIME_DIR to a completed local Colorado runtime output"; exit 2)
+	@echo "🚀 Materializing Colorado Front Range runtime fixture"
+	@uv run python scripts/create_colorado_front_range_fixture_ducklake.py \
+		--runtime-dir $(COLORADO_FRONT_RANGE_RUNTIME_DIR) \
+		--ducklake-path data/datalakehouse_colorado_front_range_fixture
+	@echo "🚀 Running Colorado Front Range fixture"
+	@CASMSOCIAL_DUCKLAKE_PATH=data/datalakehouse_colorado_front_range_fixture \
+	uv run mpirun -n 1 python -m casmsocial config/colorado_front_range_fixture.yaml
 
 .PHONY: mvp-2rank
 mvp-2rank: ## Run the MVP smoke scenario with two MPI ranks

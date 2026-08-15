@@ -6,11 +6,11 @@ duration.hours: 24
 timezone: 'America/Denver'
 time.step.minutes: 60
 
-places.table: 'colorado_front_range_fixture.places'
-households.table: 'colorado_front_range_fixture.hh'
-persons.table: 'colorado_front_range_fixture.persons'
-activities.table: 'colorado_front_range_fixture.activities'
-social_networks.table: 'colorado_front_range_fixture.social_networks'
+places.table: 'colorado_front_range.places'
+households.table: 'colorado_front_range.hh'
+persons.table: 'colorado_front_range.persons'
+activities.table: 'colorado_front_range.activities'
+social_networks.table: 'colorado_front_range.social_networks'
 social_networks.enabled: true
 social_networks.remote_messages.enabled: true
 social_networks.remote_messages.interval_minutes: 60
