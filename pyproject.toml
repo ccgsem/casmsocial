@@ -155,6 +155,7 @@ files = [
     "scripts/summarize_mvp_output.py",
     "scripts/validate_agent_state_delta.py",
     "scripts/validate_mvp_output.py",
+    "scripts/verify_container_sbom.py",
     "scripts/verify_release_readiness.py",
 ]
 disallow_untyped_defs = true

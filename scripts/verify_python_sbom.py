@@ -13,16 +13,20 @@ SPDX_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
 SPDX_OPERATORS = {"AND", "OR", "WITH"}
 
 
-def _declared_licenses(component: dict, aliases: dict[str, str]) -> set[str]:
+def _license_tokens(value: str) -> set[str]:
+    return {token for token in SPDX_TOKEN.findall(value) if token not in SPDX_OPERATORS}
+
+
+def _declared_licenses(component: dict, aliases: dict[str, str], ambiguous_names: set[str]) -> set[str]:
     declared: set[str] = set()
     for item in component.get("licenses", []):
         if expression := item.get("expression"):
-            declared.update(token for token in SPDX_TOKEN.findall(expression) if token not in SPDX_OPERATORS)
+            declared.update(_license_tokens(expression))
             continue
         license_data = item.get("license", {})
         value = license_data.get("id") or license_data.get("name")
-        if value:
-            declared.add(aliases.get(value, value))
+        if value and value not in ambiguous_names:
+            declared.update(_license_tokens(aliases.get(value, value)))
     return declared
 
 
@@ -38,7 +42,10 @@ def verify_python_sbom(sbom_path: Path, policy_path: Path) -> dict[str, int]:
 
     reviewed = set(policy["reviewed_spdx_identifiers"])
     aliases = policy.get("license_name_aliases", {})
-    root_licenses = _declared_licenses(root, aliases)
+    ambiguous_names = set(policy.get("ambiguous_license_names", []))
+    if overlap := ambiguous_names & set(aliases):
+        raise ValueError(f"Ambiguous license names cannot be normalized by alias: {sorted(overlap)}")
+    root_licenses = _declared_licenses(root, aliases, ambiguous_names)
     if not root_licenses:
         raise ValueError("SBOM root component must declare the CASMSocial license")
     if unreviewed_root := root_licenses - reviewed:
@@ -50,13 +57,20 @@ def verify_python_sbom(sbom_path: Path, policy_path: Path) -> dict[str, int]:
     for component in components:
         name = component.get("name", "<unnamed>")
         version = component.get("version")
-        declared = _declared_licenses(component, aliases)
+        declared = _declared_licenses(component, aliases, ambiguous_names)
         if not declared:
             override = overrides.get(name)
             if not override or override.get("version") != version:
                 violations.append(f"{name}=={version}: missing license declaration and reviewed override")
                 continue
-            declared = {override["license"]}
+            evidence = override.get("evidence")
+            license_expression = override.get("license")
+            if not isinstance(evidence, str) or not evidence.strip():
+                violations.append(f"{name}=={version}: reviewed override is missing license evidence")
+                continue
+            if not isinstance(license_expression, str) or not (declared := _license_tokens(license_expression)):
+                violations.append(f"{name}=={version}: reviewed override is missing a license expression")
+                continue
             override_count += 1
         unreviewed = declared - reviewed
         if unreviewed:

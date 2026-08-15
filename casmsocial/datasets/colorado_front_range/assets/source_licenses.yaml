@@ -1,5 +1,5 @@
 schema_version: 1
-audit_date: '2026-08-01'
+audit_date: '2026-08-09'
 audit_scope: colorado_front_range_dataset_builder
 disclaimer: Engineering release audit; not legal advice.
 
@@ -118,7 +118,7 @@ release_gates:
   - id: dependency_license_inventory
     status: automated_review_required
     requirement: Generate and review the Python and container dependency license/SBOM inventory.
-    control: CI validates a CycloneDX Python inventory against the reviewed policy and publishes an SPDX production-image inventory for final organizational review.
+    control: CI validates CycloneDX Python and SPDX production-image inventories against version-pinned policies and hashed in-image evidence; the container policy remains review_required pending accountable native-license and distribution review.
   - id: osm_distribution_policy
     status: implemented
     requirement: Decide whether releases distribute no OSM-derived data, a Produced Work, or an ODbL derived database, and implement the corresponding notices and source offer.

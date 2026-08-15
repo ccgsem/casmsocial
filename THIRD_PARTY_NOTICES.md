@@ -52,3 +52,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Container dependency notice
+
+The production container includes Loguru 0.7.3 under the MIT license. Its
+tagged upstream license text is retained at
+`casmsocial/datasets/colorado_front_range/assets/licenses/loguru-0.7.3.LICENSE`
+because the installed wheel declares the MIT classifier but does not carry a
+license file in its distribution metadata directory.
