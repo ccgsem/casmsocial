@@ -1,10 +1,9 @@
 """Optional live Arrow Flight observation server for an in-progress CasmPop run.
 
-Speaks Apache Arrow Flight, which ships inside the ``pyarrow`` wheel --
-already a hard dependency of casmsocial -- so, unlike the retired ZeroC Ice
-version of this module, nothing here needs a lazy import or an optional
-extra: importing this module never requires anything beyond what casmsocial
-already installs.
+Speaks Apache Arrow Flight, which ships inside the ``pyarrow`` wheel and is
+already a hard dependency of casmsocial. Nothing here needs a lazy import or
+an optional extra: importing this module never requires anything beyond what
+casmsocial already installs.
 """
 
 from __future__ import annotations

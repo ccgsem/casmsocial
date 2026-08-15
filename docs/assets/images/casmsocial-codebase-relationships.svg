@@ -87,8 +87,8 @@
 
   <rect x="610" y="730" width="455" height="130" rx="12" fill="#ffffff" stroke="#8e44ad" stroke-width="4"/>
   <text x="837" y="770" text-anchor="middle" class="title-purple mono">casmservice</text>
-  <text x="837" y="805" text-anchor="middle" class="label mono">ZeroC Ice RPC · Solara GUI</text>
-  <text x="837" y="833" text-anchor="middle" class="small mono">casmserver · casmgui · Slice IDL</text>
+  <text x="837" y="805" text-anchor="middle" class="label mono">Arrow Flight · REST/WebSocket</text>
+  <text x="837" y="833" text-anchor="middle" class="small mono">FastAPI · Solara GUI · casmdb</text>
   <text x="837" y="856" text-anchor="middle" class="ok mono">✓ Dockerfile · CI</text>
 
   <rect x="330" y="900" width="270" height="90" rx="10" fill="#ffffff" stroke="#9aaeb0" stroke-width="3"/>
