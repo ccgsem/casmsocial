@@ -9,13 +9,19 @@ from scripts.register_casmsocial import (
 def test_register_casmsocial_loads_canonical_scenario_yaml_files():
     specs = _load_scenario_specs()
 
-    assert set(specs) == {"wake_county_heat"}
+    assert set(specs) == {
+        "base",
+        "dmv",
+        "dmv_100",
+        "dc",
+        "dc_5000",
+    }
     for name, spec in specs.items():
         assert spec["description"]
         params = spec["parameters"]
         assert params["model.name"] == CASMSOCIAL_FACTORY_KEY
         assert params["places.table"]
-        assert params["households.table"]
+        assert params["households.table"].endswith(".hh"), name
         assert params["persons.table"]
         assert params["activities.table"]
 
@@ -23,14 +29,8 @@ def test_register_casmsocial_loads_canonical_scenario_yaml_files():
 def test_build_scenarios_uses_yaml_parameters():
     scenarios = _build_scenarios()
 
-    assert set(scenarios) == {"wake_county_heat"}
-    params = scenarios["wake_county_heat"]
-    assert params["places.table"] == "wake_county_heat.places"
-    assert params["households.table"] == "wake_county_heat.hh_1000_households"
-    assert params["persons.table"] == "wake_county_heat.persons_1000_households"
-    assert params["activities.table"] == "wake_county_heat.activities_1000_households"
-    assert params["social_networks.table"] == ""
-    assert params["social_networks.enabled"] is False
+    assert scenarios["dmv"]["households.table"] == "rti_synth_pop_v2_dmv.hh"
+    assert scenarios["dmv_100"]["households.table"] == "rti_synth_pop_v2_dmv_100.hh"
 
 
 def test_build_model_record_reports_repository_license_and_public_contact():

@@ -1,0 +1,11 @@
+scenario_name: dc_5000
+model_name: casmsocial
+description: DC synthetic population sampled to 5000 persons for rapid iteration.
+parameters:
+  model.name: casmsocial.citysim.citysocialmodel.CitySocialModel
+  places.table: rti_synth_pop_v2_dc_5000.places
+  households.table: rti_synth_pop_v2_dc_5000.hh
+  persons.table: rti_synth_pop_v2_dc_5000.persons
+  activities.table: rti_synth_pop_v2_dc_5000.activities
+  social_networks.table: ''
+  social_networks.enabled: false

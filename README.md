@@ -40,7 +40,7 @@ To launch the virtualenv, run
 
 ```bash
 % source ./.venv/bin/activate
-(casmsocial) python -m pip install -e .
+(casmsocial) ...
 ```
 
 ## Quickstart: running the model
@@ -54,19 +54,6 @@ The files in `config/` are runtime launch configs for direct local runs.
 Canonical casmdb scenario definitions are maintained in
 `scenarios/casmsocial/*.yaml` and registered with
 `scripts/register_casmsocial.py`.
-
-The default direct-run configuration uses the Wake County Heat sample fixture.
-Materialize its four Parquet tables before the first run:
-
-```bash
-uv run python scripts/materialize_wake_county_heat_fixture.py \
-  --fixture-path testdata/wake_county_heat_1000_households \
-  --ducklake-path data/datalakehouse
-```
-
-The fixture is currently a private release candidate: the project team
-recommends public release under MIT, with final package-review approval still
-pending. See [the fixture runbook](docs/wake_county_heat_fixture.md).
 
 To run (option 1):
 
@@ -160,21 +147,6 @@ you need output rows from every rank.
 The Compose file uses `CASMSOCIAL_MPI_DATA_PATH` and
 `CASMSOCIAL_MPI_DUCKLAKE_PATH` as optional overrides so the repository `.env`
 does not accidentally inject host-only paths into the containers.
-
-### Wake County Heat Deployment Fixture
-
-The Wake County Heat fixture can rebuild a local DuckLake or validate a
-production-style Postgres catalog with MinIO-backed S3 storage:
-
-```bash
-make wake-county-heat-materialize
-make wake-county-heat
-make wake-county-heat-compose
-make wake-county-heat-compose-down
-```
-
-See [docs/wake_county_heat_fixture.md](docs/wake_county_heat_fixture.md) for
-expected row counts, environment overrides, approval status, and cleanup.
 
 ## Code Quality
 
