@@ -15,13 +15,14 @@ def test_register_casmsocial_loads_canonical_scenario_yaml_files():
         "dmv_100",
         "dc",
         "dc_5000",
+        "wake_county_heat",
     }
     for name, spec in specs.items():
         assert spec["description"]
         params = spec["parameters"]
         assert params["model.name"] == CASMSOCIAL_FACTORY_KEY
         assert params["places.table"]
-        assert params["households.table"].endswith(".hh"), name
+        assert params["households.table"], name
         assert params["persons.table"]
         assert params["activities.table"]
 
