@@ -196,7 +196,7 @@ def test_production_container_policy_classifies_known_gaps_without_approving_dis
         "jinja2": ("3.1.6", "BSD-3-Clause"),
         "loguru": ("0.7.3", "MIT"),
         "markdown-it-py": ("4.2.0", "MIT"),
-        "python": ("3.12.13", "PSF-2.0"),
+        "python": ("3.12.14", "PSF-2.0"),
     }
     assert {
         name: (override["version"], override["license"]) for name, override in policy["metadata_overrides"].items()
