@@ -45,7 +45,7 @@ gate pass.
 
 ```yaml
 schema_version: 1
-release_version: 2.5.6
+release_version: 2.5.7
 approvals:
   - id: contributor_authority
     decision: approved

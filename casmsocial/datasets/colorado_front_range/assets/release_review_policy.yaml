@@ -1,6 +1,6 @@
 schema_version: 1
 scope: colorado_front_range_dataset_builder
-release_version: 2.5.6
+release_version: 2.5.7
 
 distribution_plan:
   code_and_metadata: public_release
