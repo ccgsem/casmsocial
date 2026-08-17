@@ -2,11 +2,6 @@ DOCKER_MPI_COMPOSE ?= docker compose -f docker-compose.mpi.yaml -p casmsocial-mp
 DOCKER_MPI_HOSTFILE ?= config/mpi-hosts
 DOCKER_MPI_RANKS ?= 2
 DOCKER_MPI_UV_INSECURE_HOST ?= download.pytorch.org
-DUCKLAKE_FIXTURE_COMPOSE ?= docker compose -f docker-compose.ducklake-fixture.yaml -p casmsocial-ducklake-fixture
-DUCKLAKE_FIXTURE_UV_INSECURE_HOST ?= download.pytorch.org
-WAKE_COUNTY_HEAT_DUCKLAKE_PATH ?= data/datalakehouse
-WAKE_COUNTY_HEAT_FIXTURE_PATH ?= testdata/wake_county_heat_1000_households
-WAKE_COUNTY_HEAT_OUTPUT_DIR ?= data/output/wake_county_heat_deployment_smoke
 
 .PHONY: install
 install: ## Install the virtual environment and install the pre-commit hooks
@@ -40,34 +35,6 @@ test: ## Test the code with pytest
 	@echo "🚀 Testing code: Running pytest"
 	@uv run python -m pytest --doctest-modules
 
-.PHONY: wake-county-heat
-wake-county-heat: ## Validate the Wake County Heat fixture, local DuckLake, default config, and one-hour smoke output
-	@echo "🚀 Validating Wake County Heat local deployment smoke"
-	@uv run python scripts/validate_wake_county_heat_deployment.py \
-	--fixture-path $(WAKE_COUNTY_HEAT_FIXTURE_PATH) \
-	--ducklake-path $(WAKE_COUNTY_HEAT_DUCKLAKE_PATH) \
-	--output-dir $(WAKE_COUNTY_HEAT_OUTPUT_DIR)
-
-.PHONY: wake-county-heat-materialize
-wake-county-heat-materialize: ## Materialize the Wake County Heat fixture into the local DuckLake path
-	@echo "🚀 Materializing Wake County Heat fixture"
-	@uv run python scripts/materialize_wake_county_heat_fixture.py \
-	--fixture-path $(WAKE_COUNTY_HEAT_FIXTURE_PATH) \
-	--ducklake-path $(WAKE_COUNTY_HEAT_DUCKLAKE_PATH)
-
-.PHONY: wake-county-heat-compose
-wake-county-heat-compose: ## Validate the Wake County Heat fixture with Postgres catalog and MinIO S3 storage
-	@echo "🚀 Validating Wake County Heat production-style DuckLake fixture"
-	@UV_INSECURE_HOST=$(DUCKLAKE_FIXTURE_UV_INSECURE_HOST) $(DUCKLAKE_FIXTURE_COMPOSE) \
-	up --build --abort-on-container-exit \
-	--exit-code-from ducklake-fixture-loader \
-	ducklake-fixture-loader
-
-.PHONY: wake-county-heat-compose-down
-wake-county-heat-compose-down: ## Stop the Wake County Heat production-style DuckLake fixture containers
-	@echo "🚀 Stopping Wake County Heat production-style DuckLake fixture containers"
-	@$(DUCKLAKE_FIXTURE_COMPOSE) down
-
 .PHONY: mvp
 mvp: mvp-clean ## Clean artifacts, create the local MVP DuckLake, run the scenario, validate output, and summarize it
 	@echo "🚀 Creating MVP DuckLake"
@@ -80,6 +47,17 @@ mvp: mvp-clean ## Clean artifacts, create the local MVP DuckLake, run the scenar
 	@uv run python scripts/validate_mvp_output.py
 	@echo "🚀 Summarizing MVP output"
 	@uv run python scripts/summarize_mvp_output.py
+
+.PHONY: colorado-front-range-fixture
+colorado-front-range-fixture: ## Materialize a validated local Colorado runtime and run its smoke configuration
+	@test -n "$(COLORADO_FRONT_RANGE_RUNTIME_DIR)" || (echo "Set COLORADO_FRONT_RANGE_RUNTIME_DIR to a completed local Colorado runtime output"; exit 2)
+	@echo "🚀 Materializing Colorado Front Range runtime fixture"
+	@uv run python scripts/create_colorado_front_range_fixture_ducklake.py \
+		--runtime-dir $(COLORADO_FRONT_RANGE_RUNTIME_DIR) \
+		--ducklake-path data/datalakehouse_colorado_front_range_fixture
+	@echo "🚀 Running Colorado Front Range fixture"
+	@CASMSOCIAL_DUCKLAKE_PATH=data/datalakehouse_colorado_front_range_fixture \
+	uv run mpirun -n 1 python -m casmsocial config/colorado_front_range_fixture.yaml
 
 .PHONY: mvp-2rank
 mvp-2rank: ## Run the MVP smoke scenario with two MPI ranks
@@ -122,7 +100,7 @@ mvp-routed: ## Run the MVP smoke scenario with road-network routing enabled
 	@CASMSOCIAL_DATA_PATH=examples/mvp \
 	CASMSOCIAL_DUCKLAKE_PATH=examples/mvp/mvp.ducklake \
 	uv run mpirun -n 1 python -m casmsocial config/mvp.yaml \
-	'{"roads.enabled":true,"roads.nodes.file":"rti_synth_pop_v2_dmv_100.road_nodes","roads.edges.file":"rti_synth_pop_v2_dmv_100.road_edges","roads.place_snap.file":"rti_synth_pop_v2_dmv_100.place_road_snap","observers.agent_log_file":"mvp_routed_agent_log.parquet","observers.behavior_log_file":"mvp_routed_behavior_log.parquet"}'
+	'{"roads.enabled":true,"roads.nodes.file":"casmsocial_mvp.road_nodes","roads.edges.file":"casmsocial_mvp.road_edges","roads.place_snap.file":"casmsocial_mvp.place_road_snap","observers.agent_log_file":"mvp_routed_agent_log.parquet","observers.behavior_log_file":"mvp_routed_behavior_log.parquet"}'
 	@echo "🚀 Validating MVP routed output logs"
 	@uv run python scripts/validate_mvp_output.py \
 	--agent-log data/output/mvp_routed_agent_log.parquet \

@@ -1,0 +1,101 @@
+schema_version: 1
+source_repository:
+  name: mydatalakehouse
+  visibility: private
+  license: MIT
+  copyright: Copyright (c) 2024, Jon Cline
+  license_evidence:
+    path: LICENSE
+    commit: 4a9687de19ad192b97139f085d3e348dfe187cbd
+    sha256: 2beaa6161601d49ea0e0e16ca9389a3144de4fc905af4d881816b48ea30e1231
+notice: THIRD_PARTY_NOTICES.md
+authority:
+  status: organization_review_required
+  statement: Commit authorship and an MIT repository license document provenance; the releasing organization must confirm contributor authority and any overriding employment or contractual terms.
+migrations:
+  - source_path: mydatalakehouse/osf_synthetic_ducklake.py
+    source_commit: 4a9687de19ad192b97139f085d3e348dfe187cbd
+    source_sha256: 5bd8b3fc69bdea241d47eac945878a1f59f5d14a11d94cd75e61eda224839a68
+    source_author: Jon C Cline
+    source_authored_at: '2026-07-31T13:09:09-06:00'
+    destinations:
+      - casmsocial/datasets/colorado_front_range/osf_ducklake.py
+      - casmsocial/datasets/colorado_front_range/osf_tables.py
+  - source_path: mydatalakehouse/atus_donor_diaries.py
+    source_commit: 653250f6789f66315bf442a7252ab8bac85f3277
+    source_sha256: 36255232c4ce7a63fa3841c1b60e13ba3a177a4d653b869ca3600138efcfe756
+    source_author: Jon C Cline
+    source_authored_at: '2026-07-31T13:00:58-06:00'
+    destinations:
+      - casmsocial/datasets/colorado_front_range/atus.py
+  - source_path: mydatalakehouse/atus_diary_normalization.py
+    source_commit: 653250f6789f66315bf442a7252ab8bac85f3277
+    source_sha256: 1a330dce249c472132610c8006773b116b4849e2dc20702a8f7ee66bb8dd1e09
+    source_author: Jon C Cline
+    source_authored_at: '2026-07-31T13:00:58-06:00'
+    destinations:
+      - casmsocial/datasets/colorado_front_range/atus.py
+  - source_path: mydatalakehouse/dc_metro_donor_matching.py
+    source_commit: 844cb7eba28ff4697b7606899a2eef2eb7bf4193
+    source_sha256: 49c9fc97511044db52a1b0ac6c45b2d43d2cb6cea8f663a79a359cebd7a6e7fc
+    source_author: Jon C Cline
+    source_authored_at: '2026-07-26T19:42:35-06:00'
+    destinations:
+      - casmsocial/datasets/colorado_front_range/atus.py
+  - source_path: mydatalakehouse/colorado_front_range_schedules.py
+    source_commit: 00380e58c1a33449d07bd346ce6c0df3eb6ceaf1
+    source_sha256: befc7ca67a444efa5aee1f05697a368802cbf0897fd6f55cf5f3de4ee77d3162
+    source_author: Jon C Cline
+    source_authored_at: '2026-07-31T13:13:35-06:00'
+    destinations:
+      - casmsocial/datasets/colorado_front_range/profile_schedules.py
+  - source_path: mydatalakehouse/colorado_front_range_osm_pois.py
+    source_commit: ecb3b0c729f546c2db1dd4d2eeeab98add6d9c93
+    source_sha256: a78ebdf810c57482908df2380edf089404ca7f410229e919f3c3eb4b4e91e952
+    source_author: Jon C Cline
+    source_authored_at: '2026-07-31T13:04:09-06:00'
+    destinations:
+      - casmsocial/datasets/colorado_front_range/destination_supply.py
+  - source_path: mydatalakehouse/colorado_front_range_routing.py
+    source_commit: f9b0d2eb9fa830f7004eec1c95c3bdc6bef4abb6
+    source_sha256: 7ec4bf0798456eefe5c5f3df43674e62cadfd44e6c670cb5dfd933e287423c0f
+    source_author: Jon C Cline
+    source_authored_at: '2026-07-30T16:11:38-06:00'
+    destinations:
+      - casmsocial/datasets/colorado_front_range/destination_supply.py
+      - casmsocial/datasets/colorado_front_range/profile_runtime.py
+  - source_path: mydatalakehouse/colorado_front_range_feasibility_routing.py
+    source_commit: f9b0d2eb9fa830f7004eec1c95c3bdc6bef4abb6
+    source_sha256: 5a7b774ba56f18be6487bea1d72623bbad82f23b8171accde09a58c78a322bc5
+    source_author: Jon C Cline
+    source_authored_at: '2026-07-30T16:11:38-06:00'
+    destinations:
+      - casmsocial/datasets/colorado_front_range/profile_runtime.py
+  - source_path: mydatalakehouse/colorado_front_range_casmsocial_export.py
+    source_commit: ec2336af55fb7221922ad972ec1b5f750746f114
+    source_sha256: 0ffc25217f0cfcb042fcd1fe13e5b8ea8c2582f8059408a48952595d7c204e38
+    source_author: Jon C Cline
+    source_authored_at: '2026-08-01T10:03:15-06:00'
+    destinations:
+      - casmsocial/datasets/colorado_front_range/profile_runtime.py
+  - source_path: mydatalakehouse/colorado_front_range_quality.py
+    source_commit: ec2336af55fb7221922ad972ec1b5f750746f114
+    source_sha256: 6892c2f0858d5bfa7bbe0fc4302f87e5fe5c8ede9e84389bfd62c91eae37be61
+    source_author: Jon C Cline
+    source_authored_at: '2026-08-01T10:03:15-06:00'
+    destinations:
+      - casmsocial/datasets/colorado_front_range/profile_population.py
+  - source_path: mydatalakehouse/colorado_front_range_pilot.py
+    source_commit: ec2336af55fb7221922ad972ec1b5f750746f114
+    source_sha256: b02a32f00b36368641cc1f73d95f227d154640cbd58b4b3a85f7ff1125a937ae
+    source_author: Jon C Cline
+    source_authored_at: '2026-08-01T10:03:15-06:00'
+    destinations:
+      - casmsocial/datasets/colorado_front_range/profile_population.py
+  - source_path: mydatalakehouse/colorado_front_range_casmsocial_fixture.py
+    source_commit: ec2336af55fb7221922ad972ec1b5f750746f114
+    source_sha256: 448fbfaa344d0ea40cdf3bd614bd5517098bccd50369bf4d375cb2d4108a68fa
+    source_author: Jon C Cline
+    source_authored_at: '2026-08-01T10:03:15-06:00'
+    destinations:
+      - casmsocial/datasets/colorado_front_range/profile_population.py

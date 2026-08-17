@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pathlib
 from datetime import datetime
+from types import SimpleNamespace
 
 import duckdb
 import pyarrow as pa
@@ -19,9 +20,12 @@ from casmsocial.casmpop import (
     DeltaAgentStateLogger,
     InvalidObserverOutputFileError,
     InvalidPartitionRankError,
+    InvalidSocialNetworkTableError,
     MissingPartitionAssignmentError,
     MissingRequiredTableError,
+    ScheduleOccupancyLogger,
     SimEnvironment,
+    SocialInteractionLogger,
 )
 from casmsocial.communication.types import CommMessage, MessageKind, build_message_payload
 from casmsocial.household import Household
@@ -30,6 +34,7 @@ from casmsocial.person import BehaviorEngineV2, LLMBehaviorEngine, Person, Sched
 from casmsocial.place import EnhancedPlacesProjection, Place
 from casmsocial.road_network import RoadRoute
 from casmsocial.sim_time import SimTime
+from casmsocial.social_interactions import InteractionEvent, PresenceInterval, SocialTie
 
 
 class DummyModel(Model):
@@ -449,8 +454,8 @@ def _duckdb_table_exists(conn, schema: str, table: str) -> bool:
     ).fetchone()[0]
 
 
-def test_default_parameters_disable_contacts_loading():
-    assert CasmPop.get_default_parameters()["contacts.enabled"] is False
+def test_default_parameters_disable_social_network_loading():
+    assert CasmPop.get_default_parameters()["social_networks.enabled"] is False
 
 
 def test_default_parameters_enable_communication_for_compatibility():
@@ -478,7 +483,9 @@ def test_optional_params_fill_observer_partition_and_logging_defaults():
 
     assert model.params["random.seed"] == 42
     assert model.params["simulation.run_id"] == "seed_42"
-    assert model.params["contacts.enabled"] is False
+    assert model.params["social_networks.enabled"] is False
+    assert model.params["social_networks.remote_messages.enabled"] is False
+    assert model.params["social_networks.remote_messages.interval_minutes"] == 60
     assert model.params["communication.enabled"] is True
     assert model.params["partition.table"] == ""
     assert model.params["partition.default_rank"] == 0
@@ -1068,54 +1075,158 @@ def test_sync_person_ranks_with_places_returns_context_moves_for_remote_places()
     assert model.places_proj.get_place_for_agent(person) is None
 
 
-def test_create_input_tables_skips_contacts_when_disabled():
+def test_create_input_tables_skips_social_networks_when_disabled():
     model = _partitioned_model(rank=0, size=2)
     try:
-        model.params["contacts.table"] = "input.missing_contacts"
-        model.params["contacts.enabled"] = False
+        model.params["social_networks.table"] = "input.missing_social_networks"
+        model.params["social_networks.enabled"] = False
 
         model.create_input_tables()
 
-        assert not _duckdb_table_exists(model.conn, "main", "contacts")
+        assert not _duckdb_table_exists(model.conn, "main", "social_networks")
     finally:
         model.conn.close()
 
 
-def test_create_input_tables_materializes_contacts_when_enabled():
+def test_create_input_tables_materializes_social_networks_when_enabled():
     model = _partitioned_model(rank=0, size=2)
     try:
         model.conn.execute("""
-            CREATE TABLE input.contacts (
-                from_person BIGINT,
-                to_person BIGINT,
-                hour INTEGER
+            CREATE TABLE input.social_networks (
+                person_id_a BIGINT,
+                person_id_b BIGINT,
+                network_kind VARCHAR,
+                tie_strength DOUBLE
             )
             """)
-        model.conn.execute("INSERT INTO input.contacts VALUES (1, 2, 9), (2, 1, 10)")
-        model.params["contacts.table"] = "input.contacts"
-        model.params["contacts.enabled"] = True
+        model.conn.execute("INSERT INTO input.social_networks VALUES (1, 2, 'household', 0.9)")
+        model.params["social_networks.table"] = "input.social_networks"
+        model.params["social_networks.enabled"] = True
 
         model.create_input_tables()
 
-        assert _duckdb_table_exists(model.conn, "main", "contacts")
-        assert model.conn.execute("SELECT * FROM contacts ORDER BY from_person").fetchall() == [
-            (1, 2, 9),
-            (2, 1, 10),
+        assert _duckdb_table_exists(model.conn, "main", "social_networks")
+        assert model.conn.execute("SELECT * FROM social_networks").fetchall() == [
+            (1, 2, "household", 0.9),
         ]
     finally:
         model.conn.close()
 
 
-def test_create_input_tables_requires_contacts_table_when_enabled():
+def test_create_input_tables_requires_social_network_table_when_enabled():
     model = _partitioned_model(rank=0, size=2)
     try:
-        model.params["contacts.table"] = "input.missing_contacts"
-        model.params["contacts.enabled"] = True
+        model.params["social_networks.table"] = "input.missing_social_networks"
+        model.params["social_networks.enabled"] = True
 
         with pytest.raises(MissingRequiredTableError):
             model.create_input_tables()
     finally:
         model.conn.close()
+
+
+def test_create_social_networks_loads_undirected_potential_ties():
+    model = _partitioned_model(rank=0, size=2)
+    try:
+        model.conn.execute("""
+            CREATE TABLE social_networks (
+                person_id_a BIGINT,
+                person_id_b BIGINT,
+                network_kind VARCHAR,
+                tie_strength DOUBLE
+            )
+        """)
+        model.conn.execute("INSERT INTO social_networks VALUES (1, 2, 'household', 0.9)")
+
+        assert model.create_social_networks() == {
+            1: [(2, "household", 0.9)],
+            2: [(1, "household", 0.9)],
+        }
+    finally:
+        model.conn.close()
+
+
+def test_create_social_networks_rejects_noncanonical_ties():
+    model = _partitioned_model(rank=0, size=2)
+    try:
+        model.conn.execute("""
+            CREATE TABLE social_networks (
+                person_id_a BIGINT,
+                person_id_b BIGINT,
+                network_kind VARCHAR
+            )
+        """)
+        model.conn.execute("INSERT INTO social_networks VALUES (2, 1, 'household')")
+
+        with pytest.raises(InvalidSocialNetworkTableError, match="canonical endpoints"):
+            model.create_social_networks()
+    finally:
+        model.conn.close()
+
+
+class _ScheduledPerson:
+    type = Person.TYPE
+
+    def __init__(self, person_id: int, activity: Act, resolved_place_id: int):
+        self.id = person_id
+        self._activity = activity
+        self._resolved_place_id = resolved_place_id
+        self.uid = (person_id, Person.TYPE, 0)
+        self.rank_place_id = resolved_place_id
+
+    def get_plan_state(self, cal):
+        return SimpleNamespace(element=self._activity)
+
+    def _place_id_for_activity(self, activity_id):
+        return self._resolved_place_id
+
+
+def test_model_generates_physical_interactions_from_current_plans():
+    model = CasmPop.__new__(CasmPop)
+    model.context = _AgentContext(
+        [
+            _ScheduledPerson(1, Act(1, 0, 0, 480, 600, 10), 10),
+            _ScheduledPerson(2, Act(2, 0, 0, 480, 600, 10), 10),
+            _ScheduledPerson(3, Act(3, 0, 0, 480, 600, 11), 11),
+        ]
+    )
+    model.cal = SimTime(datetime(2025, 6, 2, 9, 0, 0))
+    model.time_step_minutes = 60
+    model.social_ties = [SocialTie(1, 2, "work"), SocialTie(1, 3, "work")]
+
+    events = model.generate_in_person_interactions()
+
+    assert [(event.person_id_a, event.person_id_b, event.place_id) for event in events] == [(1, 2, 10)]
+    assert (events[0].start_minute, events[0].end_minute) == (540, 600)
+
+
+class _AllgatherComm:
+    def allgather(self, value):
+        return [value]
+
+
+def test_model_generates_opt_in_remote_social_message_for_available_tie():
+    model = CasmPop.__new__(CasmPop)
+    model.context = _AgentContext(
+        [
+            _ScheduledPerson(1, Act(1, 0, 0, 480, 600, 10), 10),
+            _ScheduledPerson(2, Act(2, 0, 0, 480, 600, 11), 11),
+        ]
+    )
+    model.cal = SimTime(datetime(2025, 6, 2, 9, 0, 0))
+    model.time_step_minutes = 60
+    model.comm = _AllgatherComm()
+    model.params = {"social_networks.remote_messages.interval_minutes": 60}
+    model.social_ties = [SocialTie(1, 2, "work", 0.8)]
+
+    intents = model.generate_remote_social_message_intents()
+
+    assert len(intents) == 1
+    assert intents[0].sender_uid == (1, Person.TYPE, 0)
+    assert intents[0].receiver_uid == (2, Person.TYPE, 0)
+    assert intents[0].receiver_place_id == 11
+    assert intents[0].payload["kind"] == MessageKind.CHECK_IN
+    assert intents[0].payload["metadata"] == {"network_kind": "work"}
 
 
 def test_agent_logger_skips_when_disabled(tmp_path):
@@ -1131,6 +1242,96 @@ def test_agent_logger_skips_when_disabled(tmp_path):
     logger_observer.on_step(model)
 
     assert not log_path.exists()
+
+
+def test_social_interaction_logger_writes_only_aggregate_event_counts(tmp_path):
+    log_path = tmp_path / "social_interactions.parquet"
+    model = CasmPop.__new__(CasmPop)
+    model.comm = MPI.COMM_SELF
+    model.params = {
+        "observers.output_dir": str(tmp_path),
+        "observers.social_interaction_log.enabled": True,
+        "observers.social_interaction_log_file": "social_interactions.parquet",
+    }
+    model.cal = SimpleNamespace(tick=12)
+    model.interaction_events = [
+        InteractionEvent(1, 2, "in_person", "work", 540, 600, place_id=10),
+        InteractionEvent(2, 3, "in_person", "work", 540, 600, place_id=10),
+    ]
+    model.remote_social_message_intents = [
+        SimpleNamespace(payload={"metadata": {"network_kind": "household"}})
+    ]
+
+    observer = SocialInteractionLogger("SocialInteractionLogger", model)
+    observer.on_step(model)
+
+    table = ds.dataset(log_path, format="parquet", partitioning="hive").to_table()
+    rows = sorted(table.to_pylist(), key=lambda row: row["channel"])
+    assert rows == [
+        {
+            "random_seed": 42,
+            "channel": "in_person",
+            "network_kind": "work",
+            "event_count": 2,
+            "run_id": "seed_42",
+            "tick": 12,
+            "rank": 0,
+        },
+        {
+            "random_seed": 42,
+            "channel": "remote",
+            "network_kind": "household",
+            "event_count": 1,
+            "run_id": "seed_42",
+            "tick": 12,
+            "rank": 0,
+        },
+    ]
+    assert {"person_id_a", "person_id_b", "place_id", "payload"}.isdisjoint(table.column_names)
+
+
+def test_schedule_occupancy_logger_writes_only_aggregate_counts(tmp_path):
+    log_path = tmp_path / "schedule_occupancy.parquet"
+    model = CasmPop.__new__(CasmPop)
+    model.comm = MPI.COMM_SELF
+    model.params = {
+        "observers.output_dir": str(tmp_path),
+        "observers.schedule_occupancy_log.enabled": True,
+        "observers.schedule_occupancy_log_file": "schedule_occupancy.parquet",
+    }
+    model.cal = SimpleNamespace(tick=12)
+    model.active_planned_presences = lambda: [
+        PresenceInterval(1, 10, 540, 600),
+        PresenceInterval(2, 10, 540, 600),
+        PresenceInterval(3, 11, 540, 600),
+        PresenceInterval(4, 12, 540, 600),
+        PresenceInterval(5, 12, 540, 600),
+        PresenceInterval(6, 12, 540, 600),
+    ]
+    model.interaction_events = [object(), object()]
+    model.remote_social_message_intents = [object()]
+
+    observer = ScheduleOccupancyLogger("ScheduleOccupancyLogger", model)
+    observer.on_step(model)
+
+    table = ds.dataset(log_path, format="parquet", partitioning="hive").to_table()
+    assert table.to_pylist() == [{
+        "random_seed": 42,
+        "active_person_count": 6,
+        "active_place_count": 3,
+        "co_located_person_count": 5,
+        "max_place_occupancy": 3,
+        "places_with_1_person": 1,
+        "places_with_2_to_4_people": 2,
+        "places_with_5_to_9_people": 0,
+        "places_with_10_or_more_people": 0,
+        "in_person_interaction_count": 2,
+        "remote_message_count": 1,
+        "run_id": "seed_42",
+        "tick": 12,
+        "rank": 0,
+    }]
+    assert {"person_id", "person_id_a", "person_id_b", "place_id", "latitude", "longitude"}.isdisjoint(table.column_names)
 
 
 def test_empty_person_bucket_is_treated_as_no_local_people(tmp_path):
@@ -1223,8 +1424,8 @@ def test_build_context_skips_startup_communication_indexes_when_disabled():
     model.context = _ProjectionContext()
     model.params = {
         "communication.enabled": False,
-        "contacts.enabled": False,
-        "contacts.table": "",
+        "social_networks.enabled": False,
+        "social_networks.table": "",
         "parallel.places.enabled": False,
         "parallel.places.min_threshold": 50,
         "parallel.places.max_workers": None,
@@ -1261,8 +1462,8 @@ def test_build_context_refreshes_startup_communication_indexes_when_enabled():
     model.context = _ProjectionContext()
     model.params = {
         "communication.enabled": True,
-        "contacts.enabled": False,
-        "contacts.table": "",
+        "social_networks.enabled": False,
+        "social_networks.table": "",
         "parallel.places.enabled": False,
         "parallel.places.min_threshold": 50,
         "parallel.places.max_workers": None,

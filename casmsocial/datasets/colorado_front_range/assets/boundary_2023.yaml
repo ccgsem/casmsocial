@@ -1,0 +1,27 @@
+schema_version: 1
+boundary_id: co-front-range-six-metros-cbsa-2023
+state: CO
+source:
+  publisher: U.S. Office of Management and Budget
+  bulletin: OMB Bulletin No. 23-01
+  effective_date: '2023-07-21'
+  url: https://www.whitehouse.gov/wp-content/uploads/2023/07/OMB-Bulletin-23-01.pdf
+metropolitan_statistical_areas:
+  - cbsa_code: '14540'
+    name: Boulder
+    county_geoids: ['08013']
+  - cbsa_code: '17820'
+    name: Colorado Springs
+    county_geoids: ['08041', '08119']
+  - cbsa_code: '19740'
+    name: Denver-Aurora-Lakewood
+    county_geoids: ['08001', '08005', '08014', '08019', '08031', '08035', '08039', '08047', '08059', '08093']
+  - cbsa_code: '22660'
+    name: Fort Collins
+    county_geoids: ['08069']
+  - cbsa_code: '24540'
+    name: Greeley
+    county_geoids: ['08123']
+  - cbsa_code: '39380'
+    name: Pueblo
+    county_geoids: ['08101']

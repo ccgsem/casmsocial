@@ -1,26 +1,19 @@
-"""Optional live Arrow/Ice observation server for an in-progress CasmPop run.
+"""Optional live Arrow Flight observation server for an in-progress CasmPop run.
 
-Requires the `service` extra (`uv sync --extra service`). Nothing in this
-module is imported at top level from casmpop.py -- only inside the method
-that starts the adapter -- so importing casmsocial never requires zeroc-ice
-to be installed. See casmsocial.remote_llm_adapter for the same lazy-import
-pattern applied to the optional `anthropic` dependency.
-
-Because the Ice servant must subclass the generated ``arrowservice.ArrowServer``
-skeleton (a plain duck-typed class is rejected by the Ice runtime), Ice and
-the generated bindings are imported here at module scope rather than per
-function. That's safe only because this whole module is itself imported
-lazily by casmpop.py -- never at casmsocial's own import time.
+Speaks Apache Arrow Flight, which ships inside the ``pyarrow`` wheel and is
+already a hard dependency of casmsocial. Nothing here needs a lazy import or
+an optional extra: importing this module never requires anything beyond what
+casmsocial already installs.
 """
 
 from __future__ import annotations
 
 import pathlib
-import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from casmsocial.arrow_serialization import ArrowServerUnavailableError, serialize_table
+import pyarrow as pa
+import pyarrow.flight as flight
 
 if TYPE_CHECKING:
     from casmsocial.model import Model
@@ -28,98 +21,80 @@ if TYPE_CHECKING:
 ENDPOINT_FILENAME = "arrow_endpoint.txt"
 
 
-try:
-    import Ice
-
-    import arrowservice
-except ImportError as exc:
-    raise ArrowServerUnavailableError(
-        "Arrow/Ice live observation server requires the `zeroc-ice` package; "
-        "install it with `uv sync --extra service`."
-    ) from exc
-
-
 @dataclass
 class ArrowServerHandle:
-    """Lifecycle handle for the embedded Ice adapter, kept on CasmPop."""
+    """Lifecycle handle for the embedded Flight server, kept on CasmPop."""
 
-    communicator: Any
-    adapter: Any
+    server: CasmPopFlightServer
     host: str
     port: int
     endpoint_file: pathlib.Path
 
     def shutdown(self) -> None:
-        self.communicator.destroy()
+        self.server.shutdown()
 
 
-class CasmPopArrowServerI(arrowservice.ArrowServer):
-    """Ice servant exposing a live CasmPop's observer output tables.
+class CasmPopFlightServer(flight.FlightServerBase):
+    """Arrow Flight server exposing a live CasmPop's observer output tables.
 
-    Unlike casmservice's ArrowServerI (upload-based, backed by a static
-    dict), this servant has no internal cache: every method calls
+    Unlike casmservice's ArrowFlightServer (upload-based, backed by a static
+    dict), this server has no internal cache: every request calls
     ``model.get_observer_output_tables()`` fresh, so callers always see
-    whatever the most recently completed step produced.
+    whatever the most recently completed step produced. Read-only: DoPut is
+    unsupported.
     """
 
-    def __init__(self, model: Model) -> None:
+    def __init__(self, location: str | tuple[str, int], model: Model) -> None:
+        super().__init__(location)
         self._model = model
 
-    def getTable(self, tableName, current=None):
-        table = self._model.get_observer_output_tables().get(tableName)
+    def _table_name(self, descriptor: flight.FlightDescriptor) -> str:
+        if descriptor.path is None or len(descriptor.path) != 1:
+            raise flight.FlightServerError("descriptor path must be a single table name")
+        return descriptor.path[0].decode("utf-8")
+
+    def _table(self, name: str) -> pa.Table:
+        table = self._model.get_observer_output_tables().get(name)
         if table is None:
-            raise arrowservice.TableNotFound(tableName)
-        return arrowservice.ArrowTable(data=serialize_table(table))
+            raise flight.FlightServerError(f"table not found: {name}")
+        return table
 
-    def getTableSchema(self, tableName, current=None):
-        table = self._model.get_observer_output_tables().get(tableName)
-        if table is None:
-            raise arrowservice.TableNotFound(tableName)
-        return str(table.schema)
+    def _flight_info(self, name: str, table: pa.Table) -> flight.FlightInfo:
+        descriptor = flight.FlightDescriptor.for_path(name)
+        endpoint = flight.FlightEndpoint(name.encode("utf-8"), [])
+        return flight.FlightInfo(table.schema, descriptor, [endpoint], table.num_rows, table.nbytes)
 
-    def listTableNames(self, current=None):
-        return list(self._model.get_observer_output_tables().keys())
+    def get_flight_info(self, context, descriptor: flight.FlightDescriptor) -> flight.FlightInfo:
+        name = self._table_name(descriptor)
+        return self._flight_info(name, self._table(name))
 
-    def uploadTable(self, tableName, table, current=None):
-        raise NotImplementedError("CasmPopArrowServerI is read-only; uploadTable is unsupported")
+    def do_get(self, context, ticket: flight.Ticket) -> flight.RecordBatchStream:
+        name = ticket.ticket.decode("utf-8")
+        return flight.RecordBatchStream(self._table(name))
 
+    def do_put(self, context, descriptor, reader, writer) -> None:
+        raise flight.FlightServerError("CasmPopFlightServer is read-only; DoPut is unsupported")
 
-def _resolve_bound_port(adapter: Any) -> int:
-    """Read back the OS-assigned port from the adapter's published endpoint."""
-    endpoint = adapter.getEndpoints()[0]
-    info = endpoint.getInfo()
-    port = getattr(info, "port", None)
-    if port is not None:
-        return int(port)
-    match = re.search(r"-p (\d+)", endpoint.toString())
-    if match is None:
-        raise ArrowServerUnavailableError(f"could not determine bound port from endpoint {endpoint}")
-    return int(match.group(1))
+    def list_flights(self, context, criteria):
+        for name, table in self._model.get_observer_output_tables().items():
+            yield self._flight_info(name, table)
 
 
 def start_arrow_server(model: Model, *, host: str, endpoint_dir: pathlib.Path) -> ArrowServerHandle:
-    """Start an embedded Ice ArrowServer adapter bound to an OS-assigned port.
+    """Start an embedded Arrow Flight server bound to an OS-assigned port.
+
+    The server starts serving as soon as it's constructed -- no separate
+    activation step, and no background thread needed, since the underlying
+    gRPC server runs its own request-handling threads.
 
     Writes ``<endpoint_dir>/arrow_endpoint.txt`` containing ``"{host}:{port}"``
-    once the adapter is activated and the port is known.
+    once the port is known.
     """
-    communicator = Ice.initialize([])
-    endpoint_str = f"default -h {host} -p 0"
-    adapter = communicator.createObjectAdapterWithEndpoints("ArrowAdapter", endpoint_str)
-    servant = CasmPopArrowServerI(model)
-    adapter.add(servant, Ice.Identity(name="ArrowServer"))
-    adapter.activate()
-
-    port = _resolve_bound_port(adapter)
+    server = CasmPopFlightServer((host, 0), model)
+    port = server.port
 
     endpoint_dir.mkdir(parents=True, exist_ok=True)
     endpoint_file = endpoint_dir / ENDPOINT_FILENAME
     endpoint_file.write_text(f"{host}:{port}\n", encoding="utf-8")
 
-    return ArrowServerHandle(
-        communicator=communicator,
-        adapter=adapter,
-        host=host,
-        port=port,
-        endpoint_file=endpoint_file,
-    )
+    return ArrowServerHandle(server=server, host=host, port=port, endpoint_file=endpoint_file)

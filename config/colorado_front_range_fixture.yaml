@@ -1,0 +1,34 @@
+# Local-only Colorado Front Range schedule smoke run. Do not publish its inputs.
+model.name: 'casmsocial.citysim.colorado_front_range_schedule_model.ColoradoFrontRangeScheduleModel'
+random.seed: 47900
+start.datetime: '2025-06-02 00:00:00'
+duration.hours: 24
+timezone: 'America/Denver'
+time.step.minutes: 60
+
+places.table: 'colorado_front_range.places'
+households.table: 'colorado_front_range.hh'
+persons.table: 'colorado_front_range.persons'
+activities.table: 'colorado_front_range.activities'
+social_networks.table: 'colorado_front_range.social_networks'
+social_networks.enabled: true
+social_networks.remote_messages.enabled: true
+social_networks.remote_messages.interval_minutes: 60
+communication.enabled: true
+
+behavior.engine: 'schedule'
+roads.enabled: false
+partition.table: ''
+partition.default_rank: 0
+partition.require_full_coverage: false
+
+observers.output_dir: 'data/output'
+observers.agent_log.enabled: false
+observers.behavior_log.enabled: false
+observers.delta_agent_state.enabled: false
+observers.social_interaction_log.enabled: true
+observers.social_interaction_log_file: 'colorado_front_range_fixture_social_interactions.parquet'
+observers.schedule_occupancy_log.enabled: true
+observers.schedule_occupancy_log_file: 'colorado_front_range_fixture_schedule_occupancy.parquet'
+logging.rank0_only: true
+logging.level: 'INFO'

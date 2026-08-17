@@ -1,0 +1,11 @@
+scenario_name: base
+model_name: casmsocial
+description: Baseline scenario using default DMV 100 synthetic population tables.
+parameters:
+  model.name: casmsocial.citysim.citysocialmodel.CitySocialModel
+  places.table: rti_synth_pop_v2_dmv_100.places
+  households.table: rti_synth_pop_v2_dmv_100.hh
+  persons.table: rti_synth_pop_v2_dmv_100.persons
+  activities.table: rti_synth_pop_v2_dmv_100.activities
+  social_networks.table: ''
+  social_networks.enabled: false

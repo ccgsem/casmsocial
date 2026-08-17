@@ -1,0 +1,62 @@
+schema_version: 1
+profile_id: colorado-front-range-example-1k-v1
+profile_version: 1.0.0
+release_status: supported
+description: Laptop smoke fixture for the existing four-CBSA north corridor.
+
+geography:
+  boundary_id: colorado-front-range-north-corridor-4cbsa-v1
+  state: CO
+  home_cbsa_codes: ['14540', '19740', '22660', '24540']
+
+population:
+  mode: stratified_sample
+  person_limit: 1000
+  seed: 20260729
+  strata: [home_cbsa_code, age_group, activity_assignment_kind]
+  minimum_persons_per_cbsa: 50
+  require_exactly_one_weekday_home: true
+  require_endpoint_complete_social_ties: true
+
+sources:
+  synthetic_population: osf-fpnc2-colorado-2024-09
+  education_sites: osf-ts9mg-colorado-education-sites-2024-10
+  county_boundaries: census-tiger-line-counties-2023
+  time_use: bls-atus-2024
+  destinations: geofabrik-colorado-osm-pbf-pinned
+
+schedules:
+  day_types: [weekday, weekend]
+  diary_day_start_local_time: '04:00'
+  donor_assignment_seed: 20260729
+
+routing:
+  model: straight_line_proxy
+  minimum_minutes: 5
+  average_speed_kph: 35.0
+  maximum_minutes: 120
+  destination_capacity_multiplier: 5.0
+  person_partitions: 1
+  feasibility_partitions: 1
+
+validation:
+  require_all_cbsas_represented: true
+  maximum_noncontiguous_transitions: 0
+  maximum_invalid_intervals: 0
+  maximum_unknown_stationary_places: 0
+  maximum_capacity_exceedances: 0
+  require_single_rank_smoke: true
+  require_two_rank_equivalence: false
+
+runtime:
+  model: casmsocial.citysim.colorado_front_range_schedule_model.ColoradoFrontRangeScheduleModel
+  default_day_type: weekday
+  default_duration_hours: 24
+  default_ranks: 1
+  agent_log_enabled: false
+  aggregate_diagnostics_enabled: true
+
+governance:
+  classification: local_identifier_bearing_simulation_input
+  publish_inputs: false
+  calibrated: false

@@ -1,0 +1,51 @@
+# Runtime launch config for direct local runs.
+# Canonical casmdb scenario definitions live in scenarios/casmsocial/.
+model.name: 'casmsocial.casmpop.CasmPop'
+random.seed: 42
+# Optional. Defaults to seed_<random.seed> when omitted.
+# simulation.run_id: 'seed_42'
+start.datetime: '2025-06-02 00:00:00'
+duration.hours: 168
+timezone: 'America/New_York'
+time.step.minutes: 60
+places.table: 'rti_synth_pop_v2_dmv.places'
+households.table: 'rti_synth_pop_v2_dmv.hh'
+activities.table: 'rti_synth_pop_v2_dmv.activities'
+social_networks.table: ''
+social_networks.enabled: false
+communication.enabled: false
+persons.table: 'rti_synth_pop_v2_dmv.persons'
+behavior.engine: 'schedule'
+behavior.llm.enabled: false
+behavior.llm.deliberation_interval: 60
+behavior.llm.max_memory_events: 20
+behavior.llm.signal_cap: 1.5
+behavior.llm.memory_decay: 0.65
+# Adapter selection (see config/casmsocial.yaml for full notes).
+behavior.llm.adapter: 'local'
+# behavior.llm.anthropic.model: 'claude-haiku-4-5-20251001'
+# behavior.llm.anthropic.api_key: null
+# behavior.llm.anthropic.max_tokens: 1024
+roads.enabled: false
+roads.nodes.file: ''
+roads.edges.file: ''
+roads.place_snap.file: ''
+roads.mode: 'drive'
+roads.time_model: 'validated_gap'
+# Generated with network_partitioner_ducklake.py --weight-by persons for n_ranks 1, 2, 4, and 8.
+partition.table: 'partitions.metis_place_partitions_dmv_weighted'
+partition.imputation: 1
+partition.default_rank: 0
+partition.require_full_coverage: true
+observers.output_dir: 'data/output'
+observers.agent_log.enabled: false
+observers.agent_log_file: 'agent_log.parquet'
+observers.behavior_log.enabled: false
+observers.behavior_log_file: 'behavior_log.parquet'
+observers.delta_agent_state.enabled: false
+observers.delta_agent_state_file: 'agent_state_delta.parquet'
+observers.delta_agent_state_audit_file: 'agent_state_delta_audit.parquet'
+logging.rank0_only: true
+logging.level: 'INFO'
+profiling.phase_timings.enabled: true
+profiling.phase_timings.sample_stride: 512
