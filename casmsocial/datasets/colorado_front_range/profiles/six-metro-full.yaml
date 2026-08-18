@@ -1,0 +1,66 @@
+schema_version: 1
+profile_id: colorado-front-range-six-metro-full-v1
+profile_version: 1.0.0
+release_status: planned
+description: Planned six-MSA population including Colorado Springs and Pueblo.
+
+geography:
+  boundary_id: colorado-front-range-six-metro-v1
+  state: CO
+  home_cbsa_codes: ['14540', '17820', '19740', '22660', '24540', '39380']
+
+population:
+  mode: full_boundary_population
+  person_limit: null
+  seed: 20260729
+  require_exactly_one_weekday_home: true
+  require_endpoint_complete_social_ties: true
+
+sources:
+  synthetic_population: osf-fpnc2-colorado-2024-09
+  education_sites: osf-ts9mg-colorado-education-sites-2024-10
+  county_boundaries: census-tiger-line-counties-2023
+  time_use: bls-atus-2024
+  destinations: geofabrik-colorado-osm-pbf-pinned
+
+schedules:
+  day_types: [weekday, weekend]
+  diary_day_start_local_time: '04:00'
+  donor_assignment_seed: 20260729
+
+routing:
+  model: straight_line_proxy
+  minimum_minutes: 5
+  average_speed_kph: 35.0
+  maximum_minutes: 120
+  destination_capacity_multiplier: null
+  full_population_capacity_multiplier: null
+  person_partitions: 10
+  feasibility_partitions: 10
+  resume_required: true
+
+validation:
+  require_all_cbsas_represented: true
+  maximum_noncontiguous_transitions: 0
+  maximum_invalid_intervals: 0
+  maximum_unknown_stationary_places: 0
+  maximum_capacity_exceedances: 0
+  require_partition_manifests: true
+  require_aggregate_acceptance: true
+
+release_blockers:
+  - administrative_osm_cbsa_assignment
+  - colorado_springs_pueblo_destination_coverage
+  - six_metro_capacity_sensitivity
+  - six_metro_full_routing_acceptance
+
+runtime:
+  model: casmsocial.citysim.colorado_front_range_schedule_model.ColoradoFrontRangeScheduleModel
+  default_day_type: weekday
+  agent_log_enabled: false
+  aggregate_diagnostics_enabled: true
+
+governance:
+  classification: local_identifier_bearing_simulation_input
+  publish_inputs: false
+  calibrated: false

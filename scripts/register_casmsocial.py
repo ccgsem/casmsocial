@@ -154,7 +154,7 @@ def _build_model_record(version: str, resources_uri: str) -> dict[str, Any]:
     """Build the casmdb model record dict for casmsocial."""
     return {
         "model_name": CASMSOCIAL_MODEL_NAME,
-        "model_license": "Proprietary",
+        "model_license": "MIT",
         "model_version": version,
         "model_version_date": str(date.today()),
         "model_programming_languages": ["Python"],
@@ -163,7 +163,7 @@ def _build_model_record(version: str, resources_uri: str) -> dict[str, Any]:
             "using repast4py, MPI, and DuckDB/DuckLake."
         ),
         "model_authors": [
-            {"name": "Jon Cline", "email": "jon.c.cline@gmail.com"},
+            {"name": "Jon C. Cline", "email": "jcline@mitre.org"},
         ],
         "model_resources_uri": resources_uri,
         "model_metadata": {

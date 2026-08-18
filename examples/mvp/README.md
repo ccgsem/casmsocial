@@ -33,9 +33,9 @@ plan-adjustment metadata, and signal values. The agent log records the matching
 per-person location snapshot for each tick.
 
 The generated DuckLake also includes a tiny routable road fixture in
-`rti_synth_pop_v2_dmv_100.road_nodes`,
-`rti_synth_pop_v2_dmv_100.road_edges`, and
-`rti_synth_pop_v2_dmv_100.place_road_snap`. The default MVP config keeps
+`casmsocial_mvp.road_nodes`,
+`casmsocial_mvp.road_edges`, and
+`casmsocial_mvp.place_road_snap`. The default MVP config keeps
 `roads.enabled: false`; those tables are present to support a routed MVP smoke
 path.
 

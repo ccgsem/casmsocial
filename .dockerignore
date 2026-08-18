@@ -6,7 +6,11 @@
 __pycache__
 *.pyc
 dist
+build
+site
 output
 data
+testdata
+examples/mvp/mvp.ducklake
 .env
 .DS_Store

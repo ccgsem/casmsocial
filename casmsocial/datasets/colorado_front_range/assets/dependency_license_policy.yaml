@@ -1,0 +1,69 @@
+schema_version: 1
+scope: python_build_runtime_and_development_dependencies
+reviewed_spdx_identifiers:
+  - 0BSD
+  - Apache-2.0
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - CC0-1.0
+  - ISC
+  - LLVM-exception
+  - MIT
+  - MPL-2.0
+  - PSF-2.0
+  - Python-2.0
+  - Zlib
+license_name_aliases:
+  'License :: OSI Approved :: Apache Software License': Apache-2.0
+  'License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)': MPL-2.0
+ambiguous_license_names:
+  - 'License :: OSI Approved :: BSD License'
+metadata_overrides:
+  affine:
+    version: 2.4.0
+    license: BSD-3-Clause
+    evidence: affine-2.4.0.dist-info/LICENSE.txt
+  cligj:
+    version: 0.7.2
+    license: BSD-3-Clause
+    evidence: cligj-0.7.2.dist-info/LICENSE and package metadata License=BSD
+  colorama:
+    version: 0.4.6
+    license: BSD-3-Clause
+    evidence: colorama-0.4.6.dist-info/licenses/LICENSE.txt
+  Jinja2:
+    version: 3.1.6
+    license: BSD-3-Clause
+    evidence: jinja2-3.1.6.dist-info/licenses/LICENSE.txt
+  mpmath:
+    version: 1.3.0
+    license: BSD-3-Clause
+    evidence: mpmath-1.3.0.dist-info/LICENSE
+  nodeenv:
+    version: 1.10.0
+    license: BSD-3-Clause
+    evidence: nodeenv-1.10.0.dist-info/licenses/LICENSE
+  numba:
+    version: 0.66.0
+    license: BSD-2-Clause
+    evidence: numba-0.66.0.dist-info/licenses/LICENSE
+  pandas:
+    version: 3.0.3
+    license: BSD-3-Clause
+    evidence: pandas-3.0.3.dist-info/LICENSE
+  repast4py:
+    version: 1.2.1
+    license: BSD-3-Clause
+    evidence: repast4py-1.2.1.dist-info/licenses/LICENSE.txt and package metadata
+  scipy:
+    version: 1.18.0
+    license: BSD-3-Clause
+    evidence: scipy-1.18.0.dist-info/LICENSE.txt
+  shapely:
+    version: 2.1.2
+    license: BSD-3-Clause
+    evidence: shapely-2.1.2.dist-info/licenses/LICENSE.txt; bundled GEOS is separately LGPL-2.1 in licenses/LICENSE_GEOS
+  sympy:
+    version: 1.14.0
+    license: BSD-3-Clause
+    evidence: sympy-1.14.0.dist-info/licenses/LICENSE

@@ -193,9 +193,9 @@ def validate_routed_mvp_config(
     config_path: Path = DEFAULT_CONFIG_PATH,
     ducklake_path: Path = DEFAULT_DUCKLAKE_PATH,
     *,
-    roads_nodes_file: str = "rti_synth_pop_v2_dmv_100.road_nodes",
-    roads_edges_file: str = "rti_synth_pop_v2_dmv_100.road_edges",
-    roads_place_snap_file: str = "rti_synth_pop_v2_dmv_100.place_road_snap",
+    roads_nodes_file: str = "casmsocial_mvp.road_nodes",
+    roads_edges_file: str = "casmsocial_mvp.road_edges",
+    roads_place_snap_file: str = "casmsocial_mvp.place_road_snap",
     check_distances: bool = True,
     distance_tolerance_m: float = 0.0,
 ) -> dict[str, Any]:
@@ -255,17 +255,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--roads-nodes-file",
-        default="rti_synth_pop_v2_dmv_100.road_nodes",
+        default="casmsocial_mvp.road_nodes",
         help="Road nodes table or parquet file used for validation.",
     )
     parser.add_argument(
         "--roads-edges-file",
-        default="rti_synth_pop_v2_dmv_100.road_edges",
+        default="casmsocial_mvp.road_edges",
         help="Road edges table or parquet file used for validation.",
     )
     parser.add_argument(
         "--roads-place-snap-file",
-        default="rti_synth_pop_v2_dmv_100.place_road_snap",
+        default="casmsocial_mvp.place_road_snap",
         help="Place-to-road-node snap table or parquet file used for validation.",
     )
     parser.add_argument(

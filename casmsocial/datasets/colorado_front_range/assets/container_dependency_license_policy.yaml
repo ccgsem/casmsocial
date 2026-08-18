@@ -1,0 +1,81 @@
+schema_version: 1
+scope: production_container_dependencies
+scanner:
+  name: syft
+  version: 1.44.0
+reviewed_override_licenses:
+  - BSD-3-Clause
+  - MIT
+  - PSF-2.0
+forbidden_package_types:
+  - cargo
+metadata_overrides:
+  annotated-types:
+    package_type: pypi
+    version: 0.7.0
+    license: MIT
+    source_url: https://github.com/annotated-types/annotated-types/blob/v0.7.0/LICENSE
+    evidence:
+      - path: /app/.venv/lib/python3.12/site-packages/annotated_types-0.7.0.dist-info/licenses/LICENSE
+        sha256: fe1049884b1a0d9342901e88e07f32925d24b3121d9972b6a6805fb9824b095d
+  duckdb:
+    package_type: pypi
+    version: 1.5.4
+    license: MIT
+    source_url: https://github.com/duckdb/duckdb-python/blob/v1.5.4/LICENSE
+    evidence:
+      - path: /app/.venv/lib/python3.12/site-packages/duckdb-1.5.4.dist-info/licenses/LICENSE
+        sha256: 075c33400ffcb0c586dd106a029d3e733e9da3693f8fcb9cebfc651c8a2f14e3
+  jinja2:
+    package_type: pypi
+    version: 3.1.6
+    license: BSD-3-Clause
+    source_url: https://github.com/pallets/jinja/blob/3.1.6/LICENSE.txt
+    evidence:
+      - path: /app/.venv/lib/python3.12/site-packages/jinja2-3.1.6.dist-info/licenses/LICENSE.txt
+        sha256: 3b49dcee4105eb37bac10faf1be260408fe85d252b8e9df2e0979fc1e094437b
+  loguru:
+    package_type: pypi
+    version: 0.7.3
+    license: MIT
+    source_url: https://github.com/Delgan/loguru/blob/0.7.3/LICENSE
+    evidence:
+      - path: /app/.venv/lib/python3.12/site-packages/loguru-0.7.3.dist-info/METADATA
+        sha256: 3a371f8b089014fdaee055edc440d448242847926ad67613621af402f9975fd9
+      - path: /app/casmsocial/datasets/colorado_front_range/assets/licenses/loguru-0.7.3.LICENSE
+        sha256: b35d026cc7aca9d5859a02eb87ddf7a386a24c986838651bd1f283f94e003327
+    evidence_note: The installed METADATA declares the MIT classifier; the tagged upstream text is retained in the image.
+  markdown-it-py:
+    package_type: pypi
+    version: 4.2.0
+    license: MIT
+    source_url: https://github.com/executablebooks/markdown-it-py/blob/v4.2.0/LICENSE
+    evidence:
+      - path: /app/.venv/lib/python3.12/site-packages/markdown_it_py-4.2.0.dist-info/licenses/LICENSE
+        sha256: 4a2260d6e2cd0f5a151a1e86dbfe7d3ed552b1e2beabf9941c1ba5c49cbce484
+      - path: /app/.venv/lib/python3.12/site-packages/markdown_it_py-4.2.0.dist-info/licenses/LICENSE.markdown-it
+        sha256: 792c48c5a849a15fdf9e37e8bcf9e6d1dd13b32b46c642a748a0a46a9919d473
+  python:
+    package_type: generic
+    version: 3.12.14
+    license: PSF-2.0
+    source_url: https://docs.python.org/3.12/license.html
+    evidence:
+      - path: /usr/local/lib/python3.12/LICENSE.txt
+        sha256: 3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf
+    evidence_note: Preserve the complete installed file because Python includes separately licensed incorporated software.
+scanner_subject:
+  package_type: oci
+  spdx_id_prefix: SPDXRef-DocumentRoot-
+  required_count: 1
+  rationale: The OCI record identifies the image being scanned; it is not an additional distributed dependency.
+native_review:
+  package_type: deb
+  require_license_metadata: true
+  status: review_required
+  review_trigger_patterns:
+    - '(^|[^L])GPL-[0-9]'
+    - 'LGPL-[0-9]'
+    - 'AGPL-[0-9]'
+    - 'LicenseRef-'
+  rationale: Debian copyright expressions can aggregate licenses for many source files; accountable review is required before drawing binary-distribution conclusions.

@@ -51,17 +51,8 @@ There are three ways to run the model
 3. Run in the Docker image
 
 The files in `config/` are runtime launch configs for direct local runs.
-The default direct-run config, `config/casmsocial.yaml`, uses the committed Wake
-County Heat deployment fixture. Materialize it before the first run:
-
-```bash
-uv run python scripts/materialize_wake_county_heat_fixture.py \
-  --fixture-path testdata/wake_county_heat_1000_households \
-  --ducklake-path data/datalakehouse
-```
-
-The public casmdb scenario is `wake_county_heat`, maintained in
-`scenarios/casmsocial/wake_county_heat.yaml` and registered with
+Canonical casmdb scenario definitions are maintained in
+`scenarios/casmsocial/*.yaml` and registered with
 `scripts/register_casmsocial.py`.
 
 To run (option 1):
@@ -77,7 +68,14 @@ quick failure triage, see [docs/mvp_operator_checklist.md](docs/mvp_operator_che
 ### Input Tables
 
 YAML configs identify DuckLake source tables with `places.table`,
-`households.table`, `persons.table`, `activities.table`, and `contacts.table`.
+`households.table`, `persons.table`, `activities.table`, and optionally
+`social_networks.table`. Social-network rows are timeless potential ties, not
+fixed-hour contacts: `person_id_a`, `person_id_b`, and `network_kind` are
+required, while `tie_strength` is optional. Endpoints must be canonical
+(`person_id_a < person_id_b`) and each `(person_id_a, person_id_b,
+network_kind)` may appear once. Simulation behavior derives in-person
+encounters from schedule overlap and co-location; it may derive remote messages
+from the same ties without co-location.
 `Place` agents represent physical locations. `Household` agents represent social
 household units loaded from `households.table`, often named `hh` in input
 schemas; each household links to a physical `Place` and to its member `Person`
@@ -149,35 +147,6 @@ you need output rows from every rank.
 The Compose file uses `CASMSOCIAL_MPI_DATA_PATH` and
 `CASMSOCIAL_MPI_DUCKLAKE_PATH` as optional overrides so the repository `.env`
 does not accidentally inject host-only paths into the containers.
-
-### Wake County Heat Deployment Fixture
-
-The minimum Wake County Heat deployment fixture lives under
-`testdata/wake_county_heat_1000_households`. It can rebuild the local DuckLake
-tables in `data/datalakehouse` and can also validate the production-style
-DuckLake shape with a Postgres catalog and MinIO-backed S3 storage.
-
-Local DuckLake materialization:
-
-```bash
-make wake-county-heat-materialize
-```
-
-Local deployment smoke validation:
-
-```bash
-make wake-county-heat
-```
-
-Production-style Compose validation:
-
-```bash
-make wake-county-heat-compose
-make wake-county-heat-compose-down
-```
-
-See [docs/wake_county_heat_fixture.md](docs/wake_county_heat_fixture.md) for
-expected row counts, environment overrides, and cleanup notes.
 
 ## Code Quality
 
@@ -433,20 +402,15 @@ can trigger `cancel_social_activity`, which removes the next future social activ
 
 ---
 
-## Live Arrow/Ice Observation Server
+## Live Arrow Flight Observation Server
 
 `CasmPop` can optionally host a live Arrow data server inside the simulation
 process, letting an external client (e.g. casmservice) pull an observer's
 most recent output table -- via `CasmPop.get_observer_output_tables()` --
 while the run is still in progress, instead of waiting for parquet files to
-be flushed to disk. This is opt-in and requires the `service` extra:
-
-```bash
-uv sync --extra service
-```
-
-`zeroc-ice` only publishes wheels for Python >= 3.12; the `service` extra is
-unavailable on older interpreters.
+be flushed to disk. It speaks Apache Arrow Flight, which ships inside the
+`pyarrow` wheel -- already a hard dependency here -- so there's no extra to
+install and no optional dependency to manage.
 
 Enable it with:
 
@@ -462,15 +426,6 @@ writes `arrow_endpoint.txt` (`host:port`) into the simulation's current
 working directory, so a launcher such as casmservice's `Repast4pyBackend`
 (which already runs the subprocess with that directory as its `run_dir`) can
 discover where to connect without any additional configuration.
-
-The Ice IDL contract lives at `slice/arrowservice/ArrowService.ice` (kept
-byte-identical to casmservice's copy of the same file -- there is no shared
-package between the two repos, only the wire contract). Regenerate the
-committed Python bindings under `arrowservice/` whenever that file changes:
-
-```bash
-uv run python scripts/build_slice.py
-```
 
 ---
 

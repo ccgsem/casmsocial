@@ -157,8 +157,8 @@ def make_routed_plan(
     previous_activity = activities[0]
 
     for next_activity in activities[1:]:
-        origin_place_id = _place_id_for_activity(previous_activity.activity_id, places)
-        destination_place_id = _place_id_for_activity(next_activity.activity_id, places)
+        origin_place_id = resolve_activity_place(previous_activity, places)
+        destination_place_id = resolve_activity_place(next_activity, places)
 
         route = None
         if origin_place_id is not None and destination_place_id is not None:
@@ -199,6 +199,18 @@ def validate_leg_against_schedule(
 
     gap_min = next_activity.starttime_min - previous_activity.endtime_min
     return leg.travel_time_min <= gap_min
+
+
+def resolve_activity_place(activity: Activity, places: list[int]) -> int | None:
+    """Resolve an event destination, falling back to the legacy anchor vector.
+
+    Schedule imports may provide a distinct ``place_id`` for every activity
+    event. Older models omit that value and continue to resolve the place from
+    the person's activity-type anchor vector.
+    """
+    if activity.place_id:
+        return int(activity.place_id)
+    return _place_id_for_activity(activity.activity_id, places)
 
 
 def _place_id_for_activity(activity_id: int | float, places: list[int]) -> int | None:

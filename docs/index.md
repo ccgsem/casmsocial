@@ -10,7 +10,11 @@ casmsocial is a Python framework for implementing agent-based models that simula
 ## Input Tables
 
 Runtime YAML configs identify DuckLake source tables with `places.table`,
-`households.table`, `persons.table`, `activities.table`, and `contacts.table`.
+`households.table`, `persons.table`, `activities.table`, and optionally
+`social_networks.table`. The social-network input represents timeless potential
+ties, not fixed-hour contact events. See the
+[social-network input contract](social_networks.md) for its schema and runtime
+semantics.
 `Place` agents represent physical locations. `Household` agents represent social
 household units loaded from `households.table`, often named `hh` in input
 schemas; each household links to a physical `Place` and to its member `Person`

@@ -24,7 +24,7 @@ Workflow:
 Usage:
     python -m casmsocial.network_partitioner_ducklake \\
         --ducklake-path data/datalakehouse \\
-        --schema rti_synth_pop_v2_dmv_100 \\
+        --schema wake_county_heat \\
         --imputations all \\
         --n-ranks 2,4,8 \\
         --output-table partitions.metis_place_partitions
@@ -192,7 +192,7 @@ def build_graph_from_ducklake(
         conn: An attached DuckLake connection (see
             ``casmsocial.ducklake_utils.get_ducklake_connection``).
         persons_table: Catalog-qualified persons table (e.g.
-            ``rti_synth_pop_v2_dmv_100.persons``).
+            ``wake_county_heat.persons_1000_households``).
         imputation: Imputation column value to filter on.
         places_table: Optional places table. When supplied, every ``sp_id`` in
             the table is seeded as a graph node, including isolated places not
@@ -531,7 +531,7 @@ def partition_from_ducklake(
     Args:
         ducklake_path: Directory containing ``metadata.sqlite`` and ``storage/``.
         schema: Catalog schema where the input tables live, e.g.
-            ``rti_synth_pop_v2_dmv_100``. Used to build default
+            ``wake_county_heat``. Used to build default
             ``persons_table`` / ``places_table`` names if not supplied.
         imputation: Imputation column value to partition for.
         n_ranks: Number of MPI processes the partition is being computed for.
@@ -640,9 +640,9 @@ def main(
         ),
     ),
     schema: str = typer.Option(
-        "rti_synth_pop_v2_dmv_100",
+        "wake_county_heat",
         "--schema",
-        help="DuckLake schema for the input tables (e.g. rti_synth_pop_v2_dmv_100).",
+        help="DuckLake schema for the input tables (e.g. wake_county_heat).",
     ),
     imputations: str = typer.Option(
         "all",
@@ -663,14 +663,14 @@ def main(
         ),
     ),
     persons_table: str | None = typer.Option(
-        None,
+        "wake_county_heat.persons_1000_households",
         "--persons-table",
-        help="Override for the persons table; defaults to '{schema}.persons'.",
+        help="Persons table; defaults to the Wake County review fixture table.",
     ),
     places_table: str | None = typer.Option(
-        None,
+        "wake_county_heat.places",
         "--places-table",
-        help="Override for the places table; defaults to '{schema}.places'.",
+        help="Places table; defaults to the Wake County review fixture table.",
     ),
     restrict_to_places: bool = typer.Option(
         False,
@@ -709,7 +709,7 @@ def main(
 
     Example:
         python -m casmsocial.network_partitioner_ducklake \\
-            --schema rti_synth_pop_v2_dmv_100 \\
+            --schema wake_county_heat \\
             --imputations all \\
             --n-ranks 2,4,8 \\
             --output-table partitions.metis_place_partitions

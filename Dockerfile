@@ -1,8 +1,8 @@
-# Base stage with common dependencies
-FROM python:3.12-slim AS base
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+# Build stage with compilers, native headers, and a pinned uv binary. None of
+# these build-only tools are copied into the production image.
+FROM python:3.12-slim AS builder-base
+COPY --from=ghcr.io/astral-sh/uv@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc /uv /bin/uv
 
-# Install necessary system packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     mpich \
@@ -23,7 +23,7 @@ ARG UV_INSECURE_HOST=""
 ENV UV_INSECURE_HOST=${UV_INSECURE_HOST}
 
 # Development stage
-FROM base AS dev
+FROM builder-base AS dev
 # pytest/pytest-cov are Python (PyPI) packages, not Debian packages -- no
 # such apt package exists. They're already managed via uv (pyproject.toml's
 # dev dependency group), so only pylint belongs here.
@@ -56,23 +56,41 @@ RUN uv sync --frozen --no-install-project
 # so a plain `python`/terminal in this container resolves to the venv.
 ENV PATH="/app/.venv/bin:${PATH}"
 
-# Production stage
-FROM base AS prod
+# Build the production virtual environment. Installing the project
+# non-editably makes the environment self-contained when copied to runtime.
+FROM builder-base AS prod-builder
 # Copy the lockfile and `pyproject.toml` into the image
 COPY uv.lock /app/uv.lock
 COPY pyproject.toml /app/pyproject.toml
 
 # Install dependencies
-RUN uv sync --frozen --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy the project into the image
 COPY . /app
 
 # Sync the project
-RUN uv sync --frozen
+RUN uv sync --frozen --no-dev --no-editable \
+    && find /app/.venv -type f -path '*/site-packages/setuptools/*.exe' -delete \
+    && uv cache clean
 
-# Cache DuckDB extensions used by local and production-style DuckLake loaders.
-RUN /app/.venv/bin/python -c "import duckdb; conn = duckdb.connect(); conn.execute('INSTALL sqlite; INSTALL spatial; INSTALL ducklake; INSTALL postgres; INSTALL httpfs')"
+# Production runtime: retain only the MPI launcher and shared libraries needed
+# by mpi4py / repast4py. Compilers, headers, uv, and its Rust package metadata
+# remain in the builder stages and therefore do not enter the production SBOM.
+FROM python:3.12-slim AS runtime-base
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libexpat1 \
+    mpich \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip uninstall --yes pip
+
+WORKDIR /app
+
+# Production stage
+FROM runtime-base AS prod
+COPY --from=prod-builder /app/.venv /app/.venv
+COPY . /app
 
 # uv sync installs into /app/.venv, not the system Python -- put it on PATH
 # so mpirun's bare `python` resolves to the venv where casmsocial/mpi4py/
@@ -101,11 +119,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 CMD ["/usr/sbin/sshd", "-D", "-e"]
 
-# Tools stage: adds the optional `partitioning` extra (pymetis), used only
+# Tools builder: adds the optional `partitioning` extra (pymetis), used only
 # by casmsocial.network_partitioner_ducklake -- an offline CLI script, not
 # part of the simulation runtime. Kept out of `prod` because pymetis has no
 # prebuilt wheel for every platform (e.g. manylinux aarch64 at the time of
 # writing) and must compile METIS from source there. Build explicitly with
 # `--target tools` when the partitioner script is needed.
+FROM prod-builder AS tools-builder
+RUN uv sync --frozen --no-dev --no-editable --extra partitioning \
+    && uv cache clean
+
+# Like prod, the final tools image contains no package manager or compiler.
 FROM prod AS tools
-RUN uv sync --frozen --extra partitioning
+COPY --from=tools-builder /app/.venv /app/.venv

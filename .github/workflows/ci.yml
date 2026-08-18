@@ -47,7 +47,7 @@ jobs:
           sudo apt-get install -y libmetis-dev libopenmpi-dev openmpi-bin
 
       - name: Sync dependencies
-        run: uv sync --locked
+        run: uv sync --locked --extra data-builder
 
       - name: Run quality checks
         run: make check
@@ -55,8 +55,43 @@ jobs:
       - name: Run tests
         run: make test
 
-      - name: Run Wake County Heat deployment smoke
-        run: make wake-county-heat
+      - name: Build and scan public release artifacts
+        run: |
+          uv build --clear
+          uv run mkdocs build --strict
+          uv run python scripts/verify_release_artifacts.py dist site
+
+      - name: Generate and verify Python dependency SBOM
+        run: |
+          mkdir -p build/sbom
+          uvx --from cyclonedx-bom==7.3.0 cyclonedx-py environment "$(uv python find)" \
+            --pyproject pyproject.toml \
+            --mc-type application \
+            --spec-version 1.6 \
+            --output-reproducible \
+            --output-format JSON \
+            --output-file build/sbom/casmsocial-python.cdx.json
+          uv run python scripts/verify_python_sbom.py \
+            build/sbom/casmsocial-python.cdx.json \
+            --policy casmsocial/datasets/colorado_front_range/assets/dependency_license_policy.yaml
+
+      - name: Verify migrated-code provenance coverage
+        run: |
+          uv run python scripts/verify_migrated_code_provenance.py \
+            --provenance casmsocial/datasets/colorado_front_range/assets/migrated_code_provenance.yaml \
+            --license-manifest casmsocial/datasets/colorado_front_range/assets/source_licenses.yaml \
+            --repository-root .
+
+      - name: Verify release remains gated on explicit approvals
+        run: uv run python scripts/verify_release_readiness.py --expect-status review_required
+
+      - name: Upload Python dependency SBOM
+        uses: actions/upload-artifact@v7
+        with:
+          name: casmsocial-python-sbom
+          path: build/sbom/casmsocial-python.cdx.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Run MVP proof suite
         run: make mvp-all
@@ -102,6 +137,59 @@ jobs:
       - name: Smoke test -- models register, venv is on PATH
         run: |
           docker run --rm casmsocial:ci python -c "import casmsocial.casmpop; from casmsocial.factory import Models; models = Models.get_models(); assert 'casmsocial.casmpop.CasmPop' in models, models; print('OK:', sorted(models))"
+
+      - name: Verify prod image excludes build-only tooling
+        run: |
+          docker run --rm casmsocial:ci sh -eu -c '
+            test ! -e /bin/uv
+            ! command -v uv
+            ! command -v pip
+            ! command -v cc
+            ! command -v gcc
+            ! command -v g++
+            for package in build-essential libmpich-dev libomp-dev libgdal-dev libhdf5-dev libnetcdf-dev; do
+              if dpkg-query -s "$package" 2>/dev/null | grep -q "^Status: install ok installed$"; then
+                echo "Unexpected build-only package in prod image: $package" >&2
+                exit 1
+              fi
+            done
+            test ! -d /root/.cache/uv
+            if find /app/.venv -type f -path "*/site-packages/setuptools/*.exe" | grep -q .; then
+              echo "Unexpected Windows setuptools launcher in Linux prod image" >&2
+              exit 1
+            fi
+          '
+
+      - name: Smoke test -- native runtime dependencies
+        run: |
+          docker run --rm casmsocial:ci mpirun -n 1 python -c "from mpi4py import MPI; import rasterio, repast4py, torch; assert MPI.COMM_WORLD.Get_size() == 1; print('OK: MPI and compiled runtime dependencies')"
+
+      - name: Scan prod image project payload for generated datasets
+        run: docker run --rm casmsocial:ci python scripts/verify_release_artifacts.py /app
+
+      - name: Create container SBOM output directory
+        run: mkdir -p build/sbom
+
+      - name: Generate production image SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: casmsocial:ci
+          format: spdx-json
+          output-file: build/sbom/casmsocial-container.spdx.json
+          artifact-name: casmsocial-container-sbom
+          syft-version: v1.44.0
+          upload-artifact-retention: 14
+
+      - name: Verify production image dependency license policy
+        run: |
+          docker run --rm \
+            --mount type=bind,source="$PWD/build/sbom",target=/sbom,readonly \
+            casmsocial:ci \
+            python scripts/verify_container_sbom.py \
+              /sbom/casmsocial-container.spdx.json \
+              --policy casmsocial/datasets/colorado_front_range/assets/container_dependency_license_policy.yaml \
+              --evidence-root / \
+              --expect-status review_required
 
       - name: Build tools image (partitioning extra)
         # pymetis has prebuilt wheels on manylinux x86_64 (this runner's

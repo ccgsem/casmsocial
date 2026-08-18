@@ -24,11 +24,11 @@ After a successful run, these generated artifacts should exist:
 - `data/output/mvp_behavior_log.parquet`
 - `examples/mvp/mvp.ducklake`
 
-The generated MVP DuckLake contains self-contained people, household, place,
+The generated MVP DuckLake contains the standard people, household, place,
 activity, and partition fixtures plus a tiny routable road fixture:
-`rti_synth_pop_v2_dmv_100.road_nodes`,
-`rti_synth_pop_v2_dmv_100.road_edges`, and
-`rti_synth_pop_v2_dmv_100.place_road_snap`.
+`casmsocial_mvp.road_nodes`,
+`casmsocial_mvp.road_edges`, and
+`casmsocial_mvp.place_road_snap`.
 
 The validation output should report:
 

@@ -1,0 +1,31 @@
+schema_version: 1
+scope: colorado_front_range_dataset_builder
+release_version: 2.5.8
+
+distribution_plan:
+  code_and_metadata: public_release
+  generated_identifier_bearing_data: local_only
+  osm_derived_data: local_build_only
+  release_artifacts:
+    - wheel
+    - source_distribution
+    - documentation_site
+    - production_container
+
+machine_gate_expectations:
+  migrated_code_provenance: documented_review_required
+  dependency_license_inventory: automated_review_required
+  osm_distribution_policy: implemented
+  release_artifact_scan: automated
+  final_distribution_review: organization_review_required
+
+required_approvals:
+  - id: contributor_authority
+    resolves_gate: migrated_code_provenance
+    description: Confirm that contributors and the releasing organization have authority to publish the migrated code.
+  - id: container_dependency_license_review
+    resolves_gate: dependency_license_inventory
+    description: Review the generated Python and production-container dependency inventories for the intended distribution.
+  - id: final_distribution_plan
+    resolves_gate: final_distribution_review
+    description: Approve public code and release artifacts while generated identifier-bearing and OSM-derived data remain local only.

@@ -40,6 +40,7 @@ def load_builtin_models() -> None:
     """Register built-in models without relying on package import side effects."""
     import casmsocial.casmpop  # noqa: F401
     import casmsocial.citysim.citysocialmodel  # noqa: F401
+    import casmsocial.citysim.colorado_front_range_schedule_model  # noqa: F401
 
 
 def run(params: dict) -> int:
