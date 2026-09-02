@@ -51,6 +51,10 @@ metadata_overrides:
     version: 3.0.3
     license: BSD-3-Clause
     evidence: pandas-3.0.3.dist-info/LICENSE
+  protobuf:
+    version: 7.36.0
+    license: BSD-3-Clause
+    evidence: protobuf-7.36.0.dist-info/LICENSE and package metadata License=3-Clause BSD License
   repast4py:
     version: 1.2.1
     license: BSD-3-Clause

@@ -4,10 +4,9 @@ Status: accepted — 2026-08-26
 
 ## Context
 
-CASMSocial runs simulations through more than one backend, including
-repast4py and external xDEVS runners. A runner needs a small control plane for
+CASMSocial runs repast4py simulations. A runner needs a small control plane for
 run lifecycle and a data plane for live observation batches. The control plane
-is proposed as the versioned `casm.runner.v1.SimulatorControl` gRPC service.
+uses the versioned `casm.runner.v1.SimulatorControl` gRPC service.
 The data plane uses Apache Arrow Flight, whose schema discovery and record-batch
 transfer semantics are a better fit for Arrow observations than a bespoke
 streaming RPC.
@@ -51,7 +50,7 @@ and do not keep broker data alive.
 
 ## Backend adapter contract
 
-Every backend adapter, including repast4py and xDEVS, supplies:
+The repast4py adapter supplies:
 
 1. lifecycle operations: start, cooperative cancellation, state, and terminal
    result;
@@ -65,13 +64,14 @@ That configuration remains inside the validated `Start` request payload.
 
 ## Consequences
 
-This design permits CASMSocial, repast4py, and xDEVS to share control and
-observation semantics while retaining backend-specific execution code. It
-avoids a custom Arrow-byte streaming protocol and does not require either
-Python gRPC implementation to share a TCP listener with Arrow Flight.
+This design keeps CASMSocial control and observation semantics separate while
+retaining the model's existing repast4py execution code. It avoids a custom
+Arrow-byte streaming protocol and does not require the Python gRPC
+implementation to share a TCP listener with Arrow Flight.
 
-The first implementation must include an integration test that starts one
-reference run and verifies that Flight and the control-plane observation stream
-produce the same channel names, schemas, batch order, and terminal outcome.
-Because this is a material public capability addition, it requires review in
-the appropriate Public Release System request before publication.
+The implementation includes an integration test that starts one reference run
+and verifies that Flight and the control-plane observation stream produce the
+same channel names, schemas, batch order, and terminal outcome. `Cancel`
+currently reports unsupported until CASMSocial exposes a cooperative model
+cancellation hook. This material capability addition requires Public Release
+System review before publication.
