@@ -9,14 +9,7 @@ from scripts.register_casmsocial import (
 def test_register_casmsocial_loads_canonical_scenario_yaml_files():
     specs = _load_scenario_specs()
 
-    assert set(specs) == {
-        "base",
-        "dmv",
-        "dmv_100",
-        "dc",
-        "dc_5000",
-        "wake_county_heat",
-    }
+    assert set(specs) == {"wake_county_heat"}
     for name, spec in specs.items():
         assert spec["description"]
         params = spec["parameters"]
@@ -27,11 +20,10 @@ def test_register_casmsocial_loads_canonical_scenario_yaml_files():
         assert params["activities.table"]
 
 
-def test_build_scenarios_uses_yaml_parameters():
+def test_build_scenarios_uses_approved_fixture_parameters():
     scenarios = _build_scenarios()
 
-    assert scenarios["dmv"]["households.table"] == "rti_synth_pop_v2_dmv.hh"
-    assert scenarios["dmv_100"]["households.table"] == "rti_synth_pop_v2_dmv_100.hh"
+    assert scenarios["wake_county_heat"]["households.table"] == "wake_county_heat.hh_1000_households"
 
 
 def test_build_model_record_reports_repository_license_and_public_contact():

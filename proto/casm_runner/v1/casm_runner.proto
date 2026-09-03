@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: MIT
+// Loopback-only runner control contract. See runner_transport_architecture.md.
+syntax = "proto3";
+
+package casm.runner.v1;
+
+service SimulatorControl {
+  rpc Start(StartRequest) returns (StartResponse);
+  rpc Cancel(CancelRequest) returns (CancelResponse);
+  rpc GetState(GetStateRequest) returns (StateResponse);
+  rpc StreamObs(StreamObsRequest) returns (stream ObsBatch);
+}
+
+enum RunState {
+  RUN_STATE_UNSPECIFIED = 0;
+  RUN_STATE_INITIALIZING = 1;
+  RUN_STATE_RUNNING = 2;
+  RUN_STATE_COMPLETED = 3;
+  RUN_STATE_FAILED = 4;
+  RUN_STATE_CANCELLED = 5;
+}
+
+message StartRequest { string run_id = 1; bytes config_json = 2; string artifact_root = 3; }
+message StartResponse { string run_id = 1; }
+message CancelRequest { string run_id = 1; }
+message CancelResponse { bool acknowledged = 1; }
+message GetStateRequest { string run_id = 1; }
+message StateResponse {
+  string run_id = 1;
+  RunState state = 2;
+  string status_message = 3;
+  double sim_time = 4;
+  int64 tick = 5;
+}
+message StreamObsRequest { string run_id = 1; string channel = 2; int64 start_tick = 3; }
+message ObsBatch { string channel = 1; int64 tick = 2; bytes arrow_ipc = 3; }

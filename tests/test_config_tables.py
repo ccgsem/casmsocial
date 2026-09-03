@@ -14,7 +14,10 @@ CONFIG_TABLE_KEYS = (
 
 # These configs have a matching Make target that creates a dedicated DuckLake
 # fixture rather than using the developer-local default DuckLake below.
-SELF_CONTAINED_FIXTURE_CONFIGS = {"colorado_front_range_fixture.yaml"}
+SELF_CONTAINED_FIXTURE_CONFIGS = {
+    "colorado_front_range_fixture.yaml",
+    "mvp.yaml",
+}
 
 
 def _storage_path_for_table(storage_dir: Path, table_name: str) -> Path:

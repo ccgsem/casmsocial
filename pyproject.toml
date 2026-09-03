@@ -1,6 +1,6 @@
 [project]
 name = "casmsocial"
-version = "2.5.8"
+version = "2.6.1"
 description = "casmsocial is a Python framework for implementing agent-based models that simulate the dynamics of a synthetic population"
 authors = [{ name = "Jon C. Cline", email = "jcline@mitre.org" }]
 readme = "README.md"
@@ -19,9 +19,11 @@ classifiers = [
 ]
 dependencies = [
     "duckdb>=1.5.4",
+    "grpcio>=1.83.0",
     "loguru>=0.7.3",
     "numpy>=1.26.4",
     "polars>=1.41.2",
+    "protobuf>=7.35.1",
     "pyarrow>=24.0.0",
     "pydantic>=2.13.4",
     "pyyaml>=6.0.3",
@@ -87,6 +89,7 @@ casmsocial-data = "casmsocial.datasets.cli:app"
 dev = [
     "black>=26.5.1",
     "flake8>=7.3.0",
+    "grpcio-tools>=1.83.0",
     "isort>=8.0.1",
     "pytest>=9.1.0",
     "pre-commit>=4.6.0",
@@ -174,6 +177,7 @@ target-version = "py310"
 line-length = 120
 fix = true
 force-exclude = true
+extend-exclude = ["casmsocial/proto"]
 
 [tool.ruff.lint]
 select = [
