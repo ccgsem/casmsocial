@@ -8,6 +8,11 @@ from casmsocial.model import Model
 class Observer:
     """Base class for all observers"""
 
+    # Step observers execute in ascending priority order. The default retains
+    # registration order, while transport adapters can run after model-owned
+    # loggers and publish the snapshot produced for the current tick.
+    step_priority = 0
+
     def __init__(self, name, model: Model = None):
         self.name = name
 

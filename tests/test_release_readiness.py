@@ -12,7 +12,7 @@ from casmsocial.datasets.colorado_front_range import (
 def _attestations(*approval_ids: str) -> dict:
     return {
         "schema_version": 1,
-        "release_version": "2.5.8",
+        "release_version": "2.6.1",
         "approvals": [
             {
                 "id": approval_id,
@@ -88,7 +88,7 @@ def test_release_readiness_keeps_partial_attestations_gated():
         ),
         (
             {**_attestations("contributor_authority"), "release_version": "2.5.4"},
-            "expected '2.5.8'",
+            "expected '2.6.1'",
         ),
     ],
 )

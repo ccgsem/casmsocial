@@ -183,7 +183,7 @@ Cargo or untyped-package records.
 Syft leaves seven records without either a machine-readable concluded or
 declared license. `container_dependency_license_policy.yaml` classifies six by
 exact package type, name, and version: annotated-types, DuckDB, Loguru, and
-markdown-it-py are MIT; Jinja2 is BSD-3-Clause; and the Python 3.12.13 runtime
+markdown-it-py are MIT; Jinja2 is BSD-3-Clause; and the Python 3.12.14 runtime
 uses PSF-2.0 while retaining its complete incorporated-software license file.
 Every override points to an authoritative upstream URL and one or more hashed
 files inside the image. Because Loguru's wheel declares only an MIT classifier,

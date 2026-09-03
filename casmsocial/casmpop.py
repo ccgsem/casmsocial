@@ -1128,12 +1128,12 @@ class CasmPop(Model):
 
     def _notify_step_observers(self) -> None:
         """Notify all observers that a simulation step completed."""
-        for observer in self._observers:
+        for observer in sorted(self._observers, key=lambda observer: observer.step_priority):
             observer.on_step(self)
 
     def _notify_end_observers(self) -> None:
         """Notify all observers that simulation ended."""
-        for observer in self._observers:
+        for observer in sorted(self._observers, key=lambda observer: observer.step_priority):
             observer.on_end(self)
 
     def get_observer_output_tables(self) -> dict[str, pa.Table]:

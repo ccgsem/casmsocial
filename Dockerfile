@@ -1,6 +1,6 @@
 # Build stage with compilers, native headers, and a pinned uv binary. None of
 # these build-only tools are copied into the production image.
-FROM python:3.12-slim AS builder-base
+FROM python:3.12.14-slim AS builder-base
 COPY --from=ghcr.io/astral-sh/uv@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc /uv /bin/uv
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -77,7 +77,7 @@ RUN uv sync --frozen --no-dev --no-editable \
 # Production runtime: retain only the MPI launcher and shared libraries needed
 # by mpi4py / repast4py. Compilers, headers, uv, and its Rust package metadata
 # remain in the builder stages and therefore do not enter the production SBOM.
-FROM python:3.12-slim AS runtime-base
+FROM python:3.12.14-slim AS runtime-base
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libexpat1 \
