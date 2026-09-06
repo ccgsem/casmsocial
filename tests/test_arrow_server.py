@@ -69,6 +69,23 @@ def test_stop_arrow_server_without_having_started_is_a_noop():
     assert getattr(model, "_arrow_server_handle", None) is None
 
 
+def test_model_owned_observation_table_is_available_to_transport(tmp_path):
+    model = _bare_model(rank=0, enabled=False)
+    model._observers = []
+    table = pa.table({"agent_id": [1, 2], "state": ["home", "work"]})
+
+    model.publish_observation_table("agent_log", table)
+
+    assert model.get_observer_output_tables() == {"agent_log": table}
+    handle = start_arrow_server(model, host="127.0.0.1", endpoint_dir=tmp_path)
+    try:
+        client = flight.connect(f"grpc://{handle.host}:{handle.port}")
+        fetched = client.do_get(flight.Ticket(b"agent_log")).read_all()
+        assert fetched.equals(table)
+    finally:
+        handle.shutdown()
+
+
 def test_start_arrow_server_is_idempotent(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     model = _bare_model(rank=0, enabled=True)
