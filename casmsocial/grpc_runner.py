@@ -9,7 +9,7 @@ from pathlib import Path
 from mpi4py import MPI
 
 from casmsocial.__main__ import load_builtin_models
-from casmsocial.factory import Models
+from casmsocial.factory import Models, load_models
 from casmsocial.flight_broker import start_broker_flight_server
 from casmsocial.grpc_control import ENDPOINT_FILENAME, start_control_server
 from casmsocial.observation_broker import ObservationBroker
@@ -27,6 +27,9 @@ def run_submitted_model(run_id: str, config_json: bytes, broker: ObservationBrok
     params["observers.arrow_server.enabled"] = False
 
     load_builtin_models()
+    plugins = params.get("model.plugins", [])
+    if plugins:
+        load_models(plugins)
     model = Models.create_model(params["model.name"])(MPI.COMM_WORLD, params)
     model.add_observer(RepastObservationBrokerAdapter(broker))
     model.start()
