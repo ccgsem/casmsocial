@@ -1114,6 +1114,10 @@ class CasmPop(Model):
 
         # instance-level observers
         self._observers: list[Observer] = []
+        # Latest model-owned tables exposed to transport observers. Derived
+        # models that implement their own logging can publish here without
+        # having to duplicate an Observer subclass.
+        self._transport_output_tables: dict[str, pa.Table] = {}
 
         # live Arrow Flight observation server (optional, rank 0 only)
         self._arrow_server_handle = None
@@ -1142,10 +1146,16 @@ class CasmPop(Model):
         Lets callers such as casmservice consume the latest observer outputs
         directly from memory instead of reading back the parquet files.
         """
-        tables: dict[str, pa.Table] = {}
+        tables: dict[str, pa.Table] = dict(getattr(self, "_transport_output_tables", {}))
         for observer in self._observers:
             tables.update(observer.get_output_tables(self))
         return tables
+
+    def publish_observation_table(self, channel: str, table: pa.Table) -> None:
+        """Expose a model-owned Arrow snapshot to transport observers."""
+        if not hasattr(self, "_transport_output_tables"):
+            self._transport_output_tables = {}
+        self._transport_output_tables[channel] = table
 
     def _start_arrow_server_if_enabled(self) -> None:
         """Start the embedded live Arrow Flight server on rank 0, if configured.
