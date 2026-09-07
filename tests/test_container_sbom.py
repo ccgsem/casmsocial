@@ -191,7 +191,6 @@ def test_production_container_policy_classifies_known_gaps_without_approving_dis
     assert policy["native_review"]["status"] == "review_required"
     assert policy["scanner_subject"]["spdx_id_prefix"] == "SPDXRef-DocumentRoot-"
     expected = {
-            "annotated-types": ("0.8.0", "MIT"),
             "duckdb": ("1.5.5", "MIT"),
         "jinja2": ("3.1.6", "BSD-3-Clause"),
         "loguru": ("0.7.3", "MIT"),

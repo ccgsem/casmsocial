@@ -175,6 +175,12 @@ show_error_codes = true
 module = ["pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# The remote provider is an optional extra and is not installed in the default
+# CI environment.
+module = ["anthropic", "anthropic.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

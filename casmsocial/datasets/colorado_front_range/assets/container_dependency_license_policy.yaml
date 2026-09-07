@@ -10,14 +10,6 @@ reviewed_override_licenses:
 forbidden_package_types:
   - cargo
 metadata_overrides:
-  annotated-types:
-    package_type: pypi
-    version: 0.8.0
-    license: MIT
-    source_url: https://github.com/annotated-types/annotated-types/blob/v0.8.0/LICENSE
-    evidence:
-      - path: /app/.venv/lib/python3.12/site-packages/annotated_types-0.8.0.dist-info/licenses/LICENSE
-        sha256: fe1049884b1a0d9342901e88e07f32925d24b3121d9972b6a6805fb9824b095d
   duckdb:
     package_type: pypi
     version: 1.5.5
