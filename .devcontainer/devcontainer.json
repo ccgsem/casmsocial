@@ -5,7 +5,7 @@
     "context": "..",
     "target": "dev",
     "args": {
-      "UV_INSECURE_HOST": "download.pytorch.org"
+      "UV_INSECURE_HOST": "download-r2.pytorch.org"
     }
   },
   "workspaceFolder": "/workspace/casmsocial",

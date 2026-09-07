@@ -93,7 +93,7 @@ MinIO, creates the bucket, and runs the fixture loader:
 make wake-county-heat-compose
 ```
 
-`UV_INSECURE_HOST=download.pytorch.org` is needed in environments whose
+`UV_INSECURE_HOST=download-r2.pytorch.org` is needed in environments whose
 certificate store does not trust the PyTorch CPU wheel host. If your
 environment trusts that host, omit the variable.
 
@@ -172,7 +172,7 @@ checksums, row counts, and DuckDB-visible schemas before loading.
 If Docker image build fails while downloading Torch, rerun with:
 
 ```bash
-UV_INSECURE_HOST=download.pytorch.org
+UV_INSECURE_HOST=download-r2.pytorch.org
 ```
 
 If the loader cannot attach DuckLake, check that Postgres is healthy and that

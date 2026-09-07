@@ -5,6 +5,7 @@ reviewed_spdx_identifiers:
   - Apache-2.0
   - BSD-2-Clause
   - BSD-3-Clause
+  - BSL-1.0
   - CC0-1.0
   - ISC
   - LLVM-exception
@@ -44,25 +45,25 @@ metadata_overrides:
     license: BSD-3-Clause
     evidence: nodeenv-1.10.0.dist-info/licenses/LICENSE
   numba:
-    version: 0.66.0
+    version: 0.67.0
     license: BSD-2-Clause
-    evidence: numba-0.66.0.dist-info/licenses/LICENSE
+    evidence: numba-0.67.0.dist-info/licenses/LICENSE
   pandas:
-    version: 3.0.3
+    version: 3.0.5
     license: BSD-3-Clause
-    evidence: pandas-3.0.3.dist-info/LICENSE
+    evidence: pandas-3.0.5.dist-info/LICENSE
   protobuf:
-    version: 7.36.0
+    version: 7.36.1
     license: BSD-3-Clause
-    evidence: protobuf-7.36.0.dist-info/LICENSE and package metadata License=3-Clause BSD License
+    evidence: protobuf-7.36.1.dist-info/LICENSE and package metadata License=3-Clause BSD License
   repast4py:
     version: 1.2.1
     license: BSD-3-Clause
     evidence: repast4py-1.2.1.dist-info/licenses/LICENSE.txt and package metadata
   scipy:
-    version: 1.18.0
+    version: 1.18.1
     license: BSD-3-Clause
-    evidence: scipy-1.18.0.dist-info/LICENSE.txt
+    evidence: scipy-1.18.1.dist-info/LICENSE.txt
   shapely:
     version: 2.1.2
     license: BSD-3-Clause
@@ -71,3 +72,21 @@ metadata_overrides:
     version: 1.14.0
     license: BSD-3-Clause
     evidence: sympy-1.14.0.dist-info/licenses/LICENSE
+
+# 2026-09-07 maintainer assessment: this routine dependency refresh remains
+# in scope under PRS 26-1280's Ongoing Community/Consortium Participation
+# pathway. The refreshed package licenses are compatible with CASMSocial's
+# MIT distribution. Torch 2.14's SBOM declares a composite expression; its
+# BSL-1.0 identifier is Boost Software License 1.0, and the wheel retains
+# the associated third-party license notices.
+maintenance_assessments:
+  - date: 2026-09-07
+    scope: dependency_refresh
+    packages:
+      - numba==0.67.0
+      - pandas==3.0.5
+      - protobuf==7.36.1
+      - scipy==1.18.1
+      - torch==2.14.0+cpu
+    decision: compatible_with_mit_distribution
+    evidence: PyTorch v2.14.0 LICENSE and wheel license files; SPDX BSL-1.0 (Boost Software License 1.0).

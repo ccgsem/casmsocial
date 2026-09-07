@@ -150,7 +150,14 @@ def test_production_policy_does_not_guess_ambiguous_bsd_variant():
 
     assert ambiguous in policy["ambiguous_license_names"]
     assert ambiguous not in policy["license_name_aliases"]
-    assert policy["metadata_overrides"]["numba"]["license"] == "BSD-2-Clause"
+    assert "BSL-1.0" in policy["reviewed_spdx_identifiers"]
+    assert policy["metadata_overrides"]["numba"] == {
+        "version": "0.67.0",
+        "license": "BSD-2-Clause",
+        "evidence": "numba-0.67.0.dist-info/licenses/LICENSE",
+    }
+    for name, version in (("pandas", "3.0.5"), ("protobuf", "7.36.1"), ("scipy", "1.18.1")):
+        assert policy["metadata_overrides"][name]["version"] == version
     for name in ("affine", "colorama", "Jinja2", "mpmath", "nodeenv", "pandas", "scipy", "shapely", "sympy"):
         override = policy["metadata_overrides"][name]
         assert override["license"] == "BSD-3-Clause"

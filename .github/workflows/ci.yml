@@ -132,7 +132,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Build prod image
-        run: docker build --target prod -t casmsocial:ci .
+        run: docker build --build-arg UV_INSECURE_HOST=download-r2.pytorch.org --target prod -t casmsocial:ci .
 
       - name: Smoke test -- models register, venv is on PATH
         run: |
@@ -197,7 +197,7 @@ jobs:
         # currently can't be built on arm64 -- pymetis must compile METIS
         # from source there and a meson/mpicxx interaction breaks (known,
         # documented limitation; see Dockerfile's `tools` stage comment).
-        run: docker build --target tools -t casmsocial:ci-tools .
+        run: docker build --build-arg UV_INSECURE_HOST=download-r2.pytorch.org --target tools -t casmsocial:ci-tools .
 
       - name: Smoke test -- pymetis importable in tools image
         run: docker run --rm casmsocial:ci-tools python -c "import pymetis; print('OK')"

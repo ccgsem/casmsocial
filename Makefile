@@ -1,7 +1,7 @@
 DOCKER_MPI_COMPOSE ?= docker compose -f docker-compose.mpi.yaml -p casmsocial-mpi
 DOCKER_MPI_HOSTFILE ?= config/mpi-hosts
 DOCKER_MPI_RANKS ?= 2
-DOCKER_MPI_UV_INSECURE_HOST ?= download.pytorch.org
+DOCKER_MPI_UV_INSECURE_HOST ?= download-r2.pytorch.org
 
 .PHONY: install
 install: ## Install the virtual environment and install the pre-commit hooks
