@@ -99,7 +99,7 @@ To run in a Docker container (option 3):
 
 ```bash
 docker build --target prod \
-  --build-arg UV_INSECURE_HOST=download.pytorch.org \
+  --build-arg UV_INSECURE_HOST=download-r2.pytorch.org \
   -t casmsocial:local .
 
 docker run --rm --init \

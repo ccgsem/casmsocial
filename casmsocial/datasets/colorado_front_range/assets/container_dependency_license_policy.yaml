@@ -12,19 +12,19 @@ forbidden_package_types:
 metadata_overrides:
   annotated-types:
     package_type: pypi
-    version: 0.7.0
+    version: 0.8.0
     license: MIT
-    source_url: https://github.com/annotated-types/annotated-types/blob/v0.7.0/LICENSE
+    source_url: https://github.com/annotated-types/annotated-types/blob/v0.8.0/LICENSE
     evidence:
-      - path: /app/.venv/lib/python3.12/site-packages/annotated_types-0.7.0.dist-info/licenses/LICENSE
+      - path: /app/.venv/lib/python3.12/site-packages/annotated_types-0.8.0.dist-info/licenses/LICENSE
         sha256: fe1049884b1a0d9342901e88e07f32925d24b3121d9972b6a6805fb9824b095d
   duckdb:
     package_type: pypi
-    version: 1.5.4
+    version: 1.5.5
     license: MIT
-    source_url: https://github.com/duckdb/duckdb-python/blob/v1.5.4/LICENSE
+    source_url: https://github.com/duckdb/duckdb-python/blob/v1.5.5/LICENSE
     evidence:
-      - path: /app/.venv/lib/python3.12/site-packages/duckdb-1.5.4.dist-info/licenses/LICENSE
+      - path: /app/.venv/lib/python3.12/site-packages/duckdb-1.5.5.dist-info/licenses/LICENSE
         sha256: 075c33400ffcb0c586dd106a029d3e733e9da3693f8fcb9cebfc651c8a2f14e3
   jinja2:
     package_type: pypi

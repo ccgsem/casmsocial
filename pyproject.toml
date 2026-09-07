@@ -169,6 +169,12 @@ warn_return_any = true
 warn_unused_ignores = true
 show_error_codes = true
 
+[[tool.mypy.overrides]]
+# PyArrow 25 does not publish a py.typed marker. Keep the strict gate for
+# first-party code while treating this untyped third-party import explicitly.
+module = ["pyarrow", "pyarrow.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

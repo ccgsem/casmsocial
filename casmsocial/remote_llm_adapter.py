@@ -387,7 +387,7 @@ class AnthropicProvider:
     ) -> None:
         if client is None:
             try:
-                from anthropic import Anthropic  # type: ignore[import-not-found]
+                from anthropic import Anthropic
             except ImportError as exc:
                 err = LLMProviderUnavailableError(
                     "AnthropicProvider requires the `anthropic` package; "
