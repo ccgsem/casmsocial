@@ -10,7 +10,7 @@ Usage (single rank)::
     uv run python scripts/run_scenario.py \\
         --scenario-db http://localhost:8000 \\
         --model casmsocial \\
-        --model-version 2.4.0 \\
+        --model-version 2.8.0 \\
         --scenario dmv_100
 
 Usage (multi-rank via MPI)::
@@ -18,7 +18,7 @@ Usage (multi-rank via MPI)::
     uv run mpirun -n 8 python scripts/run_scenario.py \\
         --scenario-db /path/to/models.db \\
         --model casmsocial \\
-        --model-version 2.4.0 \\
+        --model-version 2.8.0 \\
         --scenario dmv_100 \\
         --param duration.hours=48 \\
         --param behavior.engine=schedule
@@ -28,7 +28,7 @@ Usage (catalog-only check)::
     uv run python scripts/run_scenario.py \\
         --scenario-db http://localhost:8000 \\
         --model casmsocial \\
-        --model-version 2.4.0 \\
+        --model-version 2.8.0 \\
         --scenario dmv_100 \\
         --resolve-only
 
@@ -238,7 +238,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--model-version",
         required=True,
         metavar="VERSION",
-        help="Exact model version string as registered in casmdb (e.g. '2.4.0').",
+        help="Exact model version string as registered in casmdb (e.g. '2.8.0').",
     )
     parser.add_argument(
         "--scenario",

@@ -15,7 +15,7 @@ Usage::
     uv run python scripts/register_casmsocial.py --db /path/to/models.db
 
     # Specify version explicitly (defaults to casmsocial.__version__)
-    uv run python scripts/register_casmsocial.py --db /path/to/models.db --version 2.4.0
+    uv run python scripts/register_casmsocial.py --db /path/to/models.db --version 2.8.0
 
     # REST API
     uv run python scripts/register_casmsocial.py --db http://localhost:8000
