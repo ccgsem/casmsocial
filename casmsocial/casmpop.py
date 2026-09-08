@@ -1989,12 +1989,31 @@ class CasmPop(Model):
         )
 
     def _partition_table_name(self) -> str | None:
-        """Return the configured partition table name, if enabled."""
+        """Return the partition table name, auto-derived from places.table if not set explicitly.
+
+        When ``partition.table`` is empty and the MPI world size is greater than
+        one, the table name is derived from the schema of ``places.table``::
+
+            partitions.{schema}_place_partitions
+
+        For example, ``places.table = wake_county_heat.places`` →
+        ``partitions.wake_county_heat_place_partitions``.
+
+        Set ``partition.table`` explicitly to override the derived name.
+        """
         partition_table = self.params.get("partition.table", "")
         if partition_table is None:
             return None
         partition_table = str(partition_table).strip()
-        return partition_table or None
+        if partition_table:
+            return partition_table
+        # Auto-derive from places.table schema when running multi-rank.
+        if getattr(self, "size", 1) > 1:
+            places_table = str(self.params.get("places.table", "")).strip()
+            if places_table and "." in places_table:
+                schema = places_table.split(".")[0]
+                return f"partitions.{schema}_place_partitions"
+        return None
 
     def _partition_imputation(self) -> int:
         """Resolve the imputation value used by the partition table."""
@@ -2028,14 +2047,14 @@ class CasmPop(Model):
                 COUNT(*),
                 COALESCE(SUM(CASE WHEN rank < 0 OR rank >= ? THEN 1 ELSE 0 END), 0)
             FROM {partition_identifier}
-            WHERE imputation = ? AND n_ranks = ?
+            WHERE imputation = ? AND total_ranks = ?
             """,  # noqa: S608 - table identifier is validated by quote_table_identifier.
             [self.size, partition_imputation, self.size],
         ).fetchone()
         if partition_count == 0:
             message = (
                 f"No partition rows found in {partition_table} for "
-                f"(imputation={partition_imputation}, n_ranks={self.size})"
+                f"(imputation={partition_imputation}, total_ranks={self.size})"
             )
             if require_full_coverage:
                 raise MissingPartitionAssignmentError(message)
@@ -2054,7 +2073,7 @@ class CasmPop(Model):
             LEFT JOIN {partition_identifier} part
                    ON part.place_id = p.sp_id
                   AND part.imputation = ?
-                  AND part.n_ranks = ?
+                  AND part.total_ranks = ?
             WHERE part.place_id IS NULL
             """,  # noqa: S608 - table identifiers are validated by quote_table_identifier.
             [partition_imputation, self.size],
@@ -2064,7 +2083,7 @@ class CasmPop(Model):
 
         message = (
             f"Partition table {partition_table} is missing {missing_assignment_count} place assignments "
-            f"for (imputation={partition_imputation}, n_ranks={self.size})"
+            f"for (imputation={partition_imputation}, total_ranks={self.size})"
         )
         if require_full_coverage:
             raise MissingPartitionAssignmentError(message)
@@ -2127,7 +2146,7 @@ class CasmPop(Model):
         if partition_count == 0:
             raise MissingPartitionAssignmentError(
                 f"No partition rows found in {partition_table} for "
-                f"(imputation={partition_imputation}, n_ranks={self.size})"
+                f"(imputation={partition_imputation}, total_ranks={self.size})"
             )
 
         if invalid_rank_count:
@@ -2146,7 +2165,7 @@ class CasmPop(Model):
         if missing_assignment_count:
             raise MissingPartitionAssignmentError(
                 f"Partition table {partition_table} is missing {missing_assignment_count} place assignments "
-                f"for (imputation={partition_imputation}, n_ranks={self.size})"
+                f"for (imputation={partition_imputation}, total_ranks={self.size})"
             )
 
     def _validate_materialized_full_partition_table(self, places_table: str, partition_table: str) -> None:
@@ -2217,7 +2236,7 @@ class CasmPop(Model):
                         CAST(part.rank AS INTEGER) AS rank
                     FROM {partition_identifier} part
                     WHERE part.imputation = ?
-                      AND part.n_ranks = ?
+                      AND part.total_ranks = ?
                     """,  # noqa: S608 - table identifier is validated by quote_table_identifier.
                 [self._partition_imputation(), self.size],
             )
@@ -2246,7 +2265,7 @@ class CasmPop(Model):
                     LEFT JOIN {partition_identifier} part
                            ON part.place_id = p.sp_id
                           AND part.imputation = ?
-                          AND part.n_ranks = ?
+                          AND part.total_ranks = ?
                     """,  # noqa: S608 - table identifiers are validated by quote_table_identifier.
                 [self._partition_default_rank(), self._partition_imputation(), self.size],
             )

@@ -10,3 +10,7 @@ parameters:
   contacts.table: ''
   contacts.enabled: false
   communication.enabled: false
+  # partition.table is auto-derived from places.table schema on multi-rank runs:
+  #   partitions.wake_county_heat_place_partitions
+  # Supports total_ranks = 2, 4, 8 (pre-generated via network_partitioner_ducklake.py).
+  # Override partition.table explicitly to use a different partition table.

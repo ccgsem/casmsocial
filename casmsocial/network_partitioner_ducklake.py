@@ -341,10 +341,10 @@ def ensure_output_table(conn: duckdb.DuckDBPyConnection, qualified_name: str) ->
 
     query = f"""
         CREATE TABLE IF NOT EXISTS {output_identifier} (
-            imputation INTEGER NOT NULL,
-            n_ranks    INTEGER NOT NULL,
-            rank       INTEGER NOT NULL,
-            place_id   BIGINT  NOT NULL
+            imputation  INTEGER NOT NULL,
+            total_ranks INTEGER NOT NULL,
+            rank        INTEGER NOT NULL,
+            place_id    BIGINT  NOT NULL
         )
         """
     conn.execute(query)
@@ -364,7 +364,7 @@ def count_existing_partition_rows(
     query = f"""
         SELECT COUNT(*)
         FROM {output_identifier}
-        WHERE imputation = ? AND n_ranks = ?
+        WHERE imputation = ? AND total_ranks = ?
         """  # noqa: S608 - table identifier is validated by quote_table_identifier.
     result = conn.execute(query, [imputation, n_ranks]).fetchone()
     return int(result[0]) if result else 0
@@ -390,7 +390,7 @@ def write_partition_table(
     df = pd.DataFrame(
         {
             "imputation": pd.Series([imputation] * len(partition), dtype="int32"),
-            "n_ranks": pd.Series([n_ranks] * len(partition), dtype="int32"),
+            "total_ranks": pd.Series([n_ranks] * len(partition), dtype="int32"),
             "rank": pd.Series(list(partition.values()), dtype="int32"),
             "place_id": pd.Series(list(partition.keys()), dtype="int64"),
         }
@@ -398,7 +398,7 @@ def write_partition_table(
 
     delete_query = f"""
         DELETE FROM {output_identifier}
-        WHERE imputation = ? AND n_ranks = ?
+        WHERE imputation = ? AND total_ranks = ?
         """  # noqa: S608 - table identifier is validated by quote_table_identifier.
     deleted = conn.execute(
         delete_query,
@@ -409,19 +409,19 @@ def write_partition_table(
     if deleted_count:
         logger.info(
             f"Replaced {deleted_count:,} existing rows in {qualified_name} for "
-            f"(imputation={imputation}, n_ranks={n_ranks})"
+            f"(imputation={imputation}, total_ranks={n_ranks})"
         )
 
     conn.register("partition_df", df)
     insert_query = f"""
-        INSERT INTO {output_identifier} (imputation, n_ranks, rank, place_id)
-        SELECT imputation, n_ranks, rank, place_id FROM partition_df
+        INSERT INTO {output_identifier} (imputation, total_ranks, rank, place_id)
+        SELECT imputation, total_ranks, rank, place_id FROM partition_df
         """  # noqa: S608 - table identifier is validated by quote_table_identifier.
     conn.execute(insert_query)
     conn.unregister("partition_df")
 
     logger.info(
-        f"Inserted {len(df):,} partition rows into {qualified_name} " f"(imputation={imputation}, n_ranks={n_ranks})"
+        f"Inserted {len(df):,} partition rows into {qualified_name} " f"(imputation={imputation}, total_ranks={n_ranks})"
     )
     return len(df)
 
