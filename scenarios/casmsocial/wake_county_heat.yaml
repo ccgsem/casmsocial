@@ -14,3 +14,4 @@ parameters:
   #   partitions.wake_county_heat_place_partitions
   # Supports total_ranks = 2, 4, 8 (pre-generated via network_partitioner_ducklake.py).
   # Override partition.table explicitly to use a different partition table.
+  partition.require_full_coverage: true
