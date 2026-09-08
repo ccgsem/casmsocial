@@ -118,14 +118,22 @@ class SimulatorControlServicer(pb2_grpc.SimulatorControlServicer):
             return pb2.StateResponse(run_id=request.run_id, state=self._state)
 
     def StreamObs(self, request, context) -> Iterator[pb2.ObsBatch]:
+        """Live-stream observation batches as they are published by the model.
+
+        Uses :meth:`ObservationBroker.subscribe` so new batches are yielded as
+        the simulation progresses rather than only returning a snapshot of
+        batches buffered at call time.  The stream closes naturally once the
+        broker is marked closed (i.e. after the run completes or is cancelled).
+        """
         with self._lock:
             if request.run_id != self._run_id:
                 context.abort(grpc.StatusCode.NOT_FOUND, "unknown run_id")
         try:
-            result = self._broker.read(request.channel, start_batch_id=request.start_tick)
+            subscription = self._broker.subscribe(request.channel, start_batch_id=request.start_tick)
         except ObservationCursorExpiredError as error:
             context.abort(grpc.StatusCode.OUT_OF_RANGE, str(error))
-        for batch in result.batches:
+            return
+        for batch in subscription:
             if not context.is_active():
                 return
             sink = pa.BufferOutputStream()

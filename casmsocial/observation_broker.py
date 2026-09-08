@@ -142,6 +142,53 @@ class ObservationBroker:
             result = tuple(batch for batch in batches if batch.batch_id >= start_batch_id)
             return ObservationRead(batches=result, next_batch_id=next_batch_id, closed=self._closed)
 
+    def subscribe(
+        self,
+        channel: str,
+        *,
+        start_batch_id: int = 0,
+        poll_timeout: float = 0.5,
+    ):
+        """Block-and-yield generator: yields batches as they are published.
+
+        Yields each :class:`ObservationBatch` with ``batch_id >=
+        start_batch_id`` in order, then blocks waiting for the next one.
+        Stops when the broker is closed and no further batches remain.
+
+        Intended for use by long-lived streaming transports (gRPC server-side
+        streaming, Arrow Flight do-get) that must not busy-wait.
+        ``poll_timeout`` caps how long each internal wait sleeps; lower values
+        reduce tail latency after the last batch is published.
+
+        Raises :class:`ObservationCursorExpiredError` if the requested cursor
+        predates retained history (same semantics as :meth:`read`).
+        """
+        if start_batch_id < 0:
+            raise ValueError("start_batch_id must not be negative")
+        cursor = start_batch_id
+        while True:
+            with self._condition:
+                # Validate cursor isn't behind retained window.
+                batches = self._batches.get(channel, deque())
+                if batches and cursor < batches[0].batch_id:
+                    raise ObservationCursorExpiredError(
+                        f"channel {channel!r} retains batches from {batches[0].batch_id}, not {cursor}"
+                    )
+                # Collect any newly available batches.
+                pending = tuple(b for b in batches if b.batch_id >= cursor)
+                closed = self._closed
+                if not pending and not closed:
+                    # Block until publish() or close() fires notify_all().
+                    self._condition.wait(timeout=poll_timeout)
+                    continue
+            # Release lock before yielding — yield must not hold the lock.
+            for batch in pending:
+                yield batch
+            if pending:
+                cursor = pending[-1].batch_id + 1
+            if closed and not pending:
+                return
+
     def close(self) -> None:
         """Mark the run terminal and wake transports waiting for new batches."""
         with self._condition:
