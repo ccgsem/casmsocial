@@ -17,17 +17,20 @@ Workflow:
        optional vertex weights for workload-balanced partitioning.
     3. Partition each graph with ``pymetis.part_graph`` using the CSR format for
        each requested MPI rank count.
-    4. Append rows ``(imputation, n_ranks, rank, place_id)`` to the output
+    4. Append rows ``(imputation, total_ranks, rank, place_id)`` to the output
        table, replacing any pre-existing rows for the same
-       ``(imputation, n_ranks)`` so re-running is idempotent.
+       ``(imputation, total_ranks)`` so re-running is idempotent.
 
 Usage:
     python -m casmsocial.network_partitioner_ducklake \\
-        --ducklake-path data/datalakehouse \\
+        --ducklake-path /path/to/datalakehouse \\
         --schema wake_county_heat \\
         --imputations all \\
         --n-ranks 2,4,8 \\
-        --output-table partitions.metis_place_partitions
+        --output-table partitions.wake_county_heat_place_partitions
+
+    # The output table name follows the convention partitions.{schema}_place_partitions,
+    # which casmsocial auto-derives from places.table on multi-rank runs.
 """
 
 from __future__ import annotations
@@ -356,7 +359,7 @@ def count_existing_partition_rows(
     imputation: int,
     n_ranks: int,
 ) -> int:
-    """Return existing partition rows for an ``(imputation, n_ranks)`` pair."""
+    """Return existing partition rows for an ``(imputation, total_ranks)`` pair."""
     if not check_if_table_exists(conn, qualified_name):
         return 0
 
@@ -379,7 +382,7 @@ def write_partition_table(
 ) -> int:
     """Write the partition assignment to the DuckLake.
 
-    Existing rows for the same ``(imputation, n_ranks)`` combination are
+    Existing rows for the same ``(imputation, total_ranks)`` combination are
     deleted first so re-running the partitioner is idempotent.
 
     Returns the number of rows inserted.
@@ -485,7 +488,7 @@ def _partition_rank_values_from_connection(
         if existing_rows and not force:
             logger.info(
                 f"Partition rows already exist in {output_table} for "
-                f"(imputation={imputation}, n_ranks={n_ranks}); "
+                f"(imputation={imputation}, total_ranks={n_ranks}); "
                 f"skipping regeneration ({existing_rows:,} rows). Use --force to replace them."
             )
             continue
