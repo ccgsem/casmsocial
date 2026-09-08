@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import re
+import threading
 import time
 from collections import OrderedDict, namedtuple
 from dataclasses import dataclass
@@ -1063,6 +1064,11 @@ class CasmPop(Model):
         self._configure_parallel_processing()
 
         logger.info(f"Rank {self.rank} starting CasmPop with params: " f"{self.params}")
+
+        # Cooperative cancellation flag.  Set via cancel() from an external
+        # thread (e.g. the gRPC SimulatorControl servicer).  Checked at the
+        # top of each step() so cancellation latency is at most one tick.
+        self._cancel_event = threading.Event()
 
         # create the schedule
         self.runner = schedule.init_schedule_runner(self.comm)
@@ -3710,8 +3716,36 @@ class CasmPop(Model):
             )
         return intents
 
+    def cancel(self) -> None:
+        """Request cooperative cancellation.
+
+        Thread-safe.  Sets an internal flag that is checked at the top of the
+        next ``step()`` call.  The runner will stop cleanly after the current
+        tick completes — cancellation latency is at most one tick duration.
+        """
+        self._cancel_event.set()
+
     def step(self) -> None:
         """Step the model forward one time step."""
+
+        # Collective cancel check — all ranks participate so that a cancel
+        # signal on rank 0 (set by the gRPC Cancel RPC) propagates to all
+        # worker ranks simultaneously.  allreduce with MPI.SUM means any rank
+        # signalling cancel stops the whole ensemble.
+        local_cancel = 1 if self._cancel_event.is_set() else 0
+        if self.size > 1:
+            from mpi4py import MPI as _MPI
+            global_cancel = self.comm.allreduce(local_cancel, op=_MPI.SUM)
+        else:
+            global_cancel = local_cancel
+        if global_cancel:
+            logger.info(
+                "Cancellation signalled (rank {}) — stopping runner after tick {}.",
+                self.rank,
+                self.runner.schedule.tick,
+            )
+            self.runner.schedule_stop(self.runner.schedule.tick)
+            return
 
         self.cal.increment(self.time_step_minutes)
 

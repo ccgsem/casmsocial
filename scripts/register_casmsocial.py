@@ -48,10 +48,6 @@ SCENARIO_DIR = Path(__file__).resolve().parent.parent / "scenarios" / "casmsocia
 REQUIRED_SCENARIO_FIELDS = {"scenario_name", "model_name", "description", "parameters"}
 REQUIRED_SCENARIO_PARAMETER_KEYS = {
     "model.name",
-    "places.table",
-    "households.table",
-    "persons.table",
-    "activities.table",
 }
 
 
@@ -167,6 +163,7 @@ def _build_model_record(version: str, resources_uri: str) -> dict[str, Any]:
         ],
         "model_resources_uri": resources_uri,
         "model_metadata": {
+            "backend": "repast4py",
             "factory_key": CASMSOCIAL_FACTORY_KEY,
             "framework": "repast4py",
         },

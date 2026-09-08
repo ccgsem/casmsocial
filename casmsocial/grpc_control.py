@@ -7,7 +7,7 @@ import os
 from collections.abc import Callable, Iterator
 from concurrent import futures
 from pathlib import Path
-from threading import Lock, Thread
+from threading import Event, Lock
 
 import grpc
 import pyarrow as pa
@@ -28,15 +28,58 @@ def secure_run_directory(path: Path) -> None:
 
 
 class SimulatorControlServicer(pb2_grpc.SimulatorControlServicer):
-    """Atomically accepts one run and exposes its broker-backed observations."""
+    """Atomically accepts one run and exposes its broker-backed observations.
 
-    def __init__(self, broker: ObservationBroker, start_run: Callable[[str, bytes], None]) -> None:
+    In the multi-rank runner, the model is driven from rank 0's main thread
+    rather than a daemon thread, so that all MPI collective calls stay on the
+    main thread (MPI_THREAD_FUNNELED safety).  ``Start`` therefore only stashes
+    the request and fires ``_start_event``; ``wait_for_run`` lets the main
+    thread block until a run arrives.  ``complete_run`` is called by the main
+    thread once the model finishes.
+
+    For single-rank deployments the same flow applies — the main thread runs
+    the model without issuing any MPI collectives.
+    """
+
+    def __init__(self, broker: ObservationBroker) -> None:
         self._broker = broker
-        self._start_run = start_run
         self._lock = Lock()
         self._run_id: str | None = None
         self._state = pb2.RUN_STATE_INITIALIZING
-        self._worker: Thread | None = None
+        self._model = None  # set via _set_model once the model is instantiated
+        self._pending_run: tuple[str, bytes] | None = None
+        self._start_event = Event()
+
+    def _set_model(self, model) -> None:
+        """Store a reference to the running model for cooperative cancellation.
+
+        Called from rank 0's main thread before ``model.start()``.
+        """
+        with self._lock:
+            self._model = model
+
+    def wait_for_run(self) -> tuple[str, bytes]:
+        """Block until a ``Start`` RPC arrives and return ``(run_id, config_json)``.
+
+        Must be called from rank 0's main thread.
+        """
+        self._start_event.wait()
+        assert self._pending_run is not None  # set before event is fired
+        return self._pending_run
+
+    def complete_run(self, *, success: bool) -> None:
+        """Transition to terminal state and close the broker.
+
+        Called from rank 0's main thread after the model finishes.
+        """
+        with self._lock:
+            if self._state == pb2.RUN_STATE_RUNNING:
+                self._state = pb2.RUN_STATE_COMPLETED if success else pb2.RUN_STATE_FAILED
+        self._broker.close()
+
+    # ------------------------------------------------------------------
+    # gRPC RPC handlers (called from gRPC thread-pool threads)
+    # ------------------------------------------------------------------
 
     def Start(self, request, context):
         if not request.run_id or not request.config_json:
@@ -44,41 +87,29 @@ class SimulatorControlServicer(pb2_grpc.SimulatorControlServicer):
         with self._lock:
             if self._run_id is not None:
                 context.abort(grpc.StatusCode.FAILED_PRECONDITION, "this process already accepted a run")
-            self._run_id = request.run_id  # Reserve before calling user code: fixes concurrent Start races.
+            self._run_id = request.run_id
             self._state = pb2.RUN_STATE_RUNNING
-            self._worker = Thread(
-                target=self._run,
-                args=(request.run_id, request.config_json),
-                name=f"casmsocial-run-{request.run_id}",
-                daemon=True,
-            )
-            self._worker.start()
+            self._pending_run = (request.run_id, request.config_json)
+        # Signal the main thread.  Set event after releasing the lock so the
+        # main thread never races on _pending_run.
+        self._start_event.set()
         return pb2.StartResponse(run_id=request.run_id)
 
-    def _run(self, run_id: str, config_json: bytes) -> None:
-        """Run the model off the gRPC request thread and expose terminal state."""
-        try:
-            self._start_run(run_id, config_json)
-        except Exception:
-            with self._lock:
-                if self._state != pb2.RUN_STATE_CANCELLED:
-                    self._state = pb2.RUN_STATE_FAILED
-            self._broker.close()
-            return
-        with self._lock:
-            if self._state == pb2.RUN_STATE_RUNNING:
-                self._state = pb2.RUN_STATE_COMPLETED
-        self._broker.close()
-
     def Cancel(self, request, context):
-        """Report that cooperative model cancellation is not yet supported.
+        """Request cooperative cancellation of the running simulation.
 
-        CASMSocial's current model lifecycle has no cancellation hook. Returning
-        ``acknowledged=False`` prevents callers from treating a still-running
-        simulation as cancelled.
+        Sets a flag checked at the top of each model tick.  The model will stop
+        cleanly after the current tick completes.  Returns ``acknowledged=True``
+        once the flag is set; returns ``acknowledged=False`` only when no run is
+        active or the model reference is not yet available.
         """
         with self._lock:
-            return pb2.CancelResponse(acknowledged=False)
+            if self._state != pb2.RUN_STATE_RUNNING or self._model is None:
+                return pb2.CancelResponse(acknowledged=False)
+            self._state = pb2.RUN_STATE_CANCELLED
+            model = self._model
+        model.cancel()
+        return pb2.CancelResponse(acknowledged=True)
 
     def GetState(self, request, context):
         with self._lock:
@@ -103,15 +134,26 @@ class SimulatorControlServicer(pb2_grpc.SimulatorControlServicer):
             yield pb2.ObsBatch(channel=batch.channel, tick=batch.batch_id, arrow_ipc=sink.getvalue().to_pybytes())
 
 
-def start_control_server(run_dir: Path, broker: ObservationBroker, start_run: Callable[[str, bytes], None]):
-    """Start a loopback-only control server and write its endpoint manifest."""
+def start_control_server(
+    run_dir: Path,
+    broker: ObservationBroker,
+) -> tuple[object, SimulatorControlServicer]:
+    """Start a loopback-only control server and write its endpoint manifest.
+
+    Returns ``(grpc_server, servicer)``.  The caller is responsible for calling
+    ``servicer.wait_for_run()`` and ``servicer.complete_run()`` from the main
+    thread to drive the run lifecycle.
+    """
     secure_run_directory(run_dir)
+    servicer = SimulatorControlServicer(broker)
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
-    pb2_grpc.add_SimulatorControlServicer_to_server(SimulatorControlServicer(broker, start_run), server)
+    pb2_grpc.add_SimulatorControlServicer_to_server(servicer, server)
     port = server.add_insecure_port("127.0.0.1:0")
     if not port:
         raise RuntimeError("could not bind loopback gRPC control listener")
     server.start()
-    (run_dir / ENDPOINT_FILENAME).write_text(json.dumps({"control": {"address": f"127.0.0.1:{port}", "protocol": "casm.runner.v1"}}) + "\n")
+    (run_dir / ENDPOINT_FILENAME).write_text(
+        json.dumps({"control": {"address": f"127.0.0.1:{port}", "protocol": "casm.runner.v1"}}) + "\n"
+    )
     os.chmod(run_dir / ENDPOINT_FILENAME, 0o600)
-    return server
+    return server, servicer
