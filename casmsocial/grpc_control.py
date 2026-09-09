@@ -124,10 +124,19 @@ class SimulatorControlServicer(pb2_grpc.SimulatorControlServicer):
         the simulation progresses rather than only returning a snapshot of
         batches buffered at call time.  The stream closes naturally once the
         broker is marked closed (i.e. after the run completes or is cancelled).
+
+        Blocks waiting for the run to start if called before ``Start`` RPC,
+        so consumers may connect and call ``StreamObs`` before submitting the
+        run — they will receive all batches from tick 0.
         """
+        # Wait up to 60 s for the run to start (covers the pre-Start connect window).
+        if not self._start_event.wait(timeout=60):
+            context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "timed out waiting for run to start")
+            return
         with self._lock:
             if request.run_id != self._run_id:
                 context.abort(grpc.StatusCode.NOT_FOUND, "unknown run_id")
+                return
         try:
             subscription = self._broker.subscribe(request.channel, start_batch_id=request.start_tick)
         except ObservationCursorExpiredError as error:

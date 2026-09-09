@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import time
 from pathlib import Path
 
 from loguru import logger
@@ -188,11 +190,17 @@ def main() -> int:
     if rank == 0:
         control, flights, servicer = start_runner(args.run_dir)
         broker = servicer._broker
+        drain_grace = float(os.getenv("CASMSERVICE_RUNNER_DRAIN_GRACE", "10"))
         try:
             _rank0_main(comm, servicer, broker)
         except KeyboardInterrupt:
             pass
         finally:
+            # Keep the gRPC server alive briefly so late-connecting StreamObs
+            # consumers can drain all buffered batches before the server exits.
+            if drain_grace > 0:
+                logger.info("Run complete — holding gRPC server for {:.0f}s drain window.", drain_grace)
+                time.sleep(drain_grace)
             control.stop(0).wait()
             flights.shutdown()
     else:
