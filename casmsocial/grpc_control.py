@@ -162,6 +162,12 @@ def start_control_server(
     thread to drive the run lifecycle.
     """
     secure_run_directory(run_dir)
+    # Remove any stale endpoint file from a previous run so that pollers
+    # (casmservice prelaunch backend) see the file disappear then reappear
+    # with the new port, preventing them from connecting to a dead address.
+    stale = run_dir / ENDPOINT_FILENAME
+    if stale.exists():
+        stale.unlink()
     servicer = SimulatorControlServicer(broker)
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
     pb2_grpc.add_SimulatorControlServicer_to_server(servicer, server)
