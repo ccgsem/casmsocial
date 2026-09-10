@@ -169,7 +169,8 @@ def start_control_server(
     if stale.exists():
         stale.unlink()
     servicer = SimulatorControlServicer(broker)
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
+    # 4 streaming channels + headroom for Start/GetState/Cancel/StreamObs
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=16))
     pb2_grpc.add_SimulatorControlServicer_to_server(servicer, server)
     port = server.add_insecure_port("127.0.0.1:0")
     if not port:
