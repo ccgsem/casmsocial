@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import threading
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -1722,7 +1723,9 @@ def test_step_skips_redundant_person_loop_for_base_schedule_engine():
     model.phase_timings = {}
     model.cal = SimTime(datetime(2025, 1, 1))
     model.time_step_minutes = 60
+    model.size = 1
     model._observers = []
+    model._cancel_event = threading.Event()
     person = Person(1, 0, [], tuple([100]), {"sp_id": 1})
     step_calls = []
     person.step = lambda context, cal: step_calls.append((context, cal))
@@ -1754,7 +1757,9 @@ def test_step_runs_person_loop_for_cognitive_behavior_engine():
     model.phase_timings = {}
     model.cal = SimTime(datetime(2025, 1, 1))
     model.time_step_minutes = 60
+    model.size = 1
     model._observers = []
+    model._cancel_event = threading.Event()
     person = Person(1, 0, [], tuple([100]), {"sp_id": 1})
     step_calls = []
     person.step = lambda context, cal: step_calls.append((context, cal))
