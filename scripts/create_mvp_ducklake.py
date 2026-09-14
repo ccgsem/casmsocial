@@ -81,7 +81,7 @@ def create_mvp_tables(conn: duckdb.DuckDBPyConnection) -> None:
     conn.execute("""
         CREATE OR REPLACE TABLE partitions.mvp_two_rank_place_partitions (
             imputation INTEGER,
-            n_ranks INTEGER,
+            total_ranks INTEGER,
             rank INTEGER,
             place_id BIGINT
         )

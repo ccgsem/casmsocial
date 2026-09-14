@@ -1,6 +1,6 @@
 import json
 import time
-from threading import Event
+from threading import Event, Thread
 
 import grpc
 import pyarrow as pa
@@ -17,16 +17,19 @@ def test_grpc_and_flight_return_same_broker_observations(tmp_path):
     started = Event()
     release = Event()
 
-    def start_run(run_id, config_json):
+    def drive_run():
+        run_id, config_json = servicer.wait_for_run()
         assert run_id == "run-1"
         assert config_json == b"{}"
         started.set()
         assert release.wait(timeout=2)
         broker.publish("agents", pa.table({"id": [1]}))
         broker.publish("agents", pa.table({"id": [2]}))
-        broker.close()
+        servicer.complete_run(success=True)
 
-    control = start_control_server(tmp_path, broker, start_run)
+    control, servicer = start_control_server(tmp_path, broker)
+    driver = Thread(target=drive_run, daemon=True)
+    driver.start()
     flights = BrokerFlightServer(("127.0.0.1", 0), broker)
     try:
         endpoint = json.loads((tmp_path / ENDPOINT_FILENAME).read_text())["control"]["address"]
@@ -52,5 +55,7 @@ def test_grpc_and_flight_return_same_broker_observations(tmp_path):
         assert stub.GetState(pb2.GetStateRequest(run_id="run-1")).state == pb2.RUN_STATE_COMPLETED
         channel.close()
     finally:
+        release.set()
+        driver.join(timeout=2)
         control.stop(0).wait()
         flights.shutdown()

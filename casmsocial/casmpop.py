@@ -3742,7 +3742,11 @@ class CasmPop(Model):
         next ``step()`` call.  The runner will stop cleanly after the current
         tick completes — cancellation latency is at most one tick duration.
         """
-        self._cancel_event.set()
+        cancel_event = getattr(self, "_cancel_event", None)
+        if cancel_event is None:
+            cancel_event = threading.Event()
+            self._cancel_event = cancel_event
+        cancel_event.set()
 
     def step(self) -> None:
         """Step the model forward one time step."""
@@ -3751,8 +3755,9 @@ class CasmPop(Model):
         # signal on rank 0 (set by the gRPC Cancel RPC) propagates to all
         # worker ranks simultaneously.  allreduce with MPI.SUM means any rank
         # signalling cancel stops the whole ensemble.
-        local_cancel = 1 if self._cancel_event.is_set() else 0
-        if self.size > 1:
+        cancel_event = getattr(self, "_cancel_event", None)
+        local_cancel = 1 if cancel_event is not None and cancel_event.is_set() else 0
+        if getattr(self, "size", 1) > 1:
             from mpi4py import MPI as _MPI
             global_cancel = self.comm.allreduce(local_cancel, op=_MPI.SUM)
         else:

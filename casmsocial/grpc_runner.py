@@ -74,6 +74,27 @@ def _run_model(
     model.start()
 
 
+def run_submitted_model(
+    run_id: str,
+    config_json: bytes,
+    broker: ObservationBroker,
+) -> None:
+    """Run one submitted model using the loopback runner's current contract.
+
+    This compatibility helper is useful to callers that submit a serialized
+    gRPC payload directly. The rank-0 lifecycle still uses ``_run_model`` so
+    it can coordinate MPI workers and publish the active model to the
+    control servicer.
+    """
+    params = json.loads(config_json)
+    if not isinstance(params, dict):
+        raise ValueError("config_json must encode a JSON object of model parameters")
+    params = dict(params)
+    params["simulation.run_id"] = run_id
+    params["observers.arrow_server.enabled"] = False
+    _run_model(run_id, params, broker, MPI.COMM_WORLD)
+
+
 # ---------------------------------------------------------------------------
 # Rank 0 — servers + run lifecycle
 # ---------------------------------------------------------------------------
