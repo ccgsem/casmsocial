@@ -409,7 +409,7 @@ def _create_partitioned_input_tables(conn):
     conn.execute("""
         CREATE TABLE partitions.metis_place_partitions (
             imputation INTEGER,
-            n_ranks INTEGER,
+            total_ranks INTEGER,
             rank INTEGER,
             place_id BIGINT
         )

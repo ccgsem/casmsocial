@@ -47,7 +47,7 @@ def test_submitted_model_propagates_missing_plugin_error(monkeypatch):
 
 
 def test_runner_writes_combined_loopback_endpoint_manifest(tmp_path):
-    control, flights = start_runner(tmp_path)
+    control, flights, _servicer = start_runner(tmp_path)
     try:
         manifest = json.loads((tmp_path / ENDPOINT_FILENAME).read_text())
         assert manifest["control"]["address"].startswith("127.0.0.1:")

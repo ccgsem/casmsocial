@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from concurrent import futures
 from pathlib import Path
 from threading import Event, Lock

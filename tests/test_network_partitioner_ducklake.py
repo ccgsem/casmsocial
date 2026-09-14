@@ -238,10 +238,10 @@ def test_partition_many_from_ducklake_reuses_graph_per_imputation(monkeypatch, t
 
     assert [(call[0], call[1]) for call in build_calls] == [("persons", 1), ("persons", 2)]
     rows = conn.execute("""
-        SELECT imputation, n_ranks, COUNT(*)
-        FROM partition_output
-        GROUP BY imputation, n_ranks
-        ORDER BY imputation, n_ranks
+            SELECT imputation, total_ranks, COUNT(*)
+            FROM partition_output
+            GROUP BY imputation, total_ranks
+            ORDER BY imputation, total_ranks
         """).fetchall()
     assert rows == [(1, 2, 3), (1, 4, 3), (2, 2, 3), (2, 4, 3)]
 
@@ -379,7 +379,7 @@ def test_write_partition_table_replaces_existing_partition_rows():
         rows = conn.execute("""
             SELECT place_id, rank
             FROM partition_output
-            WHERE imputation = 1 AND n_ranks = 2
+            WHERE imputation = 1 AND total_ranks = 2
             ORDER BY place_id
             """).fetchall()
 
