@@ -30,14 +30,14 @@ def test_create_mvp_tables_writes_two_rank_partition_table():
             ORDER BY sp_id
             """).fetchall()
         rows = conn.execute("""
-            SELECT imputation, n_ranks, rank, place_id
+            SELECT imputation, total_ranks, rank, place_id
             FROM partitions.mvp_two_rank_place_partitions
             ORDER BY place_id
             """).fetchall()
         rank_count = conn.execute("""
             SELECT COUNT(DISTINCT rank)
             FROM partitions.mvp_two_rank_place_partitions
-            WHERE imputation = 1 AND n_ranks = 2
+            WHERE imputation = 1 AND total_ranks = 2
             """).fetchone()[0]
 
         assert households == [(100, 1), (200, 1)]
