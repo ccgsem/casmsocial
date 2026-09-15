@@ -13,8 +13,8 @@ import grpc
 import pyarrow as pa
 from pyarrow import ipc
 
+from casmsocial.casmsim.proto import casm_runner_pb2 as pb2, casm_runner_pb2_grpc as pb2_grpc
 from casmsocial.observation_broker import ObservationBroker, ObservationCursorExpiredError
-from casmsocial.proto import casm_runner_pb2 as pb2, casm_runner_pb2_grpc as pb2_grpc
 
 ENDPOINT_FILENAME = "runner_endpoints.json"
 
