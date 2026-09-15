@@ -2,17 +2,17 @@ import json
 
 import pytest
 
+from casmsocial.casmsim.grpc_runner import run_submitted_model, start_runner
 from casmsocial.grpc_control import ENDPOINT_FILENAME
-from casmsocial.grpc_runner import run_submitted_model, start_runner
 
 
 def test_submitted_model_loads_configured_plugins(monkeypatch):
     loaded: list[list[str]] = []
 
-    monkeypatch.setattr("casmsocial.grpc_runner.load_builtin_models", lambda: None)
-    monkeypatch.setattr("casmsocial.grpc_runner.load_models", lambda plugins: loaded.append(plugins))
+    monkeypatch.setattr("casmsocial.casmsim.grpc_runner.load_builtin_models", lambda: None)
+    monkeypatch.setattr("casmsocial.casmsim.grpc_runner.load_models", lambda plugins: loaded.append(plugins))
     monkeypatch.setattr(
-        "casmsocial.grpc_runner.Models.create_model",
+        "casmsocial.casmsim.grpc_runner.Models.create_model",
         lambda name: (_ for _ in ()).throw(RuntimeError("stop after plugin loading")),
     )
 
@@ -27,9 +27,9 @@ def test_submitted_model_loads_configured_plugins(monkeypatch):
 
 
 def test_submitted_model_propagates_missing_plugin_error(monkeypatch):
-    monkeypatch.setattr("casmsocial.grpc_runner.load_builtin_models", lambda: None)
+    monkeypatch.setattr("casmsocial.casmsim.grpc_runner.load_builtin_models", lambda: None)
     monkeypatch.setattr(
-        "casmsocial.grpc_runner.Models.create_model",
+        "casmsocial.casmsim.grpc_runner.Models.create_model",
         lambda name: (_ for _ in ()).throw(AssertionError("model must not be created")),
     )
 
