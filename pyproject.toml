@@ -189,7 +189,7 @@ target-version = "py310"
 line-length = 120
 fix = true
 force-exclude = true
-extend-exclude = ["casmsocial/proto"]
+extend-exclude = ["casmsocial/proto", "casmsocial/casmsim/proto"]
 
 [tool.ruff.lint]
 select = [
