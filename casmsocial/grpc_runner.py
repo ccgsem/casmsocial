@@ -32,10 +32,10 @@ from loguru import logger
 from mpi4py import MPI
 
 from casmsocial.__main__ import load_builtin_models
+from casmsocial.casmsim.flight_server import start_broker_flight_server
+from casmsocial.casmsim.observation_broker import ObservationBroker
 from casmsocial.factory import Models, load_models
-from casmsocial.flight_broker import start_broker_flight_server
 from casmsocial.grpc_control import ENDPOINT_FILENAME, SimulatorControlServicer, start_control_server
-from casmsocial.observation_broker import ObservationBroker
 from casmsocial.repast_observation_broker import RepastObservationBrokerAdapter
 
 # MPI broadcast message tags
