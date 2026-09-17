@@ -5,6 +5,7 @@ COPY --from=ghcr.io/astral-sh/uv@sha256:2d890623d310b57771ce840f0da5eed5fc6d657d
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    git \
     mpich \
     libmpich-dev \
     libomp-dev \
