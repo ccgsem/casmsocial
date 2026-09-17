@@ -18,6 +18,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "casmsim>=1.0.0",
     "duckdb>=1.5.4",
     "grpcio>=1.83.0",
     "loguru>=0.7.3",
@@ -70,6 +71,7 @@ partitioning = [
 system-certs = true
 
 [tool.uv.sources]
+casmsim = { git = "https://github.com/ccgsem/casmsim.git", rev = "5024bb253ad615513862f893ffe0314a40c9b118" }
 torch = { index = "pytorch-cpu" }
 
 [[tool.uv.index]]
@@ -84,6 +86,7 @@ Documentation = "https://ccgsem.github.io/casmsocial/"
 
 [project.scripts]
 casmsocial-data = "casmsocial.datasets.cli:app"
+casmsocial-runner = "casmsocial.grpc_runner:main"
 
 [dependency-groups]
 dev = [
@@ -189,7 +192,7 @@ target-version = "py310"
 line-length = 120
 fix = true
 force-exclude = true
-extend-exclude = ["casmsocial/proto", "casmsocial/casmsim/proto"]
+extend-exclude = ["casmsocial/proto"]
 
 [tool.ruff.lint]
 select = [

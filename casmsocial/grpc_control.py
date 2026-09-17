@@ -1,3 +1,10 @@
-"""Compatibility shim for the internal gRPC control transport."""
+"""Compatibility shim for the standalone gRPC control transport."""
 
-from casmsocial.casmsim.grpc_control import *  # noqa: F403
+from casmsim.grpc_runner import (  # noqa: F401
+    ENDPOINT_FILENAME,
+    SimulatorControlServicer,
+    secure_run_directory,
+    start_control_server,
+)
+
+__all__ = ["ENDPOINT_FILENAME", "SimulatorControlServicer", "secure_run_directory", "start_control_server"]

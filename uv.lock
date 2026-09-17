@@ -199,10 +199,21 @@ wheels = [
 ]
 
 [[package]]
+name = "casmsim"
+version = "1.0.0"
+source = { git = "https://github.com/ccgsem/casmsim.git?rev=5024bb253ad615513862f893ffe0314a40c9b118#5024bb253ad615513862f893ffe0314a40c9b118" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "protobuf" },
+    { name = "pyarrow" },
+]
+
+[[package]]
 name = "casmsocial"
 version = "2.8.0"
 source = { editable = "." }
 dependencies = [
+    { name = "casmsim" },
     { name = "duckdb" },
     { name = "grpcio" },
     { name = "loguru" },
@@ -262,6 +273,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", marker = "extra == 'remote'", specifier = ">=0.109.2" },
+    { name = "casmsim", git = "https://github.com/ccgsem/casmsim.git?rev=5024bb253ad615513862f893ffe0314a40c9b118" },
     { name = "duckdb", specifier = ">=1.5.4" },
     { name = "geopandas", marker = "extra == 'data-builder'", specifier = ">=1.1.3" },
     { name = "grpcio", specifier = ">=1.83.0" },
