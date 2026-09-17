@@ -1,3 +1,3 @@
-"""Compatibility shim for the internal runner protobuf contract."""
+"""Compatibility shim for the standalone CASMSim protobuf contract."""
 
-from casmsocial.casmsim.proto.casm_runner_pb2 import *  # noqa: F403
+from casmsim.proto.casm_runner_pb2 import *  # noqa: F403

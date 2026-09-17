@@ -1,15 +1,14 @@
 import json
 import time
-from threading import Event, Thread
+from threading import Event
 
 import grpc
 import pyarrow as pa
 import pyarrow.flight as flight
-
-from casmsocial.flight_broker import BrokerFlightServer
-from casmsocial.grpc_control import ENDPOINT_FILENAME, start_control_server
-from casmsocial.observation_broker import ObservationBroker
-from casmsocial.proto import casm_runner_pb2 as pb2, casm_runner_pb2_grpc as pb2_grpc
+from casmsim.flight_server import BrokerFlightServer
+from casmsim.grpc_runner import ENDPOINT_FILENAME, start_control_server
+from casmsim.observation_broker import ObservationBroker
+from casmsim.proto import casm_runner_pb2 as pb2, casm_runner_pb2_grpc as pb2_grpc
 
 
 def test_grpc_and_flight_return_same_broker_observations(tmp_path):
@@ -17,19 +16,16 @@ def test_grpc_and_flight_return_same_broker_observations(tmp_path):
     started = Event()
     release = Event()
 
-    def drive_run():
-        run_id, config_json = servicer.wait_for_run()
+    def drive_run(run_id, config_json):
         assert run_id == "run-1"
         assert config_json == b"{}"
         started.set()
         assert release.wait(timeout=2)
         broker.publish("agents", pa.table({"id": [1]}))
         broker.publish("agents", pa.table({"id": [2]}))
-        servicer.complete_run(success=True)
+        broker.close()
 
-    control, servicer = start_control_server(tmp_path, broker)
-    driver = Thread(target=drive_run, daemon=True)
-    driver.start()
+    control = start_control_server(tmp_path, broker, drive_run)
     flights = BrokerFlightServer(("127.0.0.1", 0), broker)
     try:
         endpoint = json.loads((tmp_path / ENDPOINT_FILENAME).read_text())["control"]["address"]
@@ -56,6 +52,5 @@ def test_grpc_and_flight_return_same_broker_observations(tmp_path):
         channel.close()
     finally:
         release.set()
-        driver.join(timeout=2)
         control.stop(0).wait()
         flights.shutdown()
