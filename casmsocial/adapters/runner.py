@@ -22,6 +22,7 @@ class _ObservationBridge:
         self._observer = observer
         self._tick = 0
         self._flushed = False
+        self._last_published: dict[str, pa.Table] = {}
 
     def initialize(self, model) -> None:  # noqa: ANN001
         pass
@@ -30,11 +31,21 @@ class _ObservationBridge:
         tables: dict[str, pa.Table] = model.get_observer_output_tables()
         for channel, table in tables.items():
             self._observer.publish(channel, table)
+            self._last_published[channel] = table
         self._tick += 1
 
     def on_end(self, model) -> None:  # noqa: ANN001
+        if self._flushed:
+            return
         for channel, table in model.get_observer_output_tables().items():
+            previous = self._last_published.get(channel)
+            # Model loggers expose their latest snapshot again at shutdown.
+            # Retain genuinely new terminal output, but do not replay a batch
+            # already published at the last step. Step batches are not deduped.
+            if previous is table or (previous is not None and previous.equals(table)):
+                continue
             self._observer.publish(channel, table)
+            self._last_published[channel] = table
         self.flush()
 
     def flush(self) -> None:

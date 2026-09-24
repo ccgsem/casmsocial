@@ -31,5 +31,28 @@ final flushing, repeated cancellation, errors and completed-output retrieval.
 This is not evidence of multi-rank cancellation, a live scientific model run,
 or durable retrieval after runner/gateway restart; those remain separate gates.
 
+## Agent-log output contract
+
+The default `AgentLogger` emits non-null identity columns with stable Arrow
+types: `run_id` string, `random_seed` int64, `tick` int32 (elapsed minutes),
+`rank` int32 and `agent_id` int64. Default state columns are `x`/`y` float64
+and `place_id` int64, also non-null. Safe casts reject fractional integer
+identities/ticks, overflow and null required values before publication or writing.
+Configured additional state columns retain inferred types. An empty snapshot
+retains the previous schema; the default schema is also available before any
+agents appear. Unknown custom-column types are not guessed on an initial empty
+snapshot. Empty snapshots do not replay previous agent rows or create Parquet
+files.
+
+The bridge remembers the latest published table per channel and skips an
+identical terminal snapshot. It still publishes changed or new terminal channels
+and does not deduplicate identical batches from different simulation steps.
+This is snapshot replay prevention, not a general row-key deduplication policy.
+
+`tests/test_agent_log_transport_contract.py` covers these guarantees and checks
+that live and Hive-reconstructed durable column types agree. Hive readers may
+mark partition fields nullable even though the actual identity values are
+validated as non-null; column ordering may also differ after reconstruction.
+
 This transport is a material capability addition and requires Public Release
 System approval before public distribution.
