@@ -5,30 +5,93 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from threading import Lock
 
+import pyarrow as pa
 from casmsim.flight_server import start_broker_flight_server
-from casmsim.grpc_runner import ENDPOINT_FILENAME, run_submitted_model, start_control_server
+from casmsim.grpc_runner import ENDPOINT_FILENAME, resolve_adapter, start_control_server
+from casmsim.mpi_lifecycle import get_comm
 from casmsim.observation_broker import ObservationBroker
+from casmsim.protocols import RunnerModelAdapter
 
 _CASMPOP_ENTRY_POINT = "casmsocial.adapters.runner:CasmPopAdapter"
 
 
+class _BrokerSink:
+    """Expose the public observation protocol without runtime-private imports."""
+
+    def __init__(self, broker: ObservationBroker) -> None:
+        self._broker = broker
+
+    def publish(self, channel: str, table: pa.Table) -> None:
+        self._broker.publish(channel, table)
+
+    def flush(self) -> None:
+        self._broker.close()
+
+
+class _RunSession:
+    """Own one adapter and latch cancellation while it is being constructed."""
+
+    def __init__(self, broker: ObservationBroker) -> None:
+        self._broker = broker
+        self._lock = Lock()
+        self._adapter: RunnerModelAdapter | None = None
+        self._cancel_requested = False
+        self._started = False
+        self._finished = False
+
+    def cancel(self) -> bool:
+        with self._lock:
+            if self._finished:
+                return False
+            if not self._cancel_requested:
+                if self._adapter is not None:
+                    self._adapter.cancel()
+                self._cancel_requested = True
+            return True
+
+    def run(self, run_id: str, config_json: bytes) -> None:
+        with self._lock:
+            if self._started:
+                raise RuntimeError("session already started")
+            self._started = True
+        try:
+            params = json.loads(config_json)
+            if not isinstance(params, dict):
+                raise ValueError("config_json must encode a JSON object of model parameters")
+            if ("model.plugins" in params or "model.name" in params) and "runner.entry_point" not in params:
+                params["runner.entry_point"] = _CASMPOP_ENTRY_POINT
+            params["simulation.run_id"] = run_id
+            params["observers.arrow_server.enabled"] = False
+            adapter = resolve_adapter(get_comm(), params)
+            adapter.add_observer(_BrokerSink(self._broker))
+            with self._lock:
+                self._adapter = adapter
+                if self._cancel_requested:
+                    adapter.cancel()
+            adapter.start()
+        finally:
+            with self._lock:
+                self._adapter = None
+                self._finished = True
+            self._broker.close()
+
+
 def run_casmsocial_model(run_id: str, config_json: bytes, broker: ObservationBroker) -> None:
     """Launch a CASMSocial model through CASMSim's generic adapter protocol."""
-    params = json.loads(config_json)
-    if ("model.plugins" in params or "model.name" in params) and "runner.entry_point" not in params:
-        params["runner.entry_point"] = _CASMPOP_ENTRY_POINT
-        config_json = json.dumps(params).encode()
-    run_submitted_model(run_id, config_json, broker)
+    _RunSession(broker).run(run_id, config_json)
 
 
 def start_runner(run_dir: Path):
     """Start loopback-only control and Arrow Flight endpoints."""
     broker = ObservationBroker()
+    session = _RunSession(broker)
     control = start_control_server(
         run_dir,
         broker,
-        lambda run_id, config_json: run_casmsocial_model(run_id, config_json, broker),
+        session.run,
+        cancel_run=session.cancel,
     )
     flights = start_broker_flight_server(run_dir, broker)
     manifest_path = run_dir / ENDPOINT_FILENAME

@@ -21,6 +21,7 @@ class _ObservationBridge:
     def __init__(self, observer: ObservationAdapter) -> None:
         self._observer = observer
         self._tick = 0
+        self._flushed = False
 
     def initialize(self, model) -> None:  # noqa: ANN001
         pass
@@ -34,7 +35,13 @@ class _ObservationBridge:
     def on_end(self, model) -> None:  # noqa: ANN001
         for channel, table in model.get_observer_output_tables().items():
             self._observer.publish(channel, table)
-        self._observer.flush()
+        self.flush()
+
+    def flush(self) -> None:
+        """Close the output sink once, including when startup is cancelled."""
+        if not self._flushed:
+            self._observer.flush()
+            self._flushed = True
 
     def get_output_tables(self, model) -> dict:  # noqa: ANN001
         """The bridge is a sink and does not contribute model output tables."""
@@ -56,47 +63,72 @@ class CasmPopAdapter:
         self._lock = threading.Lock()
         self._state = RunState.Pending
         self._cancelled = False
+        self._model = None
+        self._started = False
+        self._finished = False
 
     def add_observer(self, observer: ObservationAdapter) -> None:
         self._observer = observer
 
     def start(self) -> None:
-        from casmsocial.__main__ import load_builtin_models
-        from casmsocial.factory import Models, load_models
-
-        params = self._params
-        params["observers.arrow_server.enabled"] = False
-        load_builtin_models()
-        if plugins := params.get("model.plugins", []):
-            load_models(plugins)
-        model = Models.create_model(params["model.name"])(self._comm, params)
-        if self._observer is not None:
-            self._bridge = _ObservationBridge(self._observer)
-            model.add_observer(self._bridge)
         with self._lock:
-            if self._cancelled:
-                self._state = RunState.Failed
-                if self._observer is not None:
-                    self._observer.flush()
-                return
+            if self._started:
+                raise RuntimeError("adapter already started")
+            self._started = True
             self._state = RunState.Running
+            cancelled = self._cancelled
+        succeeded = False
         try:
-            model.start()
-        except Exception:
-            with self._lock:
-                self._state = RunState.Failed
-            if self._observer is not None:
-                self._observer.flush()
-            raise
-        with self._lock:
-            if self._state == RunState.Running:
-                self._state = RunState.Completed
+            if not cancelled:
+                from casmsocial.__main__ import load_builtin_models
+                from casmsocial.factory import Models, load_models
+
+                params = self._params
+                params["observers.arrow_server.enabled"] = False
+                load_builtin_models()
+                if plugins := params.get("model.plugins", []):
+                    load_models(plugins)
+                model = Models.create_model(params["model.name"])(self._comm, params)
+                if self._observer is not None:
+                    self._bridge = _ObservationBridge(self._observer)
+                    model.add_observer(self._bridge)
+                with self._lock:
+                    self._model = model
+                    cancelled = self._cancelled
+                # A later cancel() signals this model even in the gap before
+                # start(). CasmPop retains that signal until its first tick.
+                if not cancelled:
+                    model.start()
+            succeeded = True
+        finally:
+            flushed = False
+            try:
+                if self._bridge is not None:
+                    self._bridge.flush()
+                elif self._observer is not None:
+                    self._observer.flush()
+                flushed = True
+            finally:
+                with self._lock:
+                    self._model = None
+                    self._finished = True
+                    # CASMSim's legacy adapter enum has no Cancelled member.
+                    # Keep its failure mapping, but only after shutdown/flush.
+                    # The gRPC servicer independently reports CANCELLED when
+                    # the requested cooperative stop returns without error.
+                    self._state = (
+                        RunState.Completed if succeeded and flushed and not self._cancelled else RunState.Failed
+                    )
 
     def cancel(self) -> None:
         with self._lock:
+            if self._finished or self._cancelled:
+                return
+            if self._model is not None:
+                # Model.cancel() is a non-blocking, thread-safe signal; never
+                # call model.start() or flush the sink on the request thread.
+                self._model.cancel()
             self._cancelled = True
-            if self._state == RunState.Running:
-                self._state = RunState.Failed
 
     def get_state(self) -> tuple[RunState, float, int]:
         with self._lock:
