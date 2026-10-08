@@ -71,7 +71,7 @@ partitioning = [
 system-certs = true
 
 [tool.uv.sources]
-casmsim = { git = "https://github.com/ccgsem/casmsim.git", rev = "6b575b64d2af8f3ec8a2046cf2a44bc4284ce890" }
+casmsim = { git = "https://github.com/ccgsem/casmsim.git", rev = "b4a08fe5c56d392087c6881fa84a0f61cc1a8668" }
 torch = { index = "pytorch-cpu" }
 
 [[tool.uv.index]]
