@@ -67,7 +67,7 @@ def test_materialize_fixture_loads_a_verified_runtime_product(tmp_path: Path, mo
     loaded = [parameters[0] for query, parameters in connection.calls if "read_parquet(?)" in query]
     assert loaded == [str(runtime_dir / "casmsocial" / f"{name}.parquet") for name in fixture.TABLES]
     assert any("colorado_front_range" in query for query, _ in connection.calls)
-    assert any("n_ranks, CAST(hash(sp_id) % 2" in query for query, _ in connection.calls)
+    assert any("total_ranks, CAST(hash(sp_id) % 2" in query for query, _ in connection.calls)
 
 
 def test_materialize_fixture_rejects_a_runtime_table_with_a_bad_manifest_hash(tmp_path: Path):

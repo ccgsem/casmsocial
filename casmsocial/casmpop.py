@@ -461,6 +461,18 @@ class AgentLogger(Observer):
     """
 
     DEFAULT_STATE_COLUMNS: ClassVar[tuple[str, ...]] = ("x", "y", "place_id")
+    IDENTITY_SCHEMA: ClassVar[pa.Schema] = pa.schema([
+        pa.field("run_id", pa.string(), nullable=False),
+        pa.field("random_seed", pa.int64(), nullable=False),
+        pa.field("tick", pa.int32(), nullable=False),
+        pa.field("rank", pa.int32(), nullable=False),
+        pa.field("agent_id", pa.int64(), nullable=False),
+    ])
+    STATE_FIELDS: ClassVar[dict[str, pa.Field]] = {
+        "x": pa.field("x", pa.float64(), nullable=False),
+        "y": pa.field("y", pa.float64(), nullable=False),
+        "place_id": pa.field("place_id", pa.int64(), nullable=False),
+    }
 
     def __init__(self, name, model: Model = None):
         super().__init__(name, model)
@@ -471,6 +483,24 @@ class AgentLogger(Observer):
         self.state_columns: tuple[str, ...] = (
             tuple(requested_columns) if requested_columns else self.DEFAULT_STATE_COLUMNS
         )
+
+    def _empty_table(self) -> pa.Table | None:
+        if self._last_table is not None:
+            return self._last_table.slice(0, 0)
+        if any(column not in self.STATE_FIELDS for column in self.state_columns):
+            # A custom state column has no declared type until its first data
+            # batch. Do not advertise a guessed/null schema to the broker.
+            return None
+        schema = pa.schema([*self.IDENTITY_SCHEMA, *(self.STATE_FIELDS[column] for column in self.state_columns)])
+        return pa.Table.from_batches([], schema=schema)
+
+    def _normalize_table(self, table: pa.Table) -> pa.Table:
+        fields = {field.name: field for field in self.IDENTITY_SCHEMA}
+        fields.update(self.STATE_FIELDS)
+        schema = pa.schema([fields.get(field.name, field) for field in table.schema])
+        # Safe Arrow casts reject fractional ticks, overflow and null required
+        # values rather than truncating identifiers or changing their meaning.
+        return table.cast(schema, safe=True)
 
     def _person_state_value(self, person: Person, column: str) -> Any:
         """Resolve one configured agent-log column for a person."""
@@ -507,6 +537,7 @@ class AgentLogger(Observer):
 
         people = list(_person_agents(model.context))
         if not people:
+            self._last_table = self._empty_table()
             return
 
         # create a DataFrame for the agent logs
@@ -515,7 +546,7 @@ class AgentLogger(Observer):
         agent_log_df = pl.DataFrame([self.get_person_log_data(model, person) for person in people])
 
         # convert the DataFrame to an Arrow Table
-        agent_log_table = agent_log_df.to_arrow()
+        agent_log_table = self._normalize_table(agent_log_df.to_arrow())
         self._last_table = agent_log_table
 
         # Set Hive-style partitioning
@@ -3784,7 +3815,11 @@ class CasmPop(Model):
         next ``step()`` call.  The runner will stop cleanly after the current
         tick completes — cancellation latency is at most one tick duration.
         """
-        self._cancel_event.set()
+        cancel_event = getattr(self, "_cancel_event", None)
+        if cancel_event is None:
+            cancel_event = threading.Event()
+            self._cancel_event = cancel_event
+        cancel_event.set()
 
     def step(self) -> None:
         """Step the model forward one time step."""
@@ -3793,8 +3828,9 @@ class CasmPop(Model):
         # signal on rank 0 (set by the gRPC Cancel RPC) propagates to all
         # worker ranks simultaneously.  allreduce with MPI.SUM means any rank
         # signalling cancel stops the whole ensemble.
-        local_cancel = 1 if self._cancel_event.is_set() else 0
-        if self.size > 1:
+        cancel_event = getattr(self, "_cancel_event", None)
+        local_cancel = 1 if cancel_event is not None and cancel_event.is_set() else 0
+        if getattr(self, "size", 1) > 1:
             from mpi4py import MPI as _MPI
             global_cancel = self.comm.allreduce(local_cancel, op=_MPI.SUM)
         else:

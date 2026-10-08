@@ -5,11 +5,10 @@ from threading import Event
 import grpc
 import pyarrow as pa
 import pyarrow.flight as flight
-
-from casmsocial.flight_broker import BrokerFlightServer
-from casmsocial.grpc_control import ENDPOINT_FILENAME, start_control_server
-from casmsocial.observation_broker import ObservationBroker
-from casmsocial.proto import casm_runner_pb2 as pb2, casm_runner_pb2_grpc as pb2_grpc
+from casmsim.flight_server import BrokerFlightServer
+from casmsim.grpc_runner import ENDPOINT_FILENAME, start_control_server
+from casmsim.observation_broker import ObservationBroker
+from casmsim.proto import casm_runner_pb2 as pb2, casm_runner_pb2_grpc as pb2_grpc
 
 
 def test_grpc_and_flight_return_same_broker_observations(tmp_path):
@@ -17,7 +16,7 @@ def test_grpc_and_flight_return_same_broker_observations(tmp_path):
     started = Event()
     release = Event()
 
-    def start_run(run_id, config_json):
+    def drive_run(run_id, config_json):
         assert run_id == "run-1"
         assert config_json == b"{}"
         started.set()
@@ -26,7 +25,7 @@ def test_grpc_and_flight_return_same_broker_observations(tmp_path):
         broker.publish("agents", pa.table({"id": [2]}))
         broker.close()
 
-    control = start_control_server(tmp_path, broker, start_run)
+    control = start_control_server(tmp_path, broker, drive_run)
     flights = BrokerFlightServer(("127.0.0.1", 0), broker)
     try:
         endpoint = json.loads((tmp_path / ENDPOINT_FILENAME).read_text())["control"]["address"]
@@ -52,5 +51,6 @@ def test_grpc_and_flight_return_same_broker_observations(tmp_path):
         assert stub.GetState(pb2.GetStateRequest(run_id="run-1")).state == pb2.RUN_STATE_COMPLETED
         channel.close()
     finally:
+        release.set()
         control.stop(0).wait()
         flights.shutdown()

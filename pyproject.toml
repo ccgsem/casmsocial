@@ -1,6 +1,6 @@
 [project]
 name = "casmsocial"
-version = "2.8.5"
+version = "2.9.0"
 description = "casmsocial is a Python framework for implementing agent-based models that simulate the dynamics of a synthetic population"
 authors = [{ name = "Jon C. Cline", email = "jcline@mitre.org" }]
 readme = "README.md"
@@ -18,6 +18,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "casmsim>=1.0.0",
     "duckdb>=1.5.4",
     "grpcio>=1.83.0",
     "loguru>=0.7.3",
@@ -70,6 +71,7 @@ partitioning = [
 system-certs = true
 
 [tool.uv.sources]
+casmsim = { git = "https://github.com/ccgsem/casmsim.git", rev = "6b575b64d2af8f3ec8a2046cf2a44bc4284ce890" }
 torch = { index = "pytorch-cpu" }
 
 [[tool.uv.index]]
@@ -84,6 +86,7 @@ Documentation = "https://ccgsem.github.io/casmsocial/"
 
 [project.scripts]
 casmsocial-data = "casmsocial.datasets.cli:app"
+casmsocial-runner = "casmsocial.grpc_runner:main"
 
 [dependency-groups]
 dev = [

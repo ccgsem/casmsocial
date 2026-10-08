@@ -29,6 +29,7 @@ code, data, and license change before this handoff document was added.
 
 | Date | Change | Validation and disposition |
 |---|---|---|
+| 2026-09-17 | CASMSim runtime extraction (pending PR): CASMSocial now consumes the public `casmsim` v1.0.0 runtime, pinned to commit `5024bb25`. The generic loopback gRPC runner, Arrow Flight transport, broker, generated protocol stubs, and Repast adapter were removed from this repository. | CASMSocial retains the model-specific adapter, `casmsocial-runner` launcher, and legacy import compatibility shims. Focused gRPC/Flight/compatibility validation: 17 passed. No datasets, license changes, or new distribution channels were introduced. The CASMSim public spin-off is covered by the ongoing-community approval under PRS 26-1280. |
 | 2026-09-06 | [PR #5](https://github.com/ccgsem/casmsocial/pull/5): model-owned observation snapshots for the existing Arrow transport, and configured model-plugin loading before gRPC runner model construction. | Merged to `main` as squash commit `7405fb1` after both required CI jobs (`Check and test` and `Docker build (prod)`) completed successfully. Local validation: 396 passed, 2 skipped. The candidate changed only four source/test files; it included no datasets, private paths, license changes, or dependency changes. |
 
 ## Reviewer Comments and Disposition

@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Protocol
 
 import pyarrow as pa
+from casmsim.observation_broker import ObservationBroker
 
-from casmsocial.observation_broker import ObservationBroker
 from casmsocial.observer import Observer
 
 
@@ -17,9 +17,6 @@ class ObserverOutputModel(Protocol):
 class RepastObservationBrokerAdapter(Observer):
     """Publish each repast4py observer-table snapshot to the shared broker."""
 
-    # Run after model-owned observers such as AgentLogger. A launcher may
-    # register this adapter before model initialization, while those loggers
-    # are registered during build_context.
     step_priority = 100
 
     def __init__(self, broker: ObservationBroker, channels: set[str] | None = None) -> None:

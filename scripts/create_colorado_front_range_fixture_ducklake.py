@@ -73,7 +73,7 @@ def materialize_fixture(
         connection.execute("CREATE SCHEMA IF NOT EXISTS partitions")
         connection.execute(
             f"CREATE OR REPLACE TABLE {PARTITION_TABLE} AS "
-            f"SELECT 1::INTEGER AS imputation, {ranks}::INTEGER AS n_ranks, "
+            f"SELECT 1::INTEGER AS imputation, {ranks}::INTEGER AS total_ranks, "
             f"CAST(hash(sp_id) % {ranks} AS INTEGER) AS rank, sp_id::BIGINT AS place_id "
             f'FROM "{SCHEMA_NAME}"."places"'
         )

@@ -1,1 +1,1 @@
-"""Generated gRPC contract stubs for the loopback runner transport."""
+"""Compatibility imports for the loopback runner protobuf contract."""
