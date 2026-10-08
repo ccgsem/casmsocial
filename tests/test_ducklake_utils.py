@@ -106,6 +106,8 @@ def test_quack_catalog_registers_a_scoped_secret_before_attaching(tmp_path, monk
 
     assert result is conn
     secret = next(s for s in conn.statements if "SECRET" in s)
+    install = next(i for i, s in enumerate(conn.statements) if "INSTALL quack" in s)
+    assert install < conn.statements.index(secret)
     assert "TYPE quack" in secret and "SCOPE 'quack:lakehost:9494'" in secret
     assert "TOKEN 'it''s-a-token'" in secret  # quoted safely
     attach = conn.statements[-1]

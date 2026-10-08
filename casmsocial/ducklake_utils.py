@@ -125,6 +125,9 @@ def get_ducklake_connection(
         LOAD spatial;
         """)
         if secret_sql:
+            # Quack clients need the quack and httpfs extensions; an explicit
+            # LOAD does not auto-install them.
+            conn.execute("INSTALL quack; LOAD quack; INSTALL httpfs; LOAD httpfs;")
             conn.execute(secret_sql)
 
         # Attach datalake
