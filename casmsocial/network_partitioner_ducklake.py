@@ -47,7 +47,7 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from casmsocial.data_utilities import check_if_table_exists, quote_table_identifier
-from casmsocial.ducklake_utils import get_ducklake_connection
+from casmsocial.ducklake_utils import ducklake_catalog_uri_from_env, get_ducklake_connection
 
 
 class NetworkPartitionerError(Exception):
@@ -528,6 +528,7 @@ def partition_from_ducklake(
     database_name: str = "insights_ducklake",
     force: bool = False,
     weight_by: str = "none",
+    catalog_uri: str | None = None,
 ) -> None:
     """End-to-end: connect, build graph, run METIS, write partition table.
 
@@ -564,7 +565,7 @@ def partition_from_ducklake(
         raise NetworkPartitionerError(_missing_ducklake_message(ducklake_path))
 
     logger.info(f"Connecting to DuckLake at {ducklake_path}")
-    conn = get_ducklake_connection(ducklake_path, database_name=database_name)
+    conn = get_ducklake_connection(ducklake_path, database_name=database_name, catalog_uri=catalog_uri)
     try:
         _partition_rank_values_from_connection(
             conn,
@@ -596,6 +597,7 @@ def partition_many_from_ducklake(
     database_name: str = "insights_ducklake",
     force: bool = False,
     weight_by: str = "none",
+    catalog_uri: str | None = None,
 ) -> None:
     """Partition one or more imputations for one or more MPI rank counts."""
     persons_table = persons_table or f"{schema}.persons"
@@ -606,7 +608,7 @@ def partition_many_from_ducklake(
         raise NetworkPartitionerError(_missing_ducklake_message(ducklake_path))
 
     logger.info(f"Connecting to DuckLake at {ducklake_path}")
-    conn = get_ducklake_connection(ducklake_path, database_name=database_name)
+    conn = get_ducklake_connection(ducklake_path, database_name=database_name, catalog_uri=catalog_uri)
     try:
         imputation_values = resolve_imputations(conn, persons_table, imputation_spec)
         logger.info(f"Resolved imputations: {', '.join(str(value) for value in imputation_values)}")
@@ -706,6 +708,14 @@ def main(
             "'persons' balances home-person vertex weights."
         ),
     ),
+    catalog_uri: str | None = typer.Option(
+        None,
+        "--catalog-uri",
+        help=(
+            "DuckLake catalog URI overriding the SQLite catalog in --ducklake-path, "
+            "e.g. ducklake:quack:host:9494. Defaults to $CASMSOCIAL_DUCKLAKE_URI if set."
+        ),
+    ),
 ) -> None:
     """Partition the activity-location network for one or more imputations and write the
     assignment to a DuckLake table.
@@ -724,10 +734,14 @@ def main(
     if ducklake_path is None:
         raise typer.BadParameter("--ducklake-path or CASMSOCIAL_DUCKLAKE_PATH is required")
     ducklake_dir = Path(ducklake_path).expanduser()
+    if catalog_uri is None:
+        catalog_uri = ducklake_catalog_uri_from_env()
     n_rank_values = _parse_positive_int_list(n_ranks, name="n_ranks")
 
     logger.info("Starting METIS partitioning from DuckLake source")
     logger.info(f"  DuckLake:      {ducklake_dir}")
+    if catalog_uri:
+        logger.info(f"  Catalog:       {catalog_uri}")
     logger.info(f"  Schema:        {schema}")
     logger.info(f"  Imputations:   {imputations}")
     logger.info(f"  Ranks:         {', '.join(str(value) for value in n_rank_values)}")
@@ -751,6 +765,7 @@ def main(
         database_name=database_name,
         force=force,
         weight_by=weight_by,
+        catalog_uri=catalog_uri,
     )
 
     logger.info(f"Done. Partition rows are in {output_table}.")
