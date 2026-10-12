@@ -74,6 +74,8 @@ The files in `config/` are runtime launch configs for direct local runs.
 Canonical casmdb scenario definitions are maintained in
 `scenarios/casmsocial/*.yaml` and registered with
 `scripts/register_casmsocial.py`.
+If casmdb has `CASMDB_API_TOKEN` set, export the same value before running
+the script; it sends it as `Authorization: Bearer <token>`.
 
 To run (option 1):
 

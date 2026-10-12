@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -206,6 +207,10 @@ class _CatalogHttpClient:
         if payload is not None:
             data = json.dumps(payload, default=str).encode("utf-8")
             headers["Content-Type"] = "application/json"
+        # casmdb requires a Bearer token for writes when CASMDB_API_TOKEN is set.
+        token = os.environ.get("CASMDB_API_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
 
         request = Request(
             f"{self.base_url}{path}",
@@ -218,6 +223,8 @@ class _CatalogHttpClient:
                 body = response.read()
         except HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 401:
+                error_body += " (set CASMDB_API_TOKEN to the casmdb API token)"
             raise _CatalogHttpError(exc.code, error_body) from exc
         except URLError as exc:
             raise RuntimeError(f"Unable to reach casmdb API at {self.base_url}: {exc}") from exc
