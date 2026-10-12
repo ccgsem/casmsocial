@@ -90,7 +90,11 @@ class CasmPopAdapter:
             cancelled = self._cancelled
         succeeded = False
         try:
-            if not cancelled:
+            collective = self._comm is not None and self._comm.Get_size() > 1
+            # A single process can skip startup entirely. MPI workers must
+            # participate in constructor/start collectives even after rank 0
+            # receives cancellation; the model stops at its first tick check.
+            if not cancelled or collective:
                 from casmsocial.__main__ import load_builtin_models
                 from casmsocial.factory import Models, load_models
 
@@ -106,9 +110,14 @@ class CasmPopAdapter:
                 with self._lock:
                     self._model = model
                     cancelled = self._cancelled
+                    if cancelled and collective:
+                        # cancel() could only latch the flag before _model was
+                        # available. Deliver it once while publishing _model,
+                        # so a racing request cannot signal the model twice.
+                        model.cancel()
                 # A later cancel() signals this model even in the gap before
                 # start(). CasmPop retains that signal until its first tick.
-                if not cancelled:
+                if not cancelled or collective:
                     model.start()
             succeeded = True
         finally:

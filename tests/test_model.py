@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import threading
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -747,6 +748,52 @@ def test_create_places_with_partition_instantiates_local_places_and_indexes_all_
         assert model.place_to_rank == {100: 1, 200: 0, 300: 1}
         assert model.places_proj.rank_for_place(100) == 1
         assert model.places_proj.rank_for_place(200) == 0
+    finally:
+        model.conn.close()
+
+
+def test_create_places_with_partition_and_parallel_disabled_loads_all_places_on_all_ranks():
+    """When parallel.places.enabled=False, every rank must load ALL places.
+
+    Without this, agents whose currentPlaceID is assigned to a remote rank
+    get None from lookup_place() and silently skip per-agent computation
+    (e.g. heat-risk decisions).  Regression test for the bug fixed in 2.8.4:
+    _create_places_input_table previously always applied WHERE rank=? when a
+    partition table was present, halving the visible place set on each rank.
+    """
+    # Simulate rank 0 of a 2-rank run.
+    model = _partitioned_model(rank=0, size=2)
+    model.params["parallel.places.enabled"] = False
+    model.places_proj = EnhancedPlacesProjection("places_projection", MPI.COMM_SELF, enable_parallel_updates=False)
+    try:
+        model.conn.execute("""
+            INSERT INTO partitions.metis_place_partitions VALUES
+                (1, 2, 1, 100),
+                (1, 2, 0, 200),
+                (1, 2, 1, 300)
+            """)
+
+        model.create_input_tables()
+        model.create_places()
+        model._initialize_place_rank_index()
+
+        # All three places must be reachable via lookup_place on rank 0,
+        # even though places 100 and 300 are assigned to rank 1.
+        all_place_ids = sorted(place.id for place in model.places_proj.get_all_places())
+        assert all_place_ids == [100, 200, 300], (
+            f"Expected all places [100, 200, 300] but got {all_place_ids}. "
+            "Agents on rank 0 whose currentPlaceID is 100 or 300 would get "
+            "None from lookup_place() and silently skip their computation."
+        )
+        assert model.places_proj.lookup_place(100) is not None
+        assert model.places_proj.lookup_place(200) is not None
+        assert model.places_proj.lookup_place(300) is not None
+
+        # Rank assignments are still tracked correctly.
+        assert model.place_to_rank == {100: 1, 200: 0, 300: 1}
+        assert model.places_proj.rank_for_place(100) == 1
+        assert model.places_proj.rank_for_place(200) == 0
+        assert model.places_proj.rank_for_place(300) == 1
     finally:
         model.conn.close()
 
@@ -1676,7 +1723,9 @@ def test_step_skips_redundant_person_loop_for_base_schedule_engine():
     model.phase_timings = {}
     model.cal = SimTime(datetime(2025, 1, 1))
     model.time_step_minutes = 60
+    model.size = 1
     model._observers = []
+    model._cancel_event = threading.Event()
     person = Person(1, 0, [], tuple([100]), {"sp_id": 1})
     step_calls = []
     person.step = lambda context, cal: step_calls.append((context, cal))
@@ -1708,7 +1757,9 @@ def test_step_runs_person_loop_for_cognitive_behavior_engine():
     model.phase_timings = {}
     model.cal = SimTime(datetime(2025, 1, 1))
     model.time_step_minutes = 60
+    model.size = 1
     model._observers = []
+    model._cancel_event = threading.Event()
     person = Person(1, 0, [], tuple([100]), {"sp_id": 1})
     step_calls = []
     person.step = lambda context, cal: step_calls.append((context, cal))

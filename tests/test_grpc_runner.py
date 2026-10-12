@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,7 +12,7 @@ from casmsim.grpc_runner import ENDPOINT_FILENAME, SimulatorControlServicer
 from casmsim.proto import casm_runner_pb2 as pb2
 
 from casmsocial.adapters.runner import _ObservationBridge
-from casmsocial.grpc_runner import run_casmsocial_model, start_runner
+from casmsocial.grpc_runner import _MainThreadRunHandoff, run_casmsocial_model, start_runner
 
 
 def _casmsocial_stubs(load_models_fn=None):
@@ -62,6 +63,44 @@ def test_runner_failure_returns_sanitized_status(caplog):
 
 def test_observation_bridge_contributes_no_model_output_tables():
     assert _ObservationBridge(MagicMock()).get_output_tables(MagicMock()) == {}
+
+
+def test_main_thread_handoff_blocks_callback_until_completion():
+    handoff = _MainThreadRunHandoff()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        callback = pool.submit(handoff.submit, "run-1", b'{"model.name":"test"}')
+        request = handoff.wait_for_request(timeout=2)
+        assert request.run_id == "run-1"
+        assert request.config_json == b'{"model.name":"test"}'
+        assert not callback.done()
+        handoff.complete()
+        callback.result(timeout=2)
+
+
+def test_main_thread_handoff_propagates_execution_error_to_callback():
+    handoff = _MainThreadRunHandoff()
+    error = ValueError("main-thread execution failed")
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        callback = pool.submit(handoff.submit, "run-1", b"{}")
+        handoff.wait_for_request(timeout=2)
+        handoff.complete(error)
+        with pytest.raises(ValueError, match="main-thread execution failed"):
+            callback.result(timeout=2)
+
+
+def test_main_thread_handoff_latches_and_delivers_cancellation_once():
+    handoff = _MainThreadRunHandoff()
+    adapter = MagicMock()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        callback = pool.submit(handoff.submit, "run-1", b"{}")
+        handoff.wait_for_request(timeout=2)
+        assert handoff.cancel()
+        handoff.set_adapter(adapter)
+        assert handoff.cancel()
+        adapter.cancel.assert_called_once_with()
+        handoff.complete()
+        callback.result(timeout=2)
+    assert not handoff.cancel()
 
 
 def test_runner_writes_combined_loopback_endpoint_manifest(tmp_path):

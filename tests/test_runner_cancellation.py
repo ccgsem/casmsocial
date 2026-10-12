@@ -197,6 +197,41 @@ def test_cancel_before_adapter_start_skips_model_and_flushes(monkeypatch):
         adapter.start()
 
 
+@pytest.mark.parametrize("phase", ["before_start", "constructor", "observer_registration"])
+def test_multi_rank_startup_cancel_still_constructs_and_starts_model(monkeypatch, phase):
+    comm = Mock()
+    comm.Get_size.return_value = 2
+    model, sink = Mock(), Mock()
+    adapter = CasmPopAdapter(comm, {"model.name": "test"})
+    adapter.add_observer(sink)
+
+    def construct(actual_comm, params):
+        assert actual_comm is comm
+        if phase == "constructor":
+            adapter.cancel()
+            adapter.cancel()
+        return model
+
+    install_model(monkeypatch, construct)
+    if phase == "before_start":
+        adapter.cancel()
+        adapter.cancel()
+    elif phase == "observer_registration":
+        model.add_observer.side_effect = lambda _: adapter.cancel()
+
+    def start():
+        model.cancel.assert_called_once_with()
+        assert adapter.get_state()[0] == RunState.Running
+        adapter.cancel()
+        model.cancel.assert_called_once_with()
+
+    model.start.side_effect = start
+    adapter.start()
+    model.start.assert_called_once_with()
+    sink.flush.assert_called_once_with()
+    assert adapter.get_state()[0] == RunState.Failed
+
+
 def test_casmpop_cancel_before_first_tick_stops_without_advancing():
     from casmsocial.casmpop import CasmPop
 

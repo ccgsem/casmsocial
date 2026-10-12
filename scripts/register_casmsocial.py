@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -146,7 +147,7 @@ def _build_scenarios() -> dict[str, dict[str, Any]]:
     return {name: spec["parameters"] for name, spec in _load_scenario_specs().items()}
 
 
-def _build_model_record(version: str, resources_uri: str) -> dict[str, Any]:
+def _build_model_record(version: str, resources_uri: str, output_root: str = "") -> dict[str, Any]:
     """Build the casmdb model record dict for casmsocial."""
     return {
         "model_name": CASMSOCIAL_MODEL_NAME,
@@ -162,6 +163,7 @@ def _build_model_record(version: str, resources_uri: str) -> dict[str, Any]:
             {"name": "Jon C. Cline", "email": "jcline@mitre.org"},
         ],
         "model_resources_uri": resources_uri,
+        "model_output_root": output_root or None,
         "model_metadata": {
             "backend": "repast4py",
             "factory_key": CASMSOCIAL_FACTORY_KEY,
@@ -206,6 +208,10 @@ class _CatalogHttpClient:
         if payload is not None:
             data = json.dumps(payload, default=str).encode("utf-8")
             headers["Content-Type"] = "application/json"
+        # casmdb requires a Bearer token for writes when CASMDB_API_TOKEN is set.
+        token = os.environ.get("CASMDB_API_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
 
         request = Request(
             f"{self.base_url}{path}",
@@ -218,6 +224,8 @@ class _CatalogHttpClient:
                 body = response.read()
         except HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 401:
+                error_body += " (set CASMDB_API_TOKEN to the casmdb API token)"
             raise _CatalogHttpError(exc.code, error_body) from exc
         except URLError as exc:
             raise RuntimeError(f"Unable to reach casmdb API at {self.base_url}: {exc}") from exc
@@ -439,7 +447,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default="",
         metavar="URI",
         help=(
-            "Base URI for model resources (e.g. s3://my-bucket/models). " "Used by casmdb to derive output directories."
+            "Where the model's code or data lives. casmdb also derives output "
+            "directories from it when --output-root is not given."
+        ),
+    )
+    parser.add_argument(
+        "--output-root",
+        default="",
+        metavar="URI",
+        help=(
+            "Where runs write outputs (e.g. s3://my-bucket/outputs); casmdb returns "
+            "{root}/{model}/{version}/{scenario} as a scenario's output directory. "
+            "Defaults to --resources-uri when omitted."
         ),
     )
     parser.add_argument(
@@ -466,7 +485,7 @@ def main(argv: list[str] | None = None) -> int:
     scenario_specs = _load_scenario_specs()
     scenarios = {name: spec["parameters"] for name, spec in scenario_specs.items()}
     descriptions = {name: spec["description"] for name, spec in scenario_specs.items()}
-    model_record = _build_model_record(version, args.resources_uri)
+    model_record = _build_model_record(version, args.resources_uri, args.output_root)
 
     if args.dry_run:
         print("\n=== DRY RUN — nothing will be written ===\n")

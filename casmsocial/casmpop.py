@@ -47,7 +47,7 @@ from casmsocial.data_utilities import (
     quote_table_identifier,
 )
 from casmsocial.date_utilities import get_closest_monday, get_midnight
-from casmsocial.ducklake_utils import get_ducklake_connection
+from casmsocial.ducklake_utils import ducklake_catalog_uri_from_env, get_ducklake_connection
 from casmsocial.environment import Environment
 from casmsocial.factory import Models
 from casmsocial.household import Household
@@ -1242,7 +1242,11 @@ class CasmPop(Model):
 
         ducklake_path = os.environ.get("CASMSOCIAL_DUCKLAKE_PATH")
         if ducklake_path:
-            self.conn = get_ducklake_connection(pathlib.Path(ducklake_path))
+            # $CASMSOCIAL_DUCKLAKE_URI optionally moves the catalog (e.g. to a
+            # Quack server); Parquet data stays under CASMSOCIAL_DUCKLAKE_PATH.
+            self.conn = get_ducklake_connection(
+                pathlib.Path(ducklake_path), catalog_uri=ducklake_catalog_uri_from_env()
+            )
         else:
             raise MissingDataPathError("CASMSOCIAL_DUCKLAKE_PATH")
 
@@ -2301,7 +2305,49 @@ class CasmPop(Model):
                 [self._partition_default_rank(), self._partition_imputation(), self.size],
             )
 
-        if self._require_full_partition_coverage():
+        # When parallel place processing is disabled (parallel.places.enabled=False)
+        # we replicate ALL places to every rank so that agents can always look up
+        # their current place regardless of which rank it was partitioned to.
+        # Without this, agents whose place lives on another rank silently skip any
+        # per-agent computation that requires place data (e.g. heat-risk decisions).
+        replicate_all_places = not self.params.get("parallel.places.enabled", True)
+
+        if replicate_all_places:
+            # Load all places with their partition-assigned rank annotation but
+            # without filtering — every rank gets the full set.
+            if self._require_full_partition_coverage():
+                self._time_phase(
+                    "startup.create_input_tables.create_places_table.create_local_places",
+                    self.conn.execute,
+                    f"""
+                        CREATE OR REPLACE TEMPORARY TABLE places AS
+                        SELECT
+                            {place_columns},
+                            place_ranks.rank
+                        FROM {places_identifier} p
+                        INNER JOIN place_ranks
+                                ON place_ranks.sp_id = p.sp_id
+                        """,  # noqa: S608 - table identifier is validated by quote_table_identifier.
+                )
+            else:
+                self._time_phase(
+                    "startup.create_input_tables.create_places_table.create_local_places",
+                    self.conn.execute,
+                    f"""
+                        CREATE OR REPLACE TEMPORARY TABLE places AS
+                        SELECT
+                            {place_columns},
+                            place_ranks.rank
+                        FROM {places_identifier} p
+                        INNER JOIN place_ranks
+                                ON place_ranks.sp_id = p.sp_id
+                        """,  # noqa: S608 - table identifier is validated by quote_table_identifier.
+                )
+            logger.info(
+                f"rank {self.rank}: parallel.places.enabled=False — "
+                "loading all places on all ranks (no partition filter)."
+            )
+        elif self._require_full_partition_coverage():
             self._time_phase(
                 "startup.create_input_tables.create_places_table.create_local_places",
                 self.conn.execute,
