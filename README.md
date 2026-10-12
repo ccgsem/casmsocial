@@ -23,6 +23,26 @@ make install
 For local runs against your own data, copy `.env.example` to `.env` and set
 `CASMSOCIAL_DATA_PATH` and `CASMSOCIAL_DUCKLAKE_PATH`.
 
+By default the DuckLake catalog is the SQLite file
+`$CASMSOCIAL_DUCKLAKE_PATH/metadata.sqlite`. Set `CASMSOCIAL_DUCKLAKE_URI` to
+use another catalog, for example a DuckDB catalog served over DuckDB's beta
+Quack protocol (`ducklake:quack:host:9494`, with the token in
+`CASMSOCIAL_DUCKLAKE_QUACK_TOKEN`). That lets several processes, such as
+parallel dataset builds, commit to the same lake without SQLite's file
+locking. Parquet data stays under `$CASMSOCIAL_DUCKLAKE_PATH/storage`, which
+every process must be able to reach. Model runs and
+`python -m casmsocial.network_partitioner_ducklake` (also `--catalog-uri`)
+honor it. Quack uses plain HTTP only for local servers, so a remote catalog
+server needs a TLS-terminating proxy.
+
+To move an existing lake's SQLite catalog into a DuckDB file that a Quack
+server can serve, stop all writers and run
+`python -m casmsocial.ducklake_migrate --ducklake-path <lake> --to <lake>/catalog.duckdb`.
+It flushes inlined rows into Parquet, copies only the catalog metadata (Parquet
+files are not touched), verifies every table's row count and contents against
+the source, and creates the target only if everything matches. The SQLite
+catalog stays usable until the first write through the new one.
+
 To build a Docker image for `casmsocial`:
 
 ```bash

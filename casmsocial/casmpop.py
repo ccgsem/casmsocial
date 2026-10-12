@@ -47,7 +47,7 @@ from casmsocial.data_utilities import (
     quote_table_identifier,
 )
 from casmsocial.date_utilities import get_closest_monday, get_midnight
-from casmsocial.ducklake_utils import get_ducklake_connection
+from casmsocial.ducklake_utils import ducklake_catalog_uri_from_env, get_ducklake_connection
 from casmsocial.environment import Environment
 from casmsocial.factory import Models
 from casmsocial.household import Household
@@ -1242,7 +1242,11 @@ class CasmPop(Model):
 
         ducklake_path = os.environ.get("CASMSOCIAL_DUCKLAKE_PATH")
         if ducklake_path:
-            self.conn = get_ducklake_connection(pathlib.Path(ducklake_path))
+            # $CASMSOCIAL_DUCKLAKE_URI optionally moves the catalog (e.g. to a
+            # Quack server); Parquet data stays under CASMSOCIAL_DUCKLAKE_PATH.
+            self.conn = get_ducklake_connection(
+                pathlib.Path(ducklake_path), catalog_uri=ducklake_catalog_uri_from_env()
+            )
         else:
             raise MissingDataPathError("CASMSOCIAL_DUCKLAKE_PATH")
 
