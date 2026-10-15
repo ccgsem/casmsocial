@@ -85,9 +85,9 @@ generic GUI uses these together with the reviewed manifest in
 series and latest-tick summary, and tables. `agent_log` `x`/`y` are the
 longitude/latitude (WGS84 degrees) of each person's current place, so they
 follow moves; they are null when the place has no coordinates or is not known
-on the logging rank. The GUI shows them in the agent table; a map view needs
-casmservice's geographic-points component to accept nullable coordinates and
-integer agent IDs. The occupancy
+on the logging rank. The GUI shows them in the agent table and on an agent
+location map (casmservice runtime-6 `geographic-points@1.1.0`), which leaves
+rows without coordinates off the map and says how many. The occupancy
 chart needs a single-rank run (one row per tick) and
 `observers.schedule_occupancy_log.enabled: true`. After changing the record,
 re-register with `--force-update-model` and re-check the manifest with

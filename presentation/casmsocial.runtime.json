@@ -1,11 +1,11 @@
 {
-  "contract_version": "runtime-3",
+  "contract_version": "runtime-6",
   "model_ref": {
     "model_name": "casmsocial",
     "model_version": "2.11.0"
   },
-  "presentation_revision": "casmsocial-r1",
-  "scientific_contract_digest": "sha256:4cf4e19dce2e8e52190aca75eb36415b75a40b6d18cf1ba33f4ed6510316402f",
+  "presentation_revision": "casmsocial-r2",
+  "scientific_contract_digest": "sha256:42e6b1dc366878a98f3cd2d5f629ee6ec8949447195ea6f14737612df2a92099",
   "required_components": [
     {
       "component_id": "scalar-form",
@@ -22,6 +22,10 @@
     {
       "component_id": "summary",
       "version": "1.0.0"
+    },
+    {
+      "component_id": "geographic-points",
+      "version": "1.1.0"
     }
   ],
   "panels": [
@@ -105,6 +109,19 @@
           "label": "Remote messages"
         }
       ]
+    },
+    {
+      "panel_id": "agents-map",
+      "component_id": "geographic-points",
+      "component_version": "1.1.0",
+      "title": "Agent locations",
+      "channel": "agent_log",
+      "entity_id_field": "agent_id",
+      "time_field": "tick",
+      "latitude_field": "y",
+      "longitude_field": "x",
+      "initial_time": "latest_fetched",
+      "missing_coordinates": "omit_and_count"
     },
     {
       "panel_id": "agents",
