@@ -59,9 +59,26 @@ def test_descriptors_name_fields_in_the_row_schemas():
             named.add(descriptor["time"]["field"])
         if "entity_id_field" in descriptor:
             named.add(descriptor["entity_id_field"])
+        spatial = descriptor.get("spatial", {})
+        named |= {spatial[key] for key in ("latitude_field", "longitude_field") if key in spatial}
         assert named <= set(row), channel
-        # agent_log x/y are model-space, never declared as geographic.
-        assert "spatial" not in descriptor
+
+
+def test_agent_log_x_y_are_place_longitude_latitude():
+    model = _build_model_record(_version(), "")
+    spatial = model["model_metadata"]["output_descriptors"]["channels"]["agent_log"]["spatial"]
+    assert spatial == {
+        "kind": "geographic",
+        "datum": "WGS84",
+        "unit": "degree",
+        "latitude_field": "y",
+        "longitude_field": "x",
+    }
+    row = model["model_outputs_schema"]["properties"]["agent_log"]["items"]["properties"]
+    assert row["x"]["type"] == row["y"]["type"] == ["number", "null"]
+    assert (row["x"]["minimum"], row["x"]["maximum"]) == (-180, 180)
+    assert (row["y"]["minimum"], row["y"]["maximum"]) == (-90, 90)
+    assert "latitude" not in row and "longitude" not in row
 
 
 def test_parameter_defaults_match_casmpop_defaults():

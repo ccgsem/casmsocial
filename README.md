@@ -82,8 +82,12 @@ of the `agent_log`, `schedule_occupancy` and `social_interactions` channels,
 and what their rows mean (`model_metadata.output_descriptors`). casmservice's
 generic GUI uses these together with the reviewed manifest in
 `presentation/casmsocial.runtime.json`: a parameter form, an occupancy time
-series and latest-tick summary, and tables. `agent_log` x/y are model-space
-coordinates, not latitude/longitude, so no map view is declared. The occupancy
+series and latest-tick summary, and tables. `agent_log` `x`/`y` are the
+longitude/latitude (WGS84 degrees) of each person's current place, so they
+follow moves; they are null when the place has no coordinates or is not known
+on the logging rank. The GUI shows them in the agent table; a map view needs
+casmservice's geographic-points component to accept nullable coordinates and
+integer agent IDs. The occupancy
 chart needs a single-rank run (one row per tick) and
 `observers.schedule_occupancy_log.enabled: true`. After changing the record,
 re-register with `--force-update-model` and re-check the manifest with

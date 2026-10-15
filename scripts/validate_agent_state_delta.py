@@ -35,6 +35,7 @@ DEFAULT_DELTA_BEHAVIOR_LOG_PATH = Path("data/output/mvp_delta_state_behavior_log
 DEFAULT_DELTA_VALIDATION_REPORT_PATH = Path("data/output/mvp_delta_state_validation.json")
 
 KEY_COLUMNS: tuple[str, ...] = ("run_id", "tick", "rank", "agent_id")
+NULLABLE_FLOAT_COLUMNS: frozenset[str] = frozenset({"x", "y"})
 FLOAT_COLUMNS: tuple[str, ...] = (
     "x",
     "y",
@@ -91,10 +92,12 @@ def _row_key(row: dict[str, Any]) -> tuple[str, int, int, int]:
     return (str(row["run_id"]), int(row["tick"]), int(row["rank"]), int(row["agent_id"]))
 
 
-def _normalise_state(row: dict[str, Any]) -> dict[str, int | float | str]:
-    state: dict[str, int | float | str] = {}
+def _normalise_state(row: dict[str, Any]) -> dict[str, int | float | str | None]:
+    state: dict[str, int | float | str | None] = {}
     for column_name in FLOAT_COLUMNS:
-        state[column_name] = round(float(row[column_name]), 6)
+        value = row[column_name]
+        # x/y (place longitude/latitude) are null where the place has no coordinates.
+        state[column_name] = None if value is None and column_name in NULLABLE_FLOAT_COLUMNS else round(float(value), 6)
     for column_name in INTEGER_COLUMNS:
         state[column_name] = int(row[column_name])
     for column_name in STRING_COLUMNS:
