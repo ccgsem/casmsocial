@@ -1,0 +1,213 @@
+{
+  "contract_version": "runtime-3",
+  "model_ref": {
+    "model_name": "casmsocial",
+    "model_version": "2.10.0"
+  },
+  "presentation_revision": "casmsocial-r1",
+  "scientific_contract_digest": "sha256:937f10a9fbe8e48c12c9f2c40d63c321b9385c7435afe596214d3baa1b25bac8",
+  "required_components": [
+    {
+      "component_id": "scalar-form",
+      "version": "1.0.0"
+    },
+    {
+      "component_id": "table",
+      "version": "1.0.0"
+    },
+    {
+      "component_id": "time-series",
+      "version": "1.0.0"
+    },
+    {
+      "component_id": "summary",
+      "version": "1.0.0"
+    }
+  ],
+  "panels": [
+    {
+      "panel_id": "parameters",
+      "component_id": "scalar-form",
+      "component_version": "1.0.0",
+      "title": "Run parameters",
+      "fields": [
+        {
+          "field": "random.seed",
+          "label": "Random seed"
+        },
+        {
+          "field": "duration.hours",
+          "label": "Duration (hours)"
+        },
+        {
+          "field": "time.step.minutes",
+          "label": "Time step (minutes)"
+        },
+        {
+          "field": "observers.schedule_occupancy_log.enabled",
+          "label": "Log scheduled occupancy"
+        },
+        {
+          "field": "observers.social_interaction_log.enabled",
+          "label": "Log social interactions"
+        }
+      ]
+    },
+    {
+      "panel_id": "occupancy-now",
+      "component_id": "summary",
+      "component_version": "1.0.0",
+      "title": "Occupancy at the latest tick",
+      "channel": "schedule_occupancy",
+      "time_field": "tick",
+      "selection": "latest_fetched_time",
+      "metrics": [
+        {
+          "field": "active_person_count",
+          "label": "Active people"
+        },
+        {
+          "field": "co_located_person_count",
+          "label": "Co-located people"
+        },
+        {
+          "field": "max_place_occupancy",
+          "label": "Largest place occupancy"
+        }
+      ]
+    },
+    {
+      "panel_id": "occupancy-over-time",
+      "component_id": "time-series",
+      "component_version": "1.0.0",
+      "title": "Scheduled occupancy over time",
+      "channel": "schedule_occupancy",
+      "time_field": "tick",
+      "metrics": [
+        {
+          "field": "active_person_count",
+          "label": "Active people"
+        },
+        {
+          "field": "co_located_person_count",
+          "label": "Co-located people"
+        },
+        {
+          "field": "max_place_occupancy",
+          "label": "Largest place occupancy"
+        },
+        {
+          "field": "in_person_interaction_count",
+          "label": "In-person interactions"
+        },
+        {
+          "field": "remote_message_count",
+          "label": "Remote messages"
+        }
+      ]
+    },
+    {
+      "panel_id": "agents",
+      "component_id": "table",
+      "component_version": "1.0.0",
+      "title": "Agent log",
+      "channel": "agent_log",
+      "columns": [
+        {
+          "field": "tick",
+          "label": "Tick (minute)"
+        },
+        {
+          "field": "rank",
+          "label": "Rank"
+        },
+        {
+          "field": "agent_id",
+          "label": "Agent"
+        },
+        {
+          "field": "place_id",
+          "label": "Place"
+        },
+        {
+          "field": "x",
+          "label": "x (model space)"
+        },
+        {
+          "field": "y",
+          "label": "y (model space)"
+        }
+      ]
+    },
+    {
+      "panel_id": "occupancy-table",
+      "component_id": "table",
+      "component_version": "1.0.0",
+      "title": "Scheduled occupancy",
+      "channel": "schedule_occupancy",
+      "columns": [
+        {
+          "field": "tick",
+          "label": "Tick (minute)"
+        },
+        {
+          "field": "rank",
+          "label": "Rank"
+        },
+        {
+          "field": "active_person_count",
+          "label": "Active people"
+        },
+        {
+          "field": "co_located_person_count",
+          "label": "Co-located people"
+        },
+        {
+          "field": "max_place_occupancy",
+          "label": "Largest place occupancy"
+        },
+        {
+          "field": "in_person_interaction_count",
+          "label": "In-person interactions"
+        },
+        {
+          "field": "remote_message_count",
+          "label": "Remote messages"
+        },
+        {
+          "field": "places_with_10_or_more_people",
+          "label": "Places with 10+ people"
+        }
+      ]
+    },
+    {
+      "panel_id": "interactions",
+      "component_id": "table",
+      "component_version": "1.0.0",
+      "title": "Social interactions",
+      "channel": "social_interactions",
+      "columns": [
+        {
+          "field": "tick",
+          "label": "Tick (minute)"
+        },
+        {
+          "field": "rank",
+          "label": "Rank"
+        },
+        {
+          "field": "channel",
+          "label": "Channel"
+        },
+        {
+          "field": "network_kind",
+          "label": "Network"
+        },
+        {
+          "field": "event_count",
+          "label": "Events"
+        }
+      ]
+    }
+  ]
+}
