@@ -262,7 +262,7 @@ def _output_descriptors() -> dict[str, Any]:
         "schema_version": "1",
         "channels": {
             "agent_log": {
-                "views": ["table"],
+                "views": ["table", "geographic_points"],
                 "row_semantics": "entity_snapshot",
                 "entity_id_field": "agent_id",
                 "time": time,

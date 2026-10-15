@@ -14,7 +14,12 @@ from scripts.register_casmsocial import CASMSOCIAL_MODEL_NAME, _build_model_reco
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "presentation" / "casmsocial.runtime.json"
-VIEW_FOR_COMPONENT = {"table": "table", "time-series": "time_series", "summary": "summary"}
+VIEW_FOR_COMPONENT = {
+    "table": "table",
+    "time-series": "time_series",
+    "summary": "summary",
+    "geographic-points": "geographic_points",
+}
 
 
 def _version() -> str:
@@ -42,6 +47,16 @@ def test_manifest_binds_only_declared_channels_views_and_fields():
         row = outputs[channel]["items"]["properties"]
         if panel["component_id"] == "table":
             assert {c["field"] for c in panel["columns"]} <= set(row)
+        elif panel["component_id"] == "geographic-points":
+            spatial = descriptor["spatial"]
+            assert panel["entity_id_field"] == descriptor["entity_id_field"]
+            assert panel["time_field"] == descriptor["time"]["field"]
+            assert (panel["longitude_field"], panel["latitude_field"]) == (
+                spatial["longitude_field"],
+                spatial["latitude_field"],
+            )
+            # x/y are nullable, so the map must declare how missing coordinates are shown.
+            assert (panel["component_version"], panel["missing_coordinates"]) == ("1.1.0", "omit_and_count")
         else:
             assert panel["time_field"] == descriptor["time"]["field"]
             assert {m["field"] for m in panel["metrics"]} <= set(descriptor["metrics"])
