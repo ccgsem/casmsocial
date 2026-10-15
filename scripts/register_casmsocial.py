@@ -194,8 +194,10 @@ def _output_schema() -> dict[str, Any]:
         "type": "object",
         "description": (
             "One row per person per logged tick. x and y are the person's model-space "
-            "location (integers stored as floats); they are not latitude/longitude. "
-            "observers.agent_log_columns can add further person-state columns."
+            "location (integers stored as floats), not latitude/longitude. latitude and "
+            "longitude are the WGS84 degrees of the person's current place, null when that "
+            "place has no coordinates or is not known on the logging rank. "
+            "observers.agent_log_columns can choose other person-state columns."
         ),
         "properties": {
             **_RUN_IDENTITY,
@@ -203,6 +205,8 @@ def _output_schema() -> dict[str, Any]:
             "x": {"type": "number"},
             "y": {"type": "number"},
             "place_id": {"type": "integer"},
+            "latitude": {"type": ["number", "null"], "minimum": -90, "maximum": 90},
+            "longitude": {"type": ["number", "null"], "minimum": -180, "maximum": 180},
         },
         "required": ["run_id", "random_seed", "tick", "rank", "agent_id"],
     }
@@ -250,8 +254,9 @@ def _output_schema() -> dict[str, Any]:
 def _output_descriptors() -> dict[str, Any]:
     """Say what each channel's rows mean, so viewers need no casmsocial-specific code.
 
-    tick counts simulated minutes since start.datetime. agent_log declares no
-    spatial semantics: its x/y are model-space, not geographic. Occupancy rows
+    tick counts simulated minutes since start.datetime. agent_log's geographic
+    fields are latitude/longitude (its x/y are model-space); they are nullable,
+    so viewers that need a coordinate for every row must skip null rows. Occupancy rows
     are per rank, so the time series is one row per tick only for single-rank
     runs (the viewer refuses duplicate times rather than summing them).
     """
@@ -264,6 +269,13 @@ def _output_descriptors() -> dict[str, Any]:
                 "row_semantics": "entity_snapshot",
                 "entity_id_field": "agent_id",
                 "time": time,
+                "spatial": {
+                    "kind": "geographic",
+                    "datum": "WGS84",
+                    "unit": "degree",
+                    "latitude_field": "latitude",
+                    "longitude_field": "longitude",
+                },
             },
             "schedule_occupancy": {
                 "views": ["table", "time_series", "summary"],

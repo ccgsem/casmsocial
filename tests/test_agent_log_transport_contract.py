@@ -19,6 +19,8 @@ SCHEMA = pa.schema([
     pa.field("x", pa.float64(), nullable=False),
     pa.field("y", pa.float64(), nullable=False),
     pa.field("place_id", pa.int64(), nullable=False),
+    pa.field("latitude", pa.float64(), nullable=True),
+    pa.field("longitude", pa.float64(), nullable=True),
 ])
 
 

@@ -7,6 +7,7 @@ Defining the CasmPop
 
 import hashlib
 import json
+import math
 import os
 import pathlib
 import re
@@ -456,11 +457,14 @@ class AgentLogger(Observer):
     name is read from ``person.state`` (the model's registered
     ``PersonData`` class), so a model that registers a derived ``PersonData``
     subclass gets its extra fields logged just by naming them here -- no new
-    Observer subclass required. Defaults to ``("x", "y", "place_id")``,
-    matching the historical fixed schema.
+    Observer subclass required. ``"latitude"`` and ``"longitude"`` are the
+    WGS84 degrees of the person's current place (``model.places_proj``); they
+    are null when that place is not known on this rank or has no coordinates.
+    Defaults to ``("x", "y", "place_id", "latitude", "longitude")``.
     """
 
-    DEFAULT_STATE_COLUMNS: ClassVar[tuple[str, ...]] = ("x", "y", "place_id")
+    DEFAULT_STATE_COLUMNS: ClassVar[tuple[str, ...]] = ("x", "y", "place_id", "latitude", "longitude")
+    PLACE_COORDINATE_COLUMNS: ClassVar[frozenset[str]] = frozenset({"latitude", "longitude"})
     IDENTITY_SCHEMA: ClassVar[pa.Schema] = pa.schema([
         pa.field("run_id", pa.string(), nullable=False),
         pa.field("random_seed", pa.int64(), nullable=False),
@@ -472,6 +476,8 @@ class AgentLogger(Observer):
         "x": pa.field("x", pa.float64(), nullable=False),
         "y": pa.field("y", pa.float64(), nullable=False),
         "place_id": pa.field("place_id", pa.int64(), nullable=False),
+        "latitude": pa.field("latitude", pa.float64(), nullable=True),
+        "longitude": pa.field("longitude", pa.float64(), nullable=True),
     }
 
     def __init__(self, name, model: Model = None):
@@ -518,6 +524,18 @@ class AgentLogger(Observer):
             )
         return value
 
+    @staticmethod
+    def _place_coordinate(model: Model, person: Person, column: str) -> float | None:
+        """Return a WGS84 coordinate of the person's current place, or None if unknown."""
+        lookup_place = getattr(getattr(model, "places_proj", None), "lookup_place", None)
+        place_id = getattr(getattr(person, "state", None), "place_id", None)
+        if lookup_place is None or place_id is None:
+            return None
+        value = getattr(getattr(lookup_place(place_id), "data", None), column, None)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            return None
+        return float(value)
+
     def get_person_log_data(self, model: Model, person: Person) -> dict[str, Any]:
         """Get the agent data for logging."""
         row: dict[str, Any] = {
@@ -528,7 +546,10 @@ class AgentLogger(Observer):
             "agent_id": person.id,
         }
         for column in self.state_columns:
-            row[column] = self._person_state_value(person, column)
+            if column in self.PLACE_COORDINATE_COLUMNS:
+                row[column] = self._place_coordinate(model, person, column)
+            else:
+                row[column] = self._person_state_value(person, column)
         return row
 
     def on_step(self, model: Model) -> None:
@@ -543,7 +564,11 @@ class AgentLogger(Observer):
         # create a DataFrame for the agent logs
         logger.info("Logging agents' data...")
 
-        agent_log_df = pl.DataFrame([self.get_person_log_data(model, person) for person in people])
+        # Coordinates may be null for leading rows, so do not infer their type from a sample.
+        agent_log_df = pl.DataFrame(
+            [self.get_person_log_data(model, person) for person in people],
+            schema_overrides={column: pl.Float64 for column in self.PLACE_COORDINATE_COLUMNS & set(self.state_columns)},
+        )
 
         # convert the DataFrame to an Arrow Table
         agent_log_table = self._normalize_table(agent_log_df.to_arrow())
