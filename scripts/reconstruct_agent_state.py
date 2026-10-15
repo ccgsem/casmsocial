@@ -17,6 +17,8 @@ DEFAULT_DELTA_LOG_PATH = Path("output/agent_state_delta.parquet")
 DEFAULT_AUDIT_LOG_PATH = Path("output/agent_state_delta_audit.parquet")
 DEFAULT_RECONSTRUCTED_LOG_PATH = Path("output/agent_state_reconstructed.parquet")
 
+# x/y are the current place's longitude/latitude: null where the place has no coordinates.
+NULLABLE_COLUMNS: frozenset[str] = frozenset({"x", "y"})
 STATE_COLUMNS: tuple[str, ...] = (
     "x",
     "y",
@@ -133,6 +135,8 @@ def _validate_required_columns(table: Any, required_columns: tuple[str, ...], la
     _require(not missing_columns, f"{label} is missing required columns: {missing_columns}")
 
     for column_name in required_columns:
+        if column_name in NULLABLE_COLUMNS:
+            continue
         _require(table[column_name].null_count == 0, f"{label} column has null values: {column_name}")
 
 

@@ -311,8 +311,8 @@ class AgentStateDeltaLogData:
     agent_id: int
     state_hash: str
     change_mask: str
-    x: float
-    y: float
+    x: float | None
+    y: float | None
     place_id: int
     rank_place_id: int
     last_decision: str
@@ -447,24 +447,45 @@ def _observer_output_path(model: Model | None, key: str) -> str:
 _AGENT_LOG_SCALAR_TYPES = (int, float, str, bool)
 
 
+def _current_place_lon_lat(model: Model, person: Person) -> tuple[float | None, float | None]:
+    """Return (longitude, latitude) in WGS84 degrees of the person's current place.
+
+    Each coordinate is None when the place is not known on this rank or lacks a
+    finite value. Logged x/y use this rather than ``person.pt``, which holds
+    integer-truncated input values that do not follow moves.
+    """
+    lookup_place = getattr(getattr(model, "places_proj", None), "lookup_place", None)
+    place_id = getattr(getattr(person, "state", None), "place_id", None)
+    if lookup_place is None or place_id is None:
+        return None, None
+    data = getattr(lookup_place(place_id), "data", None)
+
+    def coordinate(name: str) -> float | None:
+        value = getattr(data, name, None)
+        if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+            return None
+        return float(value)
+
+    return coordinate("longitude"), coordinate("latitude")
+
+
 # Define a basic Observer class for logging agent data
 class AgentLogger(Observer):
     """Observer class for logging agent data.
 
     ``observers.agent_log_columns`` selects which per-person columns are
     logged alongside the fixed run/tick/rank/agent_id identity columns.
-    ``"x"`` and ``"y"`` are read from the person's location; every other
-    name is read from ``person.state`` (the model's registered
-    ``PersonData`` class), so a model that registers a derived ``PersonData``
-    subclass gets its extra fields logged just by naming them here -- no new
-    Observer subclass required. ``"latitude"`` and ``"longitude"`` are the
-    WGS84 degrees of the person's current place (``model.places_proj``); they
-    are null when that place is not known on this rank or has no coordinates.
-    Defaults to ``("x", "y", "place_id", "latitude", "longitude")``.
+    ``"x"`` and ``"y"`` are the longitude and latitude (WGS84 degrees) of the
+    person's current place, null when that place is not known on this rank or
+    has no coordinates. Every other name is read from ``person.state`` (the
+    model's registered ``PersonData`` class), so a model that registers a
+    derived ``PersonData`` subclass gets its extra fields logged just by naming
+    them here -- no new Observer subclass required. Defaults to
+    ``("x", "y", "place_id")``.
     """
 
-    DEFAULT_STATE_COLUMNS: ClassVar[tuple[str, ...]] = ("x", "y", "place_id", "latitude", "longitude")
-    PLACE_COORDINATE_COLUMNS: ClassVar[frozenset[str]] = frozenset({"latitude", "longitude"})
+    DEFAULT_STATE_COLUMNS: ClassVar[tuple[str, ...]] = ("x", "y", "place_id")
+    COORDINATE_COLUMNS: ClassVar[frozenset[str]] = frozenset({"x", "y"})
     IDENTITY_SCHEMA: ClassVar[pa.Schema] = pa.schema([
         pa.field("run_id", pa.string(), nullable=False),
         pa.field("random_seed", pa.int64(), nullable=False),
@@ -473,11 +494,9 @@ class AgentLogger(Observer):
         pa.field("agent_id", pa.int64(), nullable=False),
     ])
     STATE_FIELDS: ClassVar[dict[str, pa.Field]] = {
-        "x": pa.field("x", pa.float64(), nullable=False),
-        "y": pa.field("y", pa.float64(), nullable=False),
+        "x": pa.field("x", pa.float64(), nullable=True),
+        "y": pa.field("y", pa.float64(), nullable=True),
         "place_id": pa.field("place_id", pa.int64(), nullable=False),
-        "latitude": pa.field("latitude", pa.float64(), nullable=True),
-        "longitude": pa.field("longitude", pa.float64(), nullable=True),
     }
 
     def __init__(self, name, model: Model = None):
@@ -509,11 +528,7 @@ class AgentLogger(Observer):
         return table.cast(schema, safe=True)
 
     def _person_state_value(self, person: Person, column: str) -> Any:
-        """Resolve one configured agent-log column for a person."""
-        if column == "x":
-            return person.pt.x
-        if column == "y":
-            return person.pt.y
+        """Resolve one configured person-state agent-log column for a person."""
         try:
             value = getattr(person.state, column)
         except AttributeError as err:
@@ -524,18 +539,6 @@ class AgentLogger(Observer):
             )
         return value
 
-    @staticmethod
-    def _place_coordinate(model: Model, person: Person, column: str) -> float | None:
-        """Return a WGS84 coordinate of the person's current place, or None if unknown."""
-        lookup_place = getattr(getattr(model, "places_proj", None), "lookup_place", None)
-        place_id = getattr(getattr(person, "state", None), "place_id", None)
-        if lookup_place is None or place_id is None:
-            return None
-        value = getattr(getattr(lookup_place(place_id), "data", None), column, None)
-        if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
-            return None
-        return float(value)
-
     def get_person_log_data(self, model: Model, person: Person) -> dict[str, Any]:
         """Get the agent data for logging."""
         row: dict[str, Any] = {
@@ -545,9 +548,13 @@ class AgentLogger(Observer):
             "rank": model.comm.Get_rank(),
             "agent_id": person.id,
         }
+        if self.COORDINATE_COLUMNS & set(self.state_columns):
+            longitude, latitude = _current_place_lon_lat(model, person)
         for column in self.state_columns:
-            if column in self.PLACE_COORDINATE_COLUMNS:
-                row[column] = self._place_coordinate(model, person, column)
+            if column == "x":
+                row[column] = longitude
+            elif column == "y":
+                row[column] = latitude
             else:
                 row[column] = self._person_state_value(person, column)
         return row
@@ -567,7 +574,7 @@ class AgentLogger(Observer):
         # Coordinates may be null for leading rows, so do not infer their type from a sample.
         agent_log_df = pl.DataFrame(
             [self.get_person_log_data(model, person) for person in people],
-            schema_overrides={column: pl.Float64 for column in self.PLACE_COORDINATE_COLUMNS & set(self.state_columns)},
+            schema_overrides={column: pl.Float64 for column in self.COORDINATE_COLUMNS & set(self.state_columns)},
         )
 
         # convert the DataFrame to an Arrow Table
@@ -768,16 +775,18 @@ class DeltaAgentStateLogger(Observer):
         super().__init__(name, model)
         self.log_file = _observer_output_path(model, "observers.delta_agent_state_file")
         self.audit_file = _observer_output_path(model, "observers.delta_agent_state_audit_file")
-        self._previous_state_by_agent_id: dict[int, dict[str, int | float | str]] = {}
+        self._previous_state_by_agent_id: dict[int, dict[str, int | float | str | None]] = {}
         self._previous_hash_by_agent_id: dict[int, str] = {}
         self._last_delta_table: pa.Table | None = None
         self._last_audit_table: pa.Table | None = None
 
-    def _normalized_person_state(self, person: Person) -> dict[str, int | float | str]:
+    def _normalized_person_state(self, model: Model, person: Person) -> dict[str, int | float | str | None]:
         last_event, last_data, cognition = _behavior_memory_state(person)
+        # Same x/y as the agent log: the current place's longitude/latitude.
+        longitude, latitude = _current_place_lon_lat(model, person)
         return {
-            "x": round(float(person.pt.x), 6),
-            "y": round(float(person.pt.y), 6),
+            "x": None if longitude is None else round(longitude, 6),
+            "y": None if latitude is None else round(latitude, 6),
             "place_id": int(person.place_id),
             "rank_place_id": int(person.rank_place_id),
             "last_decision": str(getattr(cognition, "last_decision", "")),
@@ -790,18 +799,18 @@ class DeltaAgentStateLogger(Observer):
             "reply_signal": round(float(last_data.get("reply_signal", 0.0)), 6),
         }
 
-    def _state_hash(self, state: dict[str, int | float | str]) -> str:
+    def _state_hash(self, state: dict[str, int | float | str | None]) -> str:
         state_json = json.dumps(state, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(state_json.encode("utf-8")).hexdigest()
 
-    def _change_mask(self, agent_id: int, state: dict[str, int | float | str]) -> str:
+    def _change_mask(self, agent_id: int, state: dict[str, int | float | str | None]) -> str:
         previous_state = self._previous_state_by_agent_id.get(agent_id)
         if previous_state is None:
             return "__initial__"
         return ",".join(key for key, value in state.items() if previous_state.get(key) != value)
 
     def _delta_row(self, model: Model, person: Person) -> AgentStateDeltaLogData | None:
-        state = self._normalized_person_state(person)
+        state = self._normalized_person_state(model, person)
         state_hash = self._state_hash(state)
         agent_id = int(person.id)
         if self._previous_hash_by_agent_id.get(agent_id) == state_hash:
@@ -818,8 +827,8 @@ class DeltaAgentStateLogger(Observer):
             agent_id=agent_id,
             state_hash=state_hash,
             change_mask=change_mask,
-            x=float(state["x"]),
-            y=float(state["y"]),
+            x=None if state["x"] is None else float(state["x"]),
+            y=None if state["y"] is None else float(state["y"]),
             place_id=int(state["place_id"]),
             rank_place_id=int(state["rank_place_id"]),
             last_decision=str(state["last_decision"]),
@@ -832,8 +841,10 @@ class DeltaAgentStateLogger(Observer):
             reply_signal=float(state["reply_signal"]),
         )
 
-    def _write_partitioned_rows(self, rows: list[Any], base_dir: str) -> pa.Table:
-        table = pl.DataFrame(rows).to_arrow()
+    def _write_partitioned_rows(
+        self, rows: list[Any], base_dir: str, schema_overrides: dict[str, Any] | None = None
+    ) -> pa.Table:
+        table = pl.DataFrame(rows, schema_overrides=schema_overrides).to_arrow()
         partitioning = HivePartitioning(_output_partition_schema())
         ds.write_dataset(
             data=table,
@@ -866,7 +877,10 @@ class DeltaAgentStateLogger(Observer):
 
         if delta_rows:
             logger.info("Logging changed agents' state...")
-            self._last_delta_table = self._write_partitioned_rows(delta_rows, self.log_file)
+            # x/y may be null for leading rows; do not infer their type from a sample.
+            self._last_delta_table = self._write_partitioned_rows(
+                delta_rows, self.log_file, schema_overrides={"x": pl.Float64, "y": pl.Float64}
+            )
         self._last_audit_table = self._write_audit_row(
             model, agents_evaluated=len(people), agents_changed=len(delta_rows)
         )

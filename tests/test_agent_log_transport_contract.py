@@ -16,11 +16,9 @@ SCHEMA = pa.schema([
     pa.field("tick", pa.int32(), nullable=False),
     pa.field("rank", pa.int32(), nullable=False),
     pa.field("agent_id", pa.int64(), nullable=False),
-    pa.field("x", pa.float64(), nullable=False),
-    pa.field("y", pa.float64(), nullable=False),
+    pa.field("x", pa.float64(), nullable=True),
+    pa.field("y", pa.float64(), nullable=True),
     pa.field("place_id", pa.int64(), nullable=False),
-    pa.field("latitude", pa.float64(), nullable=True),
-    pa.field("longitude", pa.float64(), nullable=True),
 ])
 
 
@@ -37,6 +35,9 @@ def make_model(tmp_path):
         context=SimpleNamespace(agents=lambda **_: iter(people)),
         comm=SimpleNamespace(Get_rank=lambda: 0),
         cal=SimpleNamespace(tick=60.0),
+        places_proj=SimpleNamespace(
+            lookup_place={10: SimpleNamespace(data=SimpleNamespace(longitude=-87.0, latitude=41.0))}.get
+        ),
     )
     return model, people
 

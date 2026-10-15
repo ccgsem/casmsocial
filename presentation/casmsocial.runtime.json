@@ -5,7 +5,7 @@
     "model_version": "2.11.0"
   },
   "presentation_revision": "casmsocial-r1",
-  "scientific_contract_digest": "sha256:ed31e0203ed64c1d68283cb20db8785a2aaa45007d965c1adb4a8eb6eb16f769",
+  "scientific_contract_digest": "sha256:4cf4e19dce2e8e52190aca75eb36415b75a40b6d18cf1ba33f4ed6510316402f",
   "required_components": [
     {
       "component_id": "scalar-form",
@@ -131,19 +131,11 @@
         },
         {
           "field": "x",
-          "label": "x (model space)"
+          "label": "Longitude (x)"
         },
         {
           "field": "y",
-          "label": "y (model space)"
-        },
-        {
-          "field": "latitude",
-          "label": "Latitude (place)"
-        },
-        {
-          "field": "longitude",
-          "label": "Longitude (place)"
+          "label": "Latitude (y)"
         }
       ]
     },
