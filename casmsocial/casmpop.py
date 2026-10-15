@@ -532,7 +532,7 @@ class AgentLogger(Observer):
         if lookup_place is None or place_id is None:
             return None
         value = getattr(getattr(lookup_place(place_id), "data", None), column, None)
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
             return None
         return float(value)
 
