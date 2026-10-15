@@ -2,10 +2,10 @@
   "contract_version": "runtime-3",
   "model_ref": {
     "model_name": "casmsocial",
-    "model_version": "2.10.0"
+    "model_version": "2.11.0"
   },
   "presentation_revision": "casmsocial-r1",
-  "scientific_contract_digest": "sha256:77ca5027c92711ff6aee674f2417657483c90f6eff7b960a896f14cb4b6e74a7",
+  "scientific_contract_digest": "sha256:ed31e0203ed64c1d68283cb20db8785a2aaa45007d965c1adb4a8eb6eb16f769",
   "required_components": [
     {
       "component_id": "scalar-form",
