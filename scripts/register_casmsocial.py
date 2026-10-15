@@ -147,6 +147,138 @@ def _build_scenarios() -> dict[str, dict[str, Any]]:
     return {name: spec["parameters"] for name, spec in _load_scenario_specs().items()}
 
 
+# ---------------------------------------------------------------------------
+# Declared parameters and outputs (read by model-neutral viewers)
+# ---------------------------------------------------------------------------
+
+
+def _parameter_schema() -> dict[str, Any]:
+    """Run parameters a viewer may offer for editing.
+
+    Not exhaustive: scenarios carry many more keys (tables, behavior, roads,
+    partitioning), so undeclared keys stay allowed. Defaults equal CasmPop's own
+    defaults, so declaring them does not change what a run does.
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "random.seed": {"type": "integer", "default": 42},
+            "duration.hours": {"type": "integer", "minimum": 1, "default": 168},
+            "time.step.minutes": {"type": "integer", "minimum": 1, "default": 60},
+            "observers.schedule_occupancy_log.enabled": {"type": "boolean", "default": False},
+            "observers.social_interaction_log.enabled": {"type": "boolean", "default": False},
+        },
+    }
+
+
+_RUN_IDENTITY: dict[str, Any] = {
+    "run_id": {"type": "string"},
+    "random_seed": {"type": "integer"},
+    "tick": {"type": "integer", "minimum": 0},
+    "rank": {"type": "integer", "minimum": 0},
+}
+_COUNT = {"type": "integer", "minimum": 0}
+_OCCUPANCY_METRICS: dict[str, str] = {
+    "active_person_count": "people",
+    "active_place_count": "places",
+    "co_located_person_count": "people",
+    "max_place_occupancy": "people",
+    "in_person_interaction_count": "interactions",
+    "remote_message_count": "messages",
+}
+
+
+def _output_schema() -> dict[str, Any]:
+    """Row schemas of the observer channels a run writes (one Parquet dataset each)."""
+    agent_log = {
+        "type": "object",
+        "description": (
+            "One row per person per logged tick. x and y are the person's model-space "
+            "location (integers stored as floats); they are not latitude/longitude. "
+            "observers.agent_log_columns can add further person-state columns."
+        ),
+        "properties": {
+            **_RUN_IDENTITY,
+            "agent_id": {"type": "integer"},
+            "x": {"type": "number"},
+            "y": {"type": "number"},
+            "place_id": {"type": "integer"},
+        },
+        "required": ["run_id", "random_seed", "tick", "rank", "agent_id"],
+    }
+    schedule_occupancy = {
+        "type": "object",
+        "description": (
+            "Privacy-safe scheduled-occupancy counts, one row per tick per rank. "
+            "Written only when observers.schedule_occupancy_log.enabled is true."
+        ),
+        "properties": {
+            **_RUN_IDENTITY,
+            **{name: _COUNT for name in _OCCUPANCY_METRICS},
+            "places_with_1_person": _COUNT,
+            "places_with_2_to_4_people": _COUNT,
+            "places_with_5_to_9_people": _COUNT,
+            "places_with_10_or_more_people": _COUNT,
+        },
+        "required": list(_RUN_IDENTITY) + list(_OCCUPANCY_METRICS),
+    }
+    social_interactions = {
+        "type": "object",
+        "description": (
+            "Per-tick counts of social interaction events by channel and network kind. "
+            "Written only when observers.social_interaction_log.enabled is true."
+        ),
+        "properties": {
+            **_RUN_IDENTITY,
+            "channel": {"type": "string"},
+            "network_kind": {"type": "string"},
+            "event_count": _COUNT,
+        },
+        "required": [*_RUN_IDENTITY, "channel", "network_kind", "event_count"],
+    }
+    rows = {
+        "agent_log": agent_log,
+        "schedule_occupancy": schedule_occupancy,
+        "social_interactions": social_interactions,
+    }
+    return {
+        "type": "object",
+        "properties": {name: {"type": "array", "items": row} for name, row in rows.items()},
+    }
+
+
+def _output_descriptors() -> dict[str, Any]:
+    """Say what each channel's rows mean, so viewers need no casmsocial-specific code.
+
+    tick counts simulated minutes since start.datetime. agent_log declares no
+    spatial semantics: its x/y are model-space, not geographic. Occupancy rows
+    are per rank, so the time series is one row per tick only for single-rank
+    runs (the viewer refuses duplicate times rather than summing them).
+    """
+    time = {"field": "tick", "unit": "minute", "origin": "simulation start (start.datetime)"}
+    return {
+        "schema_version": "1",
+        "channels": {
+            "agent_log": {
+                "views": ["table"],
+                "row_semantics": "entity_snapshot",
+                "entity_id_field": "agent_id",
+                "time": time,
+            },
+            "schedule_occupancy": {
+                "views": ["table", "time_series", "summary"],
+                "row_semantics": "aggregate_snapshot",
+                "time": time,
+                "metrics": {
+                    name: {"unit": unit, "aggregation": "identity"} for name, unit in _OCCUPANCY_METRICS.items()
+                },
+                "null_policy": "gap",
+            },
+            "social_interactions": {"views": ["table"]},
+        },
+    }
+
+
 def _build_model_record(version: str, resources_uri: str, output_root: str = "") -> dict[str, Any]:
     """Build the casmdb model record dict for casmsocial."""
     return {
@@ -168,10 +300,12 @@ def _build_model_record(version: str, resources_uri: str, output_root: str = "")
             "backend": "repast4py",
             "factory_key": CASMSOCIAL_FACTORY_KEY,
             "framework": "repast4py",
+            "observation_channels": ["agent_log", "schedule_occupancy", "social_interactions"],
+            "output_descriptors": _output_descriptors(),
         },
-        "model_parameters_schema": {},
+        "model_parameters_schema": _parameter_schema(),
         "model_inputs_schema": {},
-        "model_outputs_schema": {},
+        "model_outputs_schema": _output_schema(),
     }
 
 

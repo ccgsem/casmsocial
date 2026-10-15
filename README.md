@@ -77,6 +77,18 @@ Canonical casmdb scenario definitions are maintained in
 If casmdb has `CASMDB_API_TOKEN` set, export the same value before running
 the script; it sends it as `Authorization: Bearer <token>`.
 
+The registration also declares a few editable run parameters, the row schemas
+of the `agent_log`, `schedule_occupancy` and `social_interactions` channels,
+and what their rows mean (`model_metadata.output_descriptors`). casmservice's
+generic GUI uses these together with the reviewed manifest in
+`presentation/casmsocial.runtime.json`: a parameter form, an occupancy time
+series and latest-tick summary, and tables. `agent_log` x/y are model-space
+coordinates, not latitude/longitude, so no map view is declared. The occupancy
+chart needs a single-rank run (one row per tick) and
+`observers.schedule_occupancy_log.enabled: true`. After changing the record,
+re-register with `--force-update-model` and re-check the manifest with
+casmservice's `scripts/presentation_manifest.py check`.
+
 To run (option 1):
 
 ```bash
