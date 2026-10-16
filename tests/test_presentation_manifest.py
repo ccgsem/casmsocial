@@ -105,3 +105,27 @@ def test_parameter_defaults_match_casmpop_defaults():
         "observers.schedule_occupancy_log.enabled": False,
         "observers.social_interaction_log.enabled": False,
     }
+
+
+def test_agent_log_declares_the_default_logger_schema_contract():
+    """casmsocial.agent_log.v2 is exactly the default AgentLogger schema."""
+    import pyarrow as pa
+
+    from casmsocial.casmpop import AgentLogger
+
+    descriptor = _build_model_record(_version(), "")["model_metadata"]["output_descriptors"]["channels"]["agent_log"]
+    assert descriptor["schema_contract"] == "casmsocial.agent_log.v2"
+    default = pa.schema(
+        [*AgentLogger.IDENTITY_SCHEMA, *(AgentLogger.STATE_FIELDS[c] for c in AgentLogger.DEFAULT_STATE_COLUMNS)]
+    )
+    expected = [
+        ("run_id", pa.string(), False),
+        ("random_seed", pa.int64(), False),
+        ("tick", pa.int32(), False),
+        ("rank", pa.int32(), False),
+        ("agent_id", pa.int64(), False),
+        ("x", pa.float64(), True),
+        ("y", pa.float64(), True),
+        ("place_id", pa.int64(), False),
+    ]
+    assert [(f.name, f.type, f.nullable) for f in default] == expected
