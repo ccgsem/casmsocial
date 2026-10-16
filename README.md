@@ -87,7 +87,13 @@ longitude/latitude (WGS84 degrees) of each person's current place, so they
 follow moves; they are null when the place has no coordinates or is not known
 on the logging rank. The GUI shows them in the agent table and on an agent
 location map (casmservice runtime-6 `geographic-points@1.1.0`), which leaves
-rows without coordinates off the map and says how many. The occupancy
+rows without coordinates off the map and says how many. `agent_log` also
+declares the `casmsocial.agent_log.v2` schema contract, which is the default
+AgentLogger columns. casmservice applies it to every catalog run, so reads of
+completed runs return the runner's exact Arrow schema (int32 `tick`/`rank`,
+nullable `x`/`y`). A run that sets `observers.agent_log_columns` may add
+columns but must keep `x`, `y` and `place_id`; otherwise its agent_log reads
+fail with HTTP 400. The occupancy
 chart needs a single-rank run (one row per tick) and
 `observers.schedule_occupancy_log.enabled: true`. After changing the record,
 re-register with `--force-update-model` and re-check the manifest with

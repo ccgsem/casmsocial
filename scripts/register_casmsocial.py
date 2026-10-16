@@ -253,7 +253,9 @@ def _output_descriptors() -> dict[str, Any]:
 
     tick counts simulated minutes since start.datetime. agent_log x/y are the
     current place's longitude/latitude; they are nullable, so viewers that need
-    a coordinate for every row must skip null rows. Occupancy rows
+    a coordinate for every row must skip null rows. agent_log declares the
+    casmsocial.agent_log.v2 schema contract (the default AgentLogger columns).
+    Occupancy rows
     are per rank, so the time series is one row per tick only for single-rank
     runs (the viewer refuses duplicate times rather than summing them).
     """
@@ -263,6 +265,11 @@ def _output_descriptors() -> dict[str, Any]:
         "channels": {
             "agent_log": {
                 "views": ["table", "geographic_points"],
+                # The default AgentLogger columns (x, y, place_id) are this contract:
+                # int32 tick/rank, nullable x/y. casmservice then decodes completed
+                # Parquet runs to the runner's exact Arrow schema. Runs that set
+                # observers.agent_log_columns must keep x, y and place_id.
+                "schema_contract": "casmsocial.agent_log.v2",
                 "row_semantics": "entity_snapshot",
                 "entity_id_field": "agent_id",
                 "time": time,
