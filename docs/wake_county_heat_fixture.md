@@ -84,10 +84,10 @@ tick. GitHub Actions runs this same target in the main CI workflow.
 ## Postgres Catalog And S3 Storage
 
 Use this path to prove the production-style DuckLake deployment shape: Postgres
-stores the DuckLake catalog and MinIO provides S3-compatible object storage.
+stores the DuckLake catalog and SeaweedFS provides S3-compatible object storage.
 
 The Compose stack builds the casmsocial production image, starts Postgres and
-MinIO, creates the bucket, and runs the fixture loader:
+SeaweedFS, creates the bucket, and runs the fixture loader:
 
 ```bash
 make wake-county-heat-compose
@@ -114,7 +114,7 @@ make wake-county-heat-compose-down
 This removes containers and the network but preserves the named volumes:
 
 ```text
-casmsocial-ducklake-fixture_ducklake-minio-data
+casmsocial-ducklake-fixture_ducklake-s3-data
 casmsocial-ducklake-fixture_ducklake-postgres-data
 ```
 
@@ -123,7 +123,7 @@ catalog/storage state:
 
 ```bash
 docker volume rm \
-  casmsocial-ducklake-fixture_ducklake-minio-data \
+  casmsocial-ducklake-fixture_ducklake-s3-data \
   casmsocial-ducklake-fixture_ducklake-postgres-data
 ```
 
@@ -142,8 +142,14 @@ when needed:
 | `CASMSOCIAL_DUCKLAKE_S3_ACCESS_KEY_ID` | `casmsocial` |
 | `CASMSOCIAL_DUCKLAKE_S3_SECRET_ACCESS_KEY` | `casmsocial-secret` |
 | `CASMSOCIAL_DUCKLAKE_S3_REGION` | `us-east-1` |
-| `CASMSOCIAL_DUCKLAKE_MINIO_API_PORT` | `59000` |
-| `CASMSOCIAL_DUCKLAKE_MINIO_CONSOLE_PORT` | `59001` |
+| `CASMSOCIAL_DUCKLAKE_S3_API_PORT` | `59000` (the old `CASMSOCIAL_DUCKLAKE_MINIO_API_PORT` is still read when unset) |
+| `CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE` | `chrislusf/seaweedfs:4.48` |
+
+SeaweedFS has no web console, so there is no console port. Where Docker Hub
+policy blocks `chrislusf/seaweedfs`, build casmdb's pinned-source image instead
+(in `casmdb/deploy`, run `docker compose build seaweedfs`) and set
+`CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE=casm-seaweedfs:4.48`. Both images contain
+the same `weed` binary; the Compose file supplies its own entrypoint.
 
 The direct `postgres-s3` loader mode also accepts equivalent CLI options:
 
@@ -153,7 +159,7 @@ uv run python scripts/materialize_wake_county_heat_fixture.py \
   --fixture-path testdata/wake_county_heat_1000_households \
   --postgres-connection "host=ducklake-postgres port=5432 dbname=casmsocial_ducklake user=casmsocial password=casmsocial" \
   --s3-data-path s3://casmsocial-ducklake/wake_county_heat \
-  --s3-endpoint ducklake-minio:9000 \
+  --s3-endpoint ducklake-s3:9000 \
   --s3-access-key-id casmsocial \
   --s3-secret-access-key casmsocial-secret \
   --s3-region us-east-1 \
@@ -161,7 +167,7 @@ uv run python scripts/materialize_wake_county_heat_fixture.py \
   --no-s3-use-ssl
 ```
 
-For containerized MinIO, pass the endpoint as the Docker service name and port
+For containerized S3 storage, pass the endpoint as the Docker service name and port
 without an `http://` prefix.
 
 ## Failure Triage
@@ -176,5 +182,5 @@ UV_INSECURE_HOST=download-r2.pytorch.org
 ```
 
 If the loader cannot attach DuckLake, check that Postgres is healthy and that
-the MinIO init service completed. The Compose command exits with the loader's
+the S3 init service (`ducklake-s3-init`) completed. The Compose command exits with the loader's
 status, so a nonzero exit means the fixture was not fully loaded.

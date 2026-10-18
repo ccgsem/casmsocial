@@ -132,9 +132,9 @@ def test_get_ducklake_postgres_s3_connection_attaches_catalog(monkeypatch: pytes
             postgres_connection="host=ducklake-postgres port=5432 dbname=casmsocial user=casmsocial password=secret",
             s3_data_path="s3://casmsocial-ducklake/wake_county_heat",
             s3_access_key_id="casmsocial",
-            s3_secret_access_key="minio-secret",
+            s3_secret_access_key="s3-secret",
             s3_region="us-east-1",
-            s3_endpoint="ducklake-minio:9000",
+            s3_endpoint="ducklake-s3:9000",
             s3_use_ssl=False,
         )
     )
@@ -145,7 +145,7 @@ def test_get_ducklake_postgres_s3_connection_attaches_catalog(monkeypatch: pytes
     assert "INSTALL httpfs" in statements
     assert "INSTALL ducklake" in statements
     assert "CREATE OR REPLACE SECRET" in statements
-    assert "ENDPOINT 'ducklake-minio:9000'" in statements
+    assert "ENDPOINT 'ducklake-s3:9000'" in statements
     assert "USE_SSL false" in statements
     assert "ATTACH 'ducklake:postgres:host=ducklake-postgres" in statements
     assert "DATA_PATH 's3://casmsocial-ducklake/wake_county_heat'" in statements
@@ -165,7 +165,7 @@ def test_materialization_result_redacts_postgres_password(monkeypatch: pytest.Mo
                 postgres_connection="host=postgres dbname=casmsocial user=casmsocial password=secret",
                 s3_data_path="s3://casmsocial-ducklake/wake_county_heat",
                 s3_access_key_id="casmsocial",
-                s3_secret_access_key="minio-secret",
+                s3_secret_access_key="s3-secret",
             ),
         )
 

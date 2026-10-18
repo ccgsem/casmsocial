@@ -44,7 +44,7 @@ uv run python scripts/materialize_wake_county_heat_fixture.py \
   --fixture-path testdata/wake_county_heat_1000_households \
   --postgres-connection "host=ducklake-postgres port=5432 dbname=casmsocial_ducklake user=casmsocial password=casmsocial" \
   --s3-data-path s3://casmsocial-ducklake/wake_county_heat \
-  --s3-endpoint ducklake-minio:9000 \
+  --s3-endpoint ducklake-s3:9000 \
   --s3-access-key-id casmsocial \
   --s3-secret-access-key casmsocial-secret \
   --s3-region us-east-1 \
@@ -52,7 +52,7 @@ uv run python scripts/materialize_wake_county_heat_fixture.py \
   --no-s3-use-ssl
 ```
 
-For containerized MinIO, the endpoint should be the Docker service name and port without an `http://` prefix. The loader creates a DuckDB S3 secret, attaches `ducklake:postgres:<connection>`, and writes DuckLake table data to the configured S3 URI.
+For containerized S3 storage, the endpoint should be the Docker service name and port without an `http://` prefix. The loader creates a DuckDB S3 secret, attaches `ducklake:postgres:<connection>`, and writes DuckLake table data to the configured S3 URI.
 
 ## Data Review Note
 
