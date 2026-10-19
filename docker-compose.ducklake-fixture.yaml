@@ -19,34 +19,55 @@ services:
       timeout: 5s
       retries: 30
 
-  ducklake-minio:
-    image: ${CASMSOCIAL_DUCKLAKE_MINIO_IMAGE:-minio/minio:latest}
-    command: ["server", "/data", "--console-address", ":9001"]
-    environment:
-      MINIO_ROOT_USER: ${CASMSOCIAL_DUCKLAKE_S3_ACCESS_KEY_ID:-casmsocial}
-      MINIO_ROOT_PASSWORD: ${CASMSOCIAL_DUCKLAKE_S3_SECRET_ACCESS_KEY:-casmsocial-secret}
-    ports:
-      - "${CASMSOCIAL_DUCKLAKE_MINIO_API_PORT:-59000}:9000"
-      - "${CASMSOCIAL_DUCKLAKE_MINIO_CONSOLE_PORT:-59001}:9001"
-    volumes:
-      - ducklake-minio-data:/data
-
-  ducklake-minio-init:
-    image: ${CASMSOCIAL_DUCKLAKE_MC_IMAGE:-minio/mc:latest}
-    depends_on:
-      - ducklake-minio
-    environment:
-      MINIO_ROOT_USER: ${CASMSOCIAL_DUCKLAKE_S3_ACCESS_KEY_ID:-casmsocial}
-      MINIO_ROOT_PASSWORD: ${CASMSOCIAL_DUCKLAKE_S3_SECRET_ACCESS_KEY:-casmsocial-secret}
-      CASMSOCIAL_DUCKLAKE_S3_BUCKET: ${CASMSOCIAL_DUCKLAKE_S3_BUCKET:-casmsocial-ducklake}
-    entrypoint:
-      - /bin/sh
-      - -c
+  # S3-compatible storage: SeaweedFS (master, volume, filer and S3 gateway in
+  # one `weed server` process). It replaced MinIO, whose community edition is
+  # archived and whose images some Docker Hub organizations block. Where
+  # chrislusf/seaweedfs is blocked too, build casmdb's pinned-source image
+  # (casmdb/deploy: `docker compose build seaweedfs`) and set
+  # CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE=casm-seaweedfs:4.48.
+  ducklake-s3:
+    image: ${CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE:-chrislusf/seaweedfs:4.48}
+    # The filer keeps its metadata store relative to the working directory.
+    working_dir: /data
+    entrypoint: ["/bin/sh", "-c"]
+    command:
       - |
-        until mc alias set local http://ducklake-minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
-          sleep 1
-        done
-        mc mb --ignore-existing "local/$${CASMSOCIAL_DUCKLAKE_S3_BUCKET}"
+        set -eu
+        umask 077
+        mkdir -p /etc/seaweedfs
+        printf '{"identities":[{"name":"admin","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","List","Tagging","Write"]}]}\n' "$${S3_ACCESS_KEY_ID}" "$${S3_SECRET_ACCESS_KEY}" > /etc/seaweedfs/s3.json
+        exec weed server -dir=/data -volume.max=0 -master.volumeSizeLimitMB=1024 -filer -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json
+    environment:
+      S3_ACCESS_KEY_ID: ${CASMSOCIAL_DUCKLAKE_S3_ACCESS_KEY_ID:-casmsocial}
+      S3_SECRET_ACCESS_KEY: ${CASMSOCIAL_DUCKLAKE_S3_SECRET_ACCESS_KEY:-casmsocial-secret}
+    ports:
+      - "${CASMSOCIAL_DUCKLAKE_S3_API_PORT:-${CASMSOCIAL_DUCKLAKE_MINIO_API_PORT:-59000}}:9000"
+    volumes:
+      - ducklake-s3-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/healthz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  ducklake-s3-init:
+    image: ${CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE:-chrislusf/seaweedfs:4.48}
+    depends_on:
+      ducklake-s3:
+        condition: service_healthy
+    environment:
+      CASMSOCIAL_DUCKLAKE_S3_BUCKET: ${CASMSOCIAL_DUCKLAKE_S3_BUCKET:-casmsocial-ducklake}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        bucket="$${CASMSOCIAL_DUCKLAKE_S3_BUCKET}"
+        if echo "s3.bucket.list" | weed shell -master=ducklake-s3:9333 2>/dev/null | grep -Eq "^[[:space:]]*$${bucket}([[:space:]]|$$)"; then
+          echo "Bucket $${bucket} already exists."
+        else
+          echo "s3.bucket.create -name $${bucket}" | weed shell -master=ducklake-s3:9333
+          echo "Bucket $${bucket} created."
+        fi
 
   ducklake-fixture-loader:
     image: casmsocial-ducklake-fixture:local
@@ -58,13 +79,13 @@ services:
     depends_on:
       ducklake-postgres:
         condition: service_healthy
-      ducklake-minio-init:
+      ducklake-s3-init:
         condition: service_completed_successfully
     working_dir: /app
     environment:
       CASMSOCIAL_DUCKLAKE_POSTGRES_CONNECTION: host=ducklake-postgres port=5432 dbname=${CASMSOCIAL_DUCKLAKE_POSTGRES_DB:-casmsocial_ducklake} user=${CASMSOCIAL_DUCKLAKE_POSTGRES_USER:-casmsocial} password=${CASMSOCIAL_DUCKLAKE_POSTGRES_PASSWORD:-casmsocial}
       CASMSOCIAL_DUCKLAKE_S3_DATA_PATH: s3://${CASMSOCIAL_DUCKLAKE_S3_BUCKET:-casmsocial-ducklake}/wake_county_heat
-      CASMSOCIAL_DUCKLAKE_S3_ENDPOINT: ducklake-minio:9000
+      CASMSOCIAL_DUCKLAKE_S3_ENDPOINT: ducklake-s3:9000
       CASMSOCIAL_DUCKLAKE_S3_URL_STYLE: path
       CASMSOCIAL_DUCKLAKE_S3_USE_SSL: "false"
       AWS_ACCESS_KEY_ID: ${CASMSOCIAL_DUCKLAKE_S3_ACCESS_KEY_ID:-casmsocial}
@@ -82,4 +103,4 @@ services:
 
 volumes:
   ducklake-postgres-data:
-  ducklake-minio-data:
+  ducklake-s3-data:

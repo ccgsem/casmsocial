@@ -438,7 +438,7 @@ def main() -> None:
     parser.add_argument("--s3-region", help="S3 region. Defaults to AWS_REGION or us-east-1.")
     parser.add_argument(
         "--s3-endpoint",
-        help="S3-compatible endpoint host[:port], for example ducklake-minio:9000.",
+        help="S3-compatible endpoint host[:port], for example ducklake-s3:9000.",
     )
     parser.add_argument(
         "--s3-url-style",
