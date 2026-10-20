@@ -46,6 +46,10 @@ services:
     # The image's entrypoint is `weed`. The filer keeps its metadata store
     # relative to the working directory.
     working_dir: /data/store
+    environment:
+      # The image's own filer.toml puts the filer store at /data/filerldb2, on
+      # the volume's top level; keep it in /data/store with the rest.
+      WEED_LEVELDB2_DIR: /data/store/filerldb2
     command:
       - server
       - -dir=/data/store
