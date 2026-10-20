@@ -87,7 +87,13 @@ Use this path to prove the production-style DuckLake deployment shape: Postgres
 stores the DuckLake catalog and SeaweedFS provides S3-compatible object storage.
 
 The Compose stack builds the casmsocial production image, starts Postgres and
-SeaweedFS, creates the bucket, and runs the fixture loader:
+SeaweedFS, creates the bucket, and runs the fixture loader. The SeaweedFS image
+is the Docker Hardened Image `dhi.io/seaweedfs`, so log in to `dhi.io` once
+with your Docker Hub account before the first run:
+
+```bash
+docker login dhi.io
+```
 
 ```bash
 make wake-county-heat-compose
@@ -115,6 +121,8 @@ This removes containers and the network but preserves the named volumes:
 
 ```text
 casmsocial-ducklake-fixture_ducklake-s3-data
+casmsocial-ducklake-fixture_ducklake-s3-config
+casmsocial-ducklake-fixture_ducklake-s3-tools
 casmsocial-ducklake-fixture_ducklake-postgres-data
 ```
 
@@ -124,6 +132,8 @@ catalog/storage state:
 ```bash
 docker volume rm \
   casmsocial-ducklake-fixture_ducklake-s3-data \
+  casmsocial-ducklake-fixture_ducklake-s3-config \
+  casmsocial-ducklake-fixture_ducklake-s3-tools \
   casmsocial-ducklake-fixture_ducklake-postgres-data
 ```
 
@@ -143,13 +153,22 @@ when needed:
 | `CASMSOCIAL_DUCKLAKE_S3_SECRET_ACCESS_KEY` | `casmsocial-secret` |
 | `CASMSOCIAL_DUCKLAKE_S3_REGION` | `us-east-1` |
 | `CASMSOCIAL_DUCKLAKE_S3_API_PORT` | `59000` (the old `CASMSOCIAL_DUCKLAKE_MINIO_API_PORT` is still read when unset) |
-| `CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE` | `chrislusf/seaweedfs:4.48` |
+| `CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE` | `dhi.io/seaweedfs:4.48@sha256:cb6ec04e…` (pinned digest) |
+| `CASMSOCIAL_DUCKLAKE_BUSYBOX_IMAGE` | `busybox:1.37.0-musl` |
 
-SeaweedFS has no web console, so there is no console port. Where Docker Hub
-policy blocks `chrislusf/seaweedfs`, build casmdb's pinned-source image instead
-(in `casmdb/deploy`, run `docker compose build seaweedfs`) and set
-`CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE=casm-seaweedfs:4.48`. Both images contain
-the same `weed` binary; the Compose file supplies its own entrypoint.
+SeaweedFS has no web console, so there is no console port. The bucket is
+private to the access key above; like the MinIO setup it replaced, the fixture
+grants no anonymous access.
+
+The stack follows casmdb's SeaweedFS layout (`casmdb/deploy`). The hardened
+image has no shell, so a one-shot `ducklake-s3-prepare` job in the official
+busybox image writes the S3 identity file, copies a static busybox into a
+shared tools volume for the healthcheck and the bucket-init job, and hands the
+data volume to the image's non-root user (65532). The scripts are in
+`docker/ducklake-fixture/seaweedfs/`. `CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE` can
+point at another image that runs `weed` as its entrypoint, such as casmdb's
+pinned-source build or `chrislusf/seaweedfs:4.48` where Docker Hub policy
+allows it.
 
 The direct `postgres-s3` loader mode also accepts equivalent CLI options:
 
