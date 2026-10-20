@@ -20,54 +20,70 @@ services:
       retries: 30
 
   # S3-compatible storage: SeaweedFS (master, volume, filer and S3 gateway in
-  # one `weed server` process). It replaced MinIO, whose community edition is
-  # archived and whose images some Docker Hub organizations block. Where
-  # chrislusf/seaweedfs is blocked too, build casmdb's pinned-source image
-  # (casmdb/deploy: `docker compose build seaweedfs`) and set
-  # CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE=casm-seaweedfs:4.48.
-  ducklake-s3:
-    image: ${CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE:-chrislusf/seaweedfs:4.48}
-    # The filer keeps its metadata store relative to the working directory.
-    working_dir: /data
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -eu
-        umask 077
-        mkdir -p /etc/seaweedfs
-        printf '{"identities":[{"name":"admin","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","List","Tagging","Write"]}]}\n' "$${S3_ACCESS_KEY_ID}" "$${S3_SECRET_ACCESS_KEY}" > /etc/seaweedfs/s3.json
-        exec weed server -dir=/data -volume.max=0 -master.volumeSizeLimitMB=1024 -filer -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json
+  # one `weed server` process), using the same pattern as casmdb/deploy. It
+  # replaced MinIO, whose community edition is archived and whose images some
+  # Docker Hub organizations block. The default image is the Docker Hardened
+  # Image (`docker login dhi.io` first); it has no shell, so the busybox
+  # prepare job writes the S3 identity file and supplies sh/wget in /tools.
+  ducklake-s3-prepare:
+    image: ${CASMSOCIAL_DUCKLAKE_BUSYBOX_IMAGE:-busybox:1.37.0-musl}
+    restart: "no"
+    entrypoint: ["/bin/sh", "/prepare.sh"]
+    volumes:
+      - ./docker/ducklake-fixture/seaweedfs/prepare.sh:/prepare.sh:ro
+      - ducklake-s3-config:/config
+      - ducklake-s3-tools:/tools
+      - ducklake-s3-data:/data
     environment:
       S3_ACCESS_KEY_ID: ${CASMSOCIAL_DUCKLAKE_S3_ACCESS_KEY_ID:-casmsocial}
       S3_SECRET_ACCESS_KEY: ${CASMSOCIAL_DUCKLAKE_S3_SECRET_ACCESS_KEY:-casmsocial-secret}
+
+  ducklake-s3:
+    image: ${CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE:-dhi.io/seaweedfs:4.48@sha256:cb6ec04e76bb110daa4837cf109e8a2a9c30de4238d47ac5bb8a1e646f880822}
+    depends_on:
+      ducklake-s3-prepare:
+        condition: service_completed_successfully
+    # The image's entrypoint is `weed`. The filer keeps its metadata store
+    # relative to the working directory.
+    working_dir: /data
+    command:
+      - server
+      - -dir=/data
+      - -volume.max=0
+      - -master.volumeSizeLimitMB=1024
+      - -filer
+      - -s3
+      - -s3.port=9000
+      - -s3.config=/config/s3.json
+    # weed server shuts its filer, volume and master down in turn; the default
+    # 10s ends in SIGKILL.
+    stop_grace_period: 30s
     ports:
       - "${CASMSOCIAL_DUCKLAKE_S3_API_PORT:-${CASMSOCIAL_DUCKLAKE_MINIO_API_PORT:-59000}}:9000"
     volumes:
       - ducklake-s3-data:/data
+      - ducklake-s3-config:/config:ro
+      - ducklake-s3-tools:/tools:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/healthz"]
+      test: ["CMD", "/tools/wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/healthz"]
       interval: 2s
       timeout: 5s
       retries: 30
+      start_period: 10s
 
   ducklake-s3-init:
-    image: ${CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE:-chrislusf/seaweedfs:4.48}
+    image: ${CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE:-dhi.io/seaweedfs:4.48@sha256:cb6ec04e76bb110daa4837cf109e8a2a9c30de4238d47ac5bb8a1e646f880822}
     depends_on:
       ducklake-s3:
         condition: service_healthy
+    restart: "no"
+    entrypoint: ["/tools/sh", "/init-bucket.sh"]
+    volumes:
+      - ./docker/ducklake-fixture/seaweedfs/init-bucket.sh:/init-bucket.sh:ro
+      - ducklake-s3-tools:/tools:ro
     environment:
-      CASMSOCIAL_DUCKLAKE_S3_BUCKET: ${CASMSOCIAL_DUCKLAKE_S3_BUCKET:-casmsocial-ducklake}
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -eu
-        bucket="$${CASMSOCIAL_DUCKLAKE_S3_BUCKET}"
-        if echo "s3.bucket.list" | weed shell -master=ducklake-s3:9333 2>/dev/null | grep -Eq "^[[:space:]]*$${bucket}([[:space:]]|$$)"; then
-          echo "Bucket $${bucket} already exists."
-        else
-          echo "s3.bucket.create -name $${bucket}" | weed shell -master=ducklake-s3:9333
-          echo "Bucket $${bucket} created."
-        fi
+      S3_BUCKET: ${CASMSOCIAL_DUCKLAKE_S3_BUCKET:-casmsocial-ducklake}
+      SEAWEEDFS_MASTER: ducklake-s3:9333
 
   ducklake-fixture-loader:
     image: casmsocial-ducklake-fixture:local
@@ -104,3 +120,5 @@ services:
 volumes:
   ducklake-postgres-data:
   ducklake-s3-data:
+  ducklake-s3-config:
+  ducklake-s3-tools:
