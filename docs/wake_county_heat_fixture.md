@@ -155,6 +155,7 @@ when needed:
 | `CASMSOCIAL_DUCKLAKE_S3_API_PORT` | `59000` (the old `CASMSOCIAL_DUCKLAKE_MINIO_API_PORT` is still read when unset) |
 | `CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE` | `dhi.io/seaweedfs:4.48@sha256:cb6ec04e…` (pinned digest) |
 | `CASMSOCIAL_DUCKLAKE_BUSYBOX_IMAGE` | `busybox:1.37.0-musl` |
+| `CASMSOCIAL_DUCKLAKE_SEAWEEDFS_VOLUME_SIZE_LIMIT_MB` | `64` |
 
 SeaweedFS has no web console, so there is no console port. The bucket is
 private to the access key above; like the MinIO setup it replaced, the fixture
@@ -164,7 +165,10 @@ The stack follows casmdb's SeaweedFS layout (`casmdb/deploy`). The hardened
 image has no shell, so a one-shot `ducklake-s3-prepare` job in the official
 busybox image writes the S3 identity file, copies a static busybox into a
 shared tools volume for the healthcheck and the bucket-init job, and hands the
-data volume to the image's non-root user (65532). The scripts are in
+image's non-root user (65532) a `/data/store` folder in the data volume, where
+SeaweedFS keeps everything. (On a new volume's first mount, Podman resets the
+owner of the volume's top level to match the image's root-owned `/data`, so a
+subfolder is used.) The scripts are in
 `docker/ducklake-fixture/seaweedfs/`. `CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE` can
 point at another image that runs `weed` as its entrypoint, such as casmdb's
 pinned-source build or `chrislusf/seaweedfs:4.48` where Docker Hub policy
@@ -199,6 +203,17 @@ If Docker image build fails while downloading Torch, rerun with:
 ```bash
 UV_INSECURE_HOST=download-r2.pytorch.org
 ```
+
+The loader reads the fixture from a read-only mount of
+`testdata/wake_county_heat_1000_households`; the image itself excludes
+`testdata/`.
+
+If uploads fail with HTTP 500, check the `ducklake-s3` log for "No writable
+volumes and no free volumes left": SeaweedFS grows seven volumes at a time and
+needs free disk for all of them (seven times
+`CASMSOCIAL_DUCKLAKE_SEAWEEDFS_VOLUME_SIZE_LIMIT_MB`, plus a margin). If
+SeaweedFS exits with "permission denied" under `/data/store`, check that
+`ducklake-s3-prepare` completed.
 
 If the loader cannot attach DuckLake, check that Postgres is healthy and that
 the S3 init service (`ducklake-s3-init`) completed. The Compose command exits with the loader's

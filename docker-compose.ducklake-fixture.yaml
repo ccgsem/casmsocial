@@ -45,12 +45,19 @@ services:
         condition: service_completed_successfully
     # The image's entrypoint is `weed`. The filer keeps its metadata store
     # relative to the working directory.
-    working_dir: /data
+    working_dir: /data/store
+    environment:
+      # The image's own filer.toml puts the filer store at /data/filerldb2, on
+      # the volume's top level; keep it in /data/store with the rest.
+      WEED_LEVELDB2_DIR: /data/store/filerldb2
     command:
       - server
-      - -dir=/data
+      - -dir=/data/store
       - -volume.max=0
-      - -master.volumeSizeLimitMB=1024
+      # SeaweedFS grows a collection seven volumes at a time and refuses
+      # writes unless the disk has room for them, so 1 GB volumes need about
+      # 8 GB free. The fixture holds ~20 MB; 64 MB volumes need under 0.5 GB.
+      - -master.volumeSizeLimitMB=${CASMSOCIAL_DUCKLAKE_SEAWEEDFS_VOLUME_SIZE_LIMIT_MB:-64}
       - -filer
       - -s3
       - -s3.port=9000
@@ -61,7 +68,13 @@ services:
     ports:
       - "${CASMSOCIAL_DUCKLAKE_S3_API_PORT:-${CASMSOCIAL_DUCKLAKE_MINIO_API_PORT:-59000}}:9000"
     volumes:
-      - ducklake-s3-data:/data
+      # nocopy keeps the image's own /data contents out of the volume. Data
+      # lives in /data/store, which the prepare job owns for uid 65532.
+      - type: volume
+        source: ducklake-s3-data
+        target: /data
+        volume:
+          nocopy: true
       - ducklake-s3-config:/config:ro
       - ducklake-s3-tools:/tools:ro
     healthcheck:
@@ -98,6 +111,9 @@ services:
       ducklake-s3-init:
         condition: service_completed_successfully
     working_dir: /app
+    # The image excludes testdata/ (.dockerignore), so mount the fixture.
+    volumes:
+      - ./testdata/wake_county_heat_1000_households:/app/testdata/wake_county_heat_1000_households:ro
     environment:
       CASMSOCIAL_DUCKLAKE_POSTGRES_CONNECTION: host=ducklake-postgres port=5432 dbname=${CASMSOCIAL_DUCKLAKE_POSTGRES_DB:-casmsocial_ducklake} user=${CASMSOCIAL_DUCKLAKE_POSTGRES_USER:-casmsocial} password=${CASMSOCIAL_DUCKLAKE_POSTGRES_PASSWORD:-casmsocial}
       CASMSOCIAL_DUCKLAKE_S3_DATA_PATH: s3://${CASMSOCIAL_DUCKLAKE_S3_BUCKET:-casmsocial-ducklake}/wake_county_heat
