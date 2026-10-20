@@ -37,5 +37,17 @@ umask 022
 cp /bin/busybox /tools/busybox
 /tools/busybox --install -s /tools
 
-chown -R "$SEAWEEDFS_UID:$SEAWEEDFS_UID" /data
+# SeaweedFS keeps everything in /data/store, not at the volume's top level:
+# when the SeaweedFS container first mounts a new volume, Podman resets the
+# owner of its top-level folder to match the image's root-owned /data (even
+# with nocopy), after this job has run. A subfolder keeps its owner.
+mkdir -p /data/store
+# Volumes from before /data/store kept SeaweedFS's files at the top level;
+# move them in (the master, volume and filer stores are found relative to it).
+for entry in /data/* /data/.[!.]* /data/..?*; do
+  [ -e "$entry" ] || continue
+  [ "$entry" = /data/store ] && continue
+  mv "$entry" /data/store/
+done
+chown -R "$SEAWEEDFS_UID:$SEAWEEDFS_UID" /data/store
 echo "SeaweedFS config, tools and data volume ready."

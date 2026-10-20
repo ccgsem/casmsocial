@@ -165,9 +165,10 @@ The stack follows casmdb's SeaweedFS layout (`casmdb/deploy`). The hardened
 image has no shell, so a one-shot `ducklake-s3-prepare` job in the official
 busybox image writes the S3 identity file, copies a static busybox into a
 shared tools volume for the healthcheck and the bucket-init job, and hands the
-data volume to the image's non-root user (65532). SeaweedFS mounts that volume
-with `nocopy`, so the image's own root-owned `/data` isn't copied over it on
-first use. The scripts are in
+image's non-root user (65532) a `/data/store` folder in the data volume, where
+SeaweedFS keeps everything. (On a new volume's first mount, Podman resets the
+owner of the volume's top level to match the image's root-owned `/data`, so a
+subfolder is used.) The scripts are in
 `docker/ducklake-fixture/seaweedfs/`. `CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE` can
 point at another image that runs `weed` as its entrypoint, such as casmdb's
 pinned-source build or `chrislusf/seaweedfs:4.48` where Docker Hub policy
@@ -211,8 +212,8 @@ If uploads fail with HTTP 500, check the `ducklake-s3` log for "No writable
 volumes and no free volumes left": SeaweedFS grows seven volumes at a time and
 needs free disk for all of them (seven times
 `CASMSOCIAL_DUCKLAKE_SEAWEEDFS_VOLUME_SIZE_LIMIT_MB`, plus a margin). If
-SeaweedFS exits with "mkdir /data/m9333: permission denied", the data volume is
-owned by root; rerunning lets the prepare job fix it.
+SeaweedFS exits with "permission denied" under `/data/store`, check that
+`ducklake-s3-prepare` completed.
 
 If the loader cannot attach DuckLake, check that Postgres is healthy and that
 the S3 init service (`ducklake-s3-init`) completed. The Compose command exits with the loader's

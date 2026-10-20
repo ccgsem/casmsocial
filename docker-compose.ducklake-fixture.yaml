@@ -45,10 +45,10 @@ services:
         condition: service_completed_successfully
     # The image's entrypoint is `weed`. The filer keeps its metadata store
     # relative to the working directory.
-    working_dir: /data
+    working_dir: /data/store
     command:
       - server
-      - -dir=/data
+      - -dir=/data/store
       - -volume.max=0
       # SeaweedFS grows a collection seven volumes at a time and refuses
       # writes unless the disk has room for them, so 1 GB volumes need about
@@ -64,9 +64,8 @@ services:
     ports:
       - "${CASMSOCIAL_DUCKLAKE_S3_API_PORT:-${CASMSOCIAL_DUCKLAKE_MINIO_API_PORT:-59000}}:9000"
     volumes:
-      # nocopy: the image ships a root-owned /data, and on a volume's first
-      # mount Docker/Podman would copy it in and undo the prepare job's chown,
-      # so SeaweedFS (uid 65532) couldn't write.
+      # nocopy keeps the image's own /data contents out of the volume. Data
+      # lives in /data/store, which the prepare job owns for uid 65532.
       - type: volume
         source: ducklake-s3-data
         target: /data
