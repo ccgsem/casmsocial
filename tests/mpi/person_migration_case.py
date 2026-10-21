@@ -1,6 +1,7 @@
 """Migrate Person agents between two MPI ranks and report what survives."""
 
 import json
+import sys
 
 import repast4py.context as ctx
 from mpi4py import MPI
@@ -8,13 +9,14 @@ from mpi4py import MPI
 from casmsocial.activities import Act, make_plan
 from casmsocial.communication.types import CommMessage, MessageIntent, MessageKind, build_message_payload
 from casmsocial.person import BehaviorEngineV2, LLMBehaviorEngine, Person, ScheduleBehaviorEngine
+from casmsocial.place import PlacesProjectionV2
 
 PLACES = (100, 200)
 
 
-def make_person(local_id, engine):
+def make_person(local_id, engine, rank=0):
     plan = make_plan([Act(local_id, 0, 0, 0, 60, 100), Act(local_id, 1, 1, 120, 180, 200)])
-    return Person.from_default_fields(local_id, 0, [plan], PLACES, behavior_engine=engine)
+    return Person.from_default_fields(local_id, rank, [plan], PLACES, behavior_engine=engine)
 
 
 def message(receiver, msg_id):
@@ -111,5 +113,46 @@ def main():
         print(json.dumps({"sent": gathered[0]["sent"], "received": gathered[1]["received"]}, default=list))
 
 
+def synchronize():
+    """Run the context.synchronize() path that CasmPop uses without a partition table.
+
+    Reports how many times Person.save() ran, to show whether the cognition
+    payload becomes a per-tick ghost-update cost.
+    """
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    Person.registerBehaviorEngine(LLMBehaviorEngine)
+    context = ctx.SharedContext(comm)
+    context.add_projection(PlacesProjectionV2("places_projection", comm))
+    for local_id in range(3):
+        person = make_person(local_id, LLMBehaviorEngine, rank)
+        seed_cognitive_state(person)
+        context.add(person)
+
+    saves = 0
+    original_save = Person.save
+
+    def counting_save(self):
+        nonlocal saves
+        saves += 1
+        return original_save(self)
+
+    Person.save = counting_save
+    for _ in range(3):
+        context.synchronize(Person.restore)
+    Person.save = original_save
+
+    record = {
+        "saves": saves,
+        "bounded_projections": len(context.bounded_projs),
+        "ghosted": len(context._agent_manager._ghosted_agents),
+        "ghosts": len(context._agent_manager._ghost_agents),
+        "local": len(list(context.agents())),
+    }
+    gathered = comm.gather(record, root=0)
+    if rank == 0:
+        print(json.dumps(gathered))
+
+
 if __name__ == "__main__":
-    main()
+    synchronize() if sys.argv[1:] == ["synchronize"] else main()

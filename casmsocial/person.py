@@ -53,7 +53,12 @@ class BehaviorEngine:
         # self.environment = environment
 
     def save_state(self) -> tuple | None:
-        """Return picklable engine state to carry across rank migration, or None if stateless."""
+        """Return picklable engine state to carry across rank migration, or None if stateless.
+
+        The payload is for in-run migration between ranks running the same
+        build only. It isn't a checkpoint format: subclasses may encode state
+        positionally, so persisting it across code changes can shift values.
+        """
         return None
 
     def restore_state(self, state: tuple) -> None:
@@ -211,7 +216,12 @@ class BehaviorEngineV2(BehaviorEngine):
         )
 
     def save_state(self) -> tuple:
-        """Return the cognitive state as a positional tuple of CognitiveState fields."""
+        """Return the cognitive state as a positional tuple of CognitiveState fields.
+
+        For in-run migration only, not checkpoints: ``restore_state()`` rebuilds
+        with ``CognitiveState(*state)``, so reordering a field silently shifts
+        values in any persisted payload.
+        """
         return _cognitive_state_fields(self.cognition)
 
     def restore_state(self, state: tuple) -> None:
@@ -1249,6 +1259,7 @@ class Person(core.Agent):
             astuple(self.state),  # 3: state is a PersonData object
             dict(getattr(self, "pending_acks", {})),  # 4: lightweight communication state
         )
+        # Index 5 aliases the agent's live dicts and lists; serialize it before mutating the agent.
         behavior = self._save_behavior()
         if behavior is None:
             return saved
