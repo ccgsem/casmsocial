@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import pickle
 from collections import namedtuple
 from datetime import datetime
 
+import pytest
 from mpi4py import MPI
 
 from casmsocial.activities import DEFAULT_TRAVEL_LEG, Act, activity_semantics_for, default_activity_semantics, make_plan
@@ -1260,3 +1262,62 @@ def _sim_time_at(minute_of_day: int):
     cal = SimTime(datetime(2025, 1, 1))
     cal.set_datetime(datetime(2025, 1, 1, minute_of_day // 60, minute_of_day % 60))
     return cal
+
+
+@pytest.fixture
+def registered_engine():
+    """Register a behavior engine for one test and restore the previous one."""
+    original = Person.getBehaviorEngine()
+    yield Person.registerBehaviorEngine
+    Person.registerBehaviorEngine(original)
+
+
+def test_schedule_person_save_keeps_five_element_payload(registered_engine):
+    registered_engine(ScheduleBehaviorEngine)
+    plan = make_plan([Act(1, 0, 0, 0, 60, 100)])
+    person = Person.from_default_fields(1, 0, [plan], (100,), behavior_engine=ScheduleBehaviorEngine)
+    assert len(person.save()) == 5
+
+    person.behavior_engine  # instantiating the lazy engine adds no state
+    assert len(person.save()) == 5
+
+
+
+def test_person_save_restore_round_trips_cognition_and_buffers_through_pickle(registered_engine):
+    registered_engine(BehaviorEngineV2)
+    plan = make_plan([Act(1, 0, 0, 0, 60, 100)])
+    person = Person.from_default_fields(1, 0, [plan], (100,), behavior_engine=LLMBehaviorEngine)
+    person.behavior_engine.cognition.beliefs["routine_preference"] = 0.25
+    person.behavior_engine.cognition.episodic_memory.append({"tick": 1, "event_type": "x", "summary": "", "data": {}})
+    message = CommMessage(
+        msg_id="msg-1",
+        sender_uid=(2, Person.TYPE, 0),
+        sender_place_id=100,
+        receiver_uid=person.uid,
+        receiver_place_id=100,
+        mode="local",
+        payload=build_message_payload(MessageKind.CHECK_IN),
+        tick=1,
+    )
+    person.receive(message)
+
+    saved = person.save()
+    assert len(saved) == 6
+    restored = Person.restore(pickle.loads(pickle.dumps(saved)))
+
+    assert isinstance(restored.behavior_engine, LLMBehaviorEngine)
+    assert restored.behavior_engine.cognition == person.behavior_engine.cognition
+    assert restored.behavior_engine.cognition is not person.behavior_engine.cognition
+    assert restored.inbox == [message]
+
+
+def test_person_restore_accepts_legacy_five_element_payload(registered_engine):
+    registered_engine(BehaviorEngineV2)
+    plan = make_plan([Act(1, 0, 0, 0, 60, 100)])
+    person = Person.from_default_fields(1, 0, [plan], (100,), behavior_engine=BehaviorEngineV2)
+
+    restored = Person.restore(person.save()[:5])
+
+    assert restored.uid == person.uid
+    assert restored.behavior_engine.cognition.beliefs == BehaviorEngineV2._DEFAULT_BELIEFS
+    assert restored.inbox == []
