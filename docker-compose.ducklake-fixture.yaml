@@ -1,14 +1,21 @@
 services:
+  # Postgres holds the DuckLake catalog. The default image is the Docker
+  # Hardened Image (`docker login dhi.io`), which runs as uid 70 and keeps its
+  # cluster in /var/lib/postgresql/16/data. PGDATA is set explicitly so the
+  # official postgres:16 image also works as an override. The volume name
+  # changed with the image: volumes made by the official image hold a cluster
+  # owned by uid 999, which the hardened image can't open.
   ducklake-postgres:
-    image: ${CASMSOCIAL_DUCKLAKE_POSTGRES_IMAGE:-postgres:16}
+    image: ${CASMSOCIAL_DUCKLAKE_POSTGRES_IMAGE:-dhi.io/postgres:16@sha256:c7b1356f8b362c31077d5775b42a43e56c62f27aabd68e957e1ef5ce15813a9f}
     environment:
+      PGDATA: /var/lib/postgresql/16/data
       POSTGRES_DB: ${CASMSOCIAL_DUCKLAKE_POSTGRES_DB:-casmsocial_ducklake}
       POSTGRES_USER: ${CASMSOCIAL_DUCKLAKE_POSTGRES_USER:-casmsocial}
       POSTGRES_PASSWORD: ${CASMSOCIAL_DUCKLAKE_POSTGRES_PASSWORD:-casmsocial}
     ports:
       - "${CASMSOCIAL_DUCKLAKE_POSTGRES_PORT:-55432}:5432"
     volumes:
-      - ducklake-postgres-data:/var/lib/postgresql/data
+      - ducklake-postgres16-data:/var/lib/postgresql/16/data
     healthcheck:
       test:
         [
@@ -134,7 +141,7 @@ services:
       ]
 
 volumes:
-  ducklake-postgres-data:
+  ducklake-postgres16-data:
   ducklake-s3-data:
   ducklake-s3-config:
   ducklake-s3-tools:

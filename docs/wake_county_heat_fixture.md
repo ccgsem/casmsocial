@@ -87,9 +87,10 @@ Use this path to prove the production-style DuckLake deployment shape: Postgres
 stores the DuckLake catalog and SeaweedFS provides S3-compatible object storage.
 
 The Compose stack builds the casmsocial production image, starts Postgres and
-SeaweedFS, creates the bucket, and runs the fixture loader. The SeaweedFS image
-is the Docker Hardened Image `dhi.io/seaweedfs`, so log in to `dhi.io` once
-with your Docker Hub account before the first run:
+SeaweedFS, creates the bucket, and runs the fixture loader. The Postgres and
+SeaweedFS images are Docker Hardened Images (`dhi.io/postgres`,
+`dhi.io/seaweedfs`), so log in to `dhi.io` once with your Docker Hub account
+before the first run:
 
 ```bash
 docker login dhi.io
@@ -123,7 +124,7 @@ This removes containers and the network but preserves the named volumes:
 casmsocial-ducklake-fixture_ducklake-s3-data
 casmsocial-ducklake-fixture_ducklake-s3-config
 casmsocial-ducklake-fixture_ducklake-s3-tools
-casmsocial-ducklake-fixture_ducklake-postgres-data
+casmsocial-ducklake-fixture_ducklake-postgres16-data
 ```
 
 Remove those volumes only when you no longer need to inspect the loaded
@@ -134,8 +135,15 @@ docker volume rm \
   casmsocial-ducklake-fixture_ducklake-s3-data \
   casmsocial-ducklake-fixture_ducklake-s3-config \
   casmsocial-ducklake-fixture_ducklake-s3-tools \
-  casmsocial-ducklake-fixture_ducklake-postgres-data
+  casmsocial-ducklake-fixture_ducklake-postgres16-data
 ```
+
+Stacks from before the switch to `dhi.io/postgres` used
+`casmsocial-ducklake-fixture_ducklake-postgres-data`, whose cluster belongs to
+the official image's uid 999. The hardened image (uid 70) can't open it, so the
+fixture now uses a new volume, and you can remove the old one. You can also
+remove the old `ducklake-s3-data` volume, so S3 holds no files left over from
+the old catalog.
 
 ## Environment Overrides
 
@@ -148,6 +156,7 @@ when needed:
 | `CASMSOCIAL_DUCKLAKE_POSTGRES_USER` | `casmsocial` |
 | `CASMSOCIAL_DUCKLAKE_POSTGRES_PASSWORD` | `casmsocial` |
 | `CASMSOCIAL_DUCKLAKE_POSTGRES_PORT` | `55432` |
+| `CASMSOCIAL_DUCKLAKE_POSTGRES_IMAGE` | `dhi.io/postgres:16@sha256:c7b1356f…` (pinned digest) |
 | `CASMSOCIAL_DUCKLAKE_S3_BUCKET` | `casmsocial-ducklake` |
 | `CASMSOCIAL_DUCKLAKE_S3_ACCESS_KEY_ID` | `casmsocial` |
 | `CASMSOCIAL_DUCKLAKE_S3_SECRET_ACCESS_KEY` | `casmsocial-secret` |
