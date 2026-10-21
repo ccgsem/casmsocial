@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import math
 from collections import namedtuple
-from dataclasses import astuple, dataclass, field
+from dataclasses import astuple, dataclass, field, fields
+from operator import attrgetter
 from typing import Any, ClassVar, NamedTuple
 
 import repast4py.context as ctx
@@ -50,6 +51,19 @@ class BehaviorEngine:
         self.agent = agent
         # self.social_network = social_network
         # self.environment = environment
+
+    def save_state(self) -> tuple | None:
+        """Return picklable engine state to carry across rank migration, or None if stateless.
+
+        The payload is for in-run migration between ranks running the same
+        build only. It isn't a checkpoint format: subclasses may encode state
+        positionally, so persisting it across code changes can shift values.
+        """
+        return None
+
+    def restore_state(self, state: tuple) -> None:
+        """Rebuild engine state from the output of ``save_state()``."""
+        pass
 
     def decide(self, context: ctx.SharedContext, cal: SimTime):
         """
@@ -103,6 +117,20 @@ class CognitiveState:
     last_llm_tick: int | None = None
     llm_failures: int = 0
     last_llm_summary: str = ""
+
+
+def _field_getter(dataclass_type: type) -> attrgetter:
+    """Return a getter for a dataclass's fields as a shallow positional tuple.
+
+    Unlike ``astuple`` it doesn't deep-copy nested containers; migration
+    pickles the saved tuple, which copies them once.
+    """
+    return attrgetter(*(item.name for item in fields(dataclass_type)))
+
+
+_cognitive_state_fields = _field_getter(CognitiveState)
+_comm_message_fields = _field_getter(CommMessage)
+_message_intent_fields = _field_getter(MessageIntent)
 
 
 @dataclass(slots=True)
@@ -186,6 +214,19 @@ class BehaviorEngineV2(BehaviorEngine):
             needs=self._DEFAULT_NEEDS.copy(),
             attitudes=self._DEFAULT_ATTITUDES.copy(),
         )
+
+    def save_state(self) -> tuple:
+        """Return the cognitive state as a positional tuple of CognitiveState fields.
+
+        For in-run migration only, not checkpoints: ``restore_state()`` rebuilds
+        with ``CognitiveState(*state)``, so reordering a field silently shifts
+        values in any persisted payload.
+        """
+        return _cognitive_state_fields(self.cognition)
+
+    def restore_state(self, state: tuple) -> None:
+        """Replace the default cognitive state with a migrated one."""
+        self.cognition = CognitiveState(*state)
 
     def decide(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Run one cognitive decision cycle and execute the chosen action."""
@@ -1204,16 +1245,47 @@ class Person(core.Agent):
     def save(self) -> tuple:
         """Saves the state of this Person as a Tuple.
 
+        Indexes 0-4 are always present. Index 5 is added only when the agent
+        has behavioral state to carry, so schedule-only agents with empty
+        communication buffers keep the five-element payload.
+
         Returns:
             The saved state of this Person.
         """
-        return (
+        saved = (
             self.uid,  # 0: uid is a tuple
             serialize_plans(self.plans),  # 1: plans is a list[Plan]
             tuple(e for e in self.location.coordinates),  # 2: location
             astuple(self.state),  # 3: state is a PersonData object
             dict(getattr(self, "pending_acks", {})),  # 4: lightweight communication state
         )
+        # Index 5 aliases the agent's live dicts and lists; serialize it before mutating the agent.
+        behavior = self._save_behavior()
+        if behavior is None:
+            return saved
+        return saved + (behavior,)  # 5: behavior engine and communication buffers
+
+    def _save_behavior(self) -> tuple | None:
+        """Return (engine_type, engine_state, inbox, recent_messages, outbound_intents), or None if empty.
+
+        ``engine_type`` is None when it matches the registered default engine.
+        """
+        engine = self.__dict__.get("_behavior_engine")
+        if engine is not None:
+            engine_type = type(engine)
+            engine_state = engine.save_state()
+        else:
+            engine_type = self.__dict__.get("_behavior_engine_type") or Person.getBehaviorEngine()
+            engine_state = None
+        if engine_type is Person.getBehaviorEngine():
+            engine_type = None
+
+        inbox = tuple(map(_comm_message_fields, self.__dict__.get("inbox", ())))
+        recent_messages = tuple(map(_comm_message_fields, self.__dict__.get("recent_messages", ())))
+        outbound = tuple(map(_message_intent_fields, self.__dict__.get("outbound_message_intents", ())))
+        if engine_type is None and engine_state is None and not (inbox or recent_messages or outbound):
+            return None
+        return (engine_type, engine_state, inbox, recent_messages, outbound)
 
     def move(self, cal: SimTime, places_proj) -> bool:
         """Update place membership based on the current plan element.
@@ -1560,6 +1632,15 @@ class Person(core.Agent):
         person.network = person.state.network
         if len(person_data) > 4:
             person.pending_acks = dict(person_data[4])
+        if len(person_data) > 5:
+            engine_type, engine_state, inbox, recent_messages, outbound = person_data[5]
+            if engine_type is not None:
+                person.setBehaviorEngine(engine_type)
+            if engine_state is not None:
+                person.behavior_engine.restore_state(engine_state)
+            person.inbox = [CommMessage(*msg) for msg in inbox]
+            person.recent_messages = [CommMessage(*msg) for msg in recent_messages]
+            person.outbound_message_intents = [MessageIntent(*intent) for intent in outbound]
 
         return person
 
