@@ -369,8 +369,8 @@ def count_existing_partition_rows(
         FROM {output_identifier}
         WHERE imputation = ? AND total_ranks = ?
         """  # noqa: S608 - table identifier is validated by quote_table_identifier.
-    result = conn.execute(query, [imputation, n_ranks]).fetchone()
-    return int(result[0]) if result else 0
+    result = conn.execute(query, [imputation, n_ranks]).fetchall()
+    return int(result[0][0]) if result else 0
 
 
 def write_partition_table(
@@ -406,9 +406,9 @@ def write_partition_table(
     deleted = conn.execute(
         delete_query,
         [imputation, n_ranks],
-    ).fetchone()
+    ).fetchall()
 
-    deleted_count = int(deleted[0]) if deleted else 0
+    deleted_count = int(deleted[0][0]) if deleted else 0
     if deleted_count:
         logger.info(
             f"Replaced {deleted_count:,} existing rows in {qualified_name} for "

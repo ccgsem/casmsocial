@@ -105,7 +105,8 @@ def _attach_lake(conn: duckdb.DuckDBPyConnection, catalog_uri: str, alias: str, 
 
 
 def _one(conn: duckdb.DuckDBPyConnection, sql: str, params: list | None = None) -> tuple:
-    row = conn.execute(sql, params or []).fetchone()
+    rows = conn.execute(sql, params or []).fetchall()
+    row = rows[0] if rows else None
     if row is None:  # pragma: no cover - aggregate queries always return a row
         msg = f"query returned no row: {sql}"
         raise DuckLakeMigrationError(msg)

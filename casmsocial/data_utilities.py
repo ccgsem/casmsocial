@@ -103,7 +103,7 @@ def check_if_table_exists(conn: duckdb.DuckDBPyConnection, table_name: str) -> b
         );
         """,
         [schema_name, table_name],
-    ).fetchone()[0]
+    ).fetchall()[0][0]
     return result
 
 
