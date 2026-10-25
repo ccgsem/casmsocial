@@ -19,7 +19,8 @@ classifiers = [
 ]
 dependencies = [
     "casmsim>=1.0.0",
-    "duckdb>=1.5.4",
+    # <2: lakes are shared across repos; move to DuckDB 2 together, deliberately.
+    "duckdb>=1.5.5,<2",
     "grpcio>=1.83.0",
     "loguru>=0.7.3",
     "numpy>=1.26.4",
