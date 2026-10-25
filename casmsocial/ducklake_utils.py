@@ -130,10 +130,14 @@ def get_ducklake_connection(
             conn.execute("INSTALL quack; LOAD quack; INSTALL httpfs; LOAD httpfs;")
             conn.execute(secret_sql)
 
-        # Attach datalake
+        # Attach datalake. No AUTOMATIC_MIGRATION: lakes are shared (Box, and
+        # several repos on different DuckDB versions), so an attach must never
+        # upgrade the catalog format behind the other readers' backs. A lake
+        # written by a newer DuckLake fails to attach instead; migrate it
+        # deliberately, once, with the newer DuckDB.
         query_string = f"""
         ATTACH {_sql_string(catalog_path)} AS {database_name}
-            (DATA_PATH {_sql_string(data_url)}, OVERRIDE_DATA_PATH true, AUTOMATIC_MIGRATION true);
+            (DATA_PATH {_sql_string(data_url)}, OVERRIDE_DATA_PATH true);
         USE {database_name};
         """
 
