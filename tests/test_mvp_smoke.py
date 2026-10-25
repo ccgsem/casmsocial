@@ -24,21 +24,21 @@ def test_create_mvp_tables_writes_two_rank_partition_table():
     try:
         create_mvp_tables(conn)
 
-        households = conn.execute("""
+        households = conn.sql("""
             SELECT sp_id, hh_size
             FROM casmsocial_mvp.hh
             ORDER BY sp_id
             """).fetchall()
-        rows = conn.execute("""
+        rows = conn.sql("""
             SELECT imputation, total_ranks, rank, place_id
             FROM partitions.mvp_two_rank_place_partitions
             ORDER BY place_id
             """).fetchall()
-        rank_count = conn.execute("""
+        rank_count = conn.sql("""
             SELECT COUNT(DISTINCT rank)
             FROM partitions.mvp_two_rank_place_partitions
             WHERE imputation = 1 AND total_ranks = 2
-            """).fetchone()[0]
+            """).fetchall()[0][0]
 
         assert households == [(100, 1), (200, 1)]
         assert rows == [(1, 2, 0, 100), (1, 2, 1, 200), (1, 2, 0, 300)]
@@ -52,21 +52,21 @@ def test_create_mvp_tables_writes_routable_road_artifacts():
     try:
         create_mvp_tables(conn)
 
-        nodes = conn.execute("""
+        nodes = conn.sql("""
             SELECT node_id, x, y
             FROM casmsocial_mvp.road_nodes
             ORDER BY node_id
-            """).arrow().read_all().to_pylist()
-        edges = conn.execute("""
+            """).to_arrow_table().to_pylist()
+        edges = conn.sql("""
             SELECT edge_id, from_node_id, to_node_id, length_m, travel_time_min, mode, road_type
             FROM casmsocial_mvp.road_edges
             ORDER BY edge_id
-            """).arrow().read_all().to_pylist()
-        snaps = conn.execute("""
+            """).to_arrow_table().to_pylist()
+        snaps = conn.sql("""
             SELECT place_id, road_node_id
             FROM casmsocial_mvp.place_road_snap
             ORDER BY place_id
-            """).arrow().read_all().to_pylist()
+            """).to_arrow_table().to_pylist()
 
         road_network = RoadNetwork.from_tables(nodes, edges, snaps)
         route = road_network.route_between_places(100, 300)

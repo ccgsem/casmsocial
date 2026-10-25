@@ -104,8 +104,8 @@ def _parquet_source(path: Path, label: str) -> str:
 
 
 def _row_count(conn: duckdb.DuckDBPyConnection, qualified_name: str) -> int:
-    row = conn.execute(f"SELECT COUNT(*) FROM {qualified_name}").fetchone()
-    return int(row[0]) if row is not None else 0
+    rows = conn.execute(f"SELECT COUNT(*) FROM {qualified_name}").fetchall()
+    return int(rows[0][0]) if rows else 0
 
 
 def _create_schema(conn: duckdb.DuckDBPyConnection, schema_name: str) -> None:

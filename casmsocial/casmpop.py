@@ -1808,7 +1808,7 @@ class CasmPop(Model):
         if check_if_table_exists(self.conn, table_or_file):
             identifier = quote_table_identifier(table_or_file)
             logger.info(f"Loading {label} from table {table_or_file}...")
-            table = self.conn.execute(f"SELECT * FROM {identifier}").arrow().read_all()  # noqa: S608
+            table = self.conn.sql(f"SELECT * FROM {identifier}").to_arrow_table()  # noqa: S608
             return table.to_pylist()
 
         source_path = pathlib.Path(table_or_file)
@@ -1822,7 +1822,7 @@ class CasmPop(Model):
             raise ValueError(f"Unsupported {label} source: {source_path}")
 
         logger.info(f"Loading {label} from parquet file {source_path}...")
-        table = self.conn.execute("SELECT * FROM read_parquet(?)", [str(source_path)]).arrow().read_all()
+        table = self.conn.sql("SELECT * FROM read_parquet(?)", params=[str(source_path)]).to_arrow_table()
         return table.to_pylist()
 
     def refresh_person_index(self) -> None:
@@ -2124,7 +2124,7 @@ class CasmPop(Model):
             WHERE imputation = ? AND total_ranks = ?
             """,  # noqa: S608 - table identifier is validated by quote_table_identifier.
             [self.size, partition_imputation, self.size],
-        ).fetchone()
+        ).fetchall()[0]
         if partition_count == 0:
             message = (
                 f"No partition rows found in {partition_table} for "
@@ -2151,7 +2151,7 @@ class CasmPop(Model):
             WHERE part.place_id IS NULL
             """,  # noqa: S608 - table identifiers are validated by quote_table_identifier.
             [partition_imputation, self.size],
-        ).fetchone()[0]
+        ).fetchall()[0][0]
         if not missing_assignment_count:
             return
 
@@ -2216,7 +2216,7 @@ class CasmPop(Model):
             FROM place_ranks
             """,
             [self.size],
-        ).fetchone()
+        ).fetchall()[0]
         if partition_count == 0:
             raise MissingPartitionAssignmentError(
                 f"No partition rows found in {partition_table} for "
@@ -2235,7 +2235,7 @@ class CasmPop(Model):
             ANTI JOIN place_ranks
                     ON place_ranks.sp_id = p.sp_id
             """,  # noqa: S608 - table identifier is validated by quote_table_identifier.
-        ).fetchone()[0]
+        ).fetchall()[0][0]
         if missing_assignment_count:
             raise MissingPartitionAssignmentError(
                 f"Partition table {partition_table} is missing {missing_assignment_count} place assignments "
@@ -2848,7 +2848,7 @@ class CasmPop(Model):
             return
 
         try:
-            table = self.conn.execute("SELECT * FROM households").arrow().read_all()
+            table = self.conn.sql("SELECT * FROM households").to_arrow_table()
         except Exception as exc:
             raise MissingRequiredTableError("households") from exc
 
@@ -3469,7 +3469,7 @@ class CasmPop(Model):
         else:
             table = self._time_phase(
                 "startup.create_places.load_place_rows",
-                lambda: self.conn.execute(place_query).arrow().read_all(),
+                lambda: self.conn.sql(place_query).to_arrow_table(),
             )
 
         construct_start = time.perf_counter()
