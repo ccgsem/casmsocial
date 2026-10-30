@@ -124,27 +124,105 @@ def _table_columns(conn: duckdb.DuckDBPyConnection, table_name: str) -> set[str]
     return {column[0].lower() for column in conn.execute(f"SELECT * FROM {table_identifier} LIMIT 0").description}
 
 
+AUTO_HOUSEHOLDS = "auto"
+
+
+def _paired_households_table(persons_table: str) -> str | None:
+    """Return the households table conventionally paired with ``persons_table``.
+
+    ``schema.persons`` pairs with ``schema.households`` and
+    ``schema.persons_<suffix>`` with ``schema.hh_<suffix>`` (for example
+    ``persons_1000_households`` with ``hh_1000_households``).
+    """
+    schema, name = _split_qualified_table(persons_table)
+    if name == "persons":
+        paired = "households"
+    elif name.startswith("persons_"):
+        paired = "hh_" + name.removeprefix("persons_")
+    else:
+        return None
+    return f"{schema}.{paired}" if schema else paired
+
+
+def resolve_households_table(
+    conn: duckdb.DuckDBPyConnection,
+    persons_table: str,
+    households_table: str | None,
+) -> str | None:
+    """Resolve the households table used to map ``sp_hh_id`` to a home place.
+
+    ``"auto"`` (the default) uses the table paired with ``persons_table`` when
+    it exists; ``None`` or ``"none"`` disables the mapping, so ``sp_hh_id`` is
+    used as the home place id (the behaviour before households were mapped).
+    A named table must exist. The table must have ``sp_id`` and either
+    ``place_id`` or ``sp_home_id``.
+    """
+    if households_table is None or households_table.lower() == "none":
+        return None
+    if households_table == AUTO_HOUSEHOLDS:
+        candidate = _paired_households_table(persons_table)
+        if candidate is None or not check_if_table_exists(conn, candidate):
+            logger.warning(
+                f"No households table paired with {persons_table}; using sp_hh_id as the home place id. "
+                "Pass --households-table if household ids are not place ids."
+            )
+            return None
+        households_table = candidate
+    elif not check_if_table_exists(conn, households_table):
+        raise NetworkPartitionerError(f"Households table {households_table} does not exist")
+    columns = _table_columns(conn, households_table)
+    if "sp_id" not in columns or not {"place_id", "sp_home_id"} & columns:
+        raise NetworkPartitionerError(
+            f"Households table {households_table} needs sp_id and place_id or sp_home_id to map homes"
+        )
+    return households_table
+
+
 def _load_person_place_columns(
     conn: duckdb.DuckDBPyConnection,
     persons_table: str,
     imputation: int,
+    households_table: str | None = None,
 ) -> pd.DataFrame:
+    """Load each person's home, school and work place ids.
+
+    With ``households_table``, the home is the household's ``place_id`` or
+    ``sp_home_id`` (matched on ``sp_id = sp_hh_id`` and, when both tables have
+    one, the same imputation), as casmsocial does at run time; ``sp_hh_id`` is
+    kept only for persons without a household row.
+    """
     persons_identifier = quote_table_identifier(persons_table)
     columns = _table_columns(conn, persons_table)
-    if "imputation" not in columns:
+    has_imputation = "imputation" in columns
+    if not has_imputation:
         logger.info(f"Table {persons_table} has no Imputation column; loading all persons rows.")
-        query = f"""
-            SELECT sp_hh_id, sp_school_id, sp_work_id
-            FROM {persons_identifier}
-            """  # noqa: S608 - table identifier is validated by quote_table_identifier.
-        return conn.execute(query).df()
+
+    home_expr = "p.sp_hh_id"
+    household_join = ""
+    params: list[int] = []
+    if households_table is not None:
+        households_identifier = quote_table_identifier(households_table)
+        household_columns = _table_columns(conn, households_table)
+        home_column = "place_id" if "place_id" in household_columns else "sp_home_id"
+        home_expr = f"COALESCE(h.{home_column}, p.sp_hh_id)"
+        household_join = f"LEFT JOIN {households_identifier} h ON h.sp_id = p.sp_hh_id"
+        if has_imputation and "imputation" in household_columns:
+            household_join += " AND CAST(h.Imputation AS INTEGER) = ?"
+            params.append(imputation)
+        logger.info(f"Mapping sp_hh_id to home places through {households_table}.{home_column}")
+
+    where_clause = ""
+    if has_imputation:
+        where_clause = "WHERE CAST(p.Imputation AS INTEGER) = ?"
+        params.append(imputation)
 
     query = f"""
-        SELECT sp_hh_id, sp_school_id, sp_work_id
-        FROM {persons_identifier}
-        WHERE CAST(Imputation AS INTEGER) = ?
+        SELECT {home_expr} AS sp_hh_id, p.sp_school_id, p.sp_work_id
+        FROM {persons_identifier} p
+        {household_join}
+        {where_clause}
         """  # noqa: S608 - table identifiers are validated by quote_table_identifier.
-    return conn.execute(query, [imputation]).df()
+    return conn.execute(query, params).df()
 
 
 def _load_place_ids(conn: duckdb.DuckDBPyConnection, places_table: str) -> set[int]:
@@ -188,6 +266,7 @@ def build_graph_from_ducklake(
     *,
     places_table: str | None = None,
     restrict_to_places: bool = False,
+    households_table: str | None = AUTO_HOUSEHOLDS,
 ) -> nx.Graph:
     """Build a NetworkX graph of co-visited places from a DuckLake catalog.
 
@@ -203,16 +282,17 @@ def build_graph_from_ducklake(
         restrict_to_places: When True, person-referenced IDs outside
             ``places_table`` are dropped. When False, those references are
             still admitted for permissive compatibility with earlier partitioning behavior.
+        households_table: Table mapping ``sp_hh_id`` to a home place; see
+            ``resolve_households_table`` (default ``"auto"``).
 
     Returns:
         A NetworkX undirected graph with one node per ``sp_id`` and edges
         between every pair of places that share at least one person.
     """
-    logger.info(
-        f"Building activity location network from DuckLake " f"(table={persons_table}, imputation={imputation})"
-    )
+    logger.info(f"Building activity location network from DuckLake (table={persons_table}, imputation={imputation})")
 
-    persons = _load_person_place_columns(conn, persons_table, imputation)
+    households_table = resolve_households_table(conn, persons_table, households_table)
+    persons = _load_person_place_columns(conn, persons_table, imputation, households_table)
 
     logger.info(f"Loaded {len(persons):,} person rows for imputation {imputation}")
     if persons.empty:
@@ -229,7 +309,7 @@ def build_graph_from_ducklake(
 
     _add_person_place_edges(graph, persons, valid_place_ids)
 
-    logger.info(f"Graph built: {graph.number_of_nodes():,} nodes, " f"{graph.number_of_edges():,} edges")
+    logger.info(f"Graph built: {graph.number_of_nodes():,} nodes, {graph.number_of_edges():,} edges")
     return graph
 
 
@@ -390,14 +470,12 @@ def write_partition_table(
     ensure_output_table(conn, qualified_name)
     output_identifier = quote_table_identifier(qualified_name)
 
-    df = pd.DataFrame(
-        {
-            "imputation": pd.Series([imputation] * len(partition), dtype="int32"),
-            "total_ranks": pd.Series([n_ranks] * len(partition), dtype="int32"),
-            "rank": pd.Series(list(partition.values()), dtype="int32"),
-            "place_id": pd.Series(list(partition.keys()), dtype="int64"),
-        }
-    )
+    df = pd.DataFrame({
+        "imputation": pd.Series([imputation] * len(partition), dtype="int32"),
+        "total_ranks": pd.Series([n_ranks] * len(partition), dtype="int32"),
+        "rank": pd.Series(list(partition.values()), dtype="int32"),
+        "place_id": pd.Series(list(partition.keys()), dtype="int64"),
+    })
 
     delete_query = f"""
         DELETE FROM {output_identifier}
@@ -424,7 +502,7 @@ def write_partition_table(
     conn.unregister("partition_df")
 
     logger.info(
-        f"Inserted {len(df):,} partition rows into {qualified_name} " f"(imputation={imputation}, total_ranks={n_ranks})"
+        f"Inserted {len(df):,} partition rows into {qualified_name} (imputation={imputation}, total_ranks={n_ranks})"
     )
     return len(df)
 
@@ -481,6 +559,7 @@ def _partition_rank_values_from_connection(
     ufactor: int,
     force: bool,
     weight_attribute: str | None,
+    households_table: str | None = AUTO_HOUSEHOLDS,
 ) -> None:
     pending_rank_values = []
     for n_ranks in n_rank_values:
@@ -503,6 +582,7 @@ def _partition_rank_values_from_connection(
         imputation,
         places_table=places_table,
         restrict_to_places=restrict_to_places,
+        households_table=households_table,
     )
     for n_ranks in pending_rank_values:
         partition = partition_graph_with_pymetis(
@@ -529,6 +609,7 @@ def partition_from_ducklake(
     force: bool = False,
     weight_by: str = "none",
     catalog_uri: str | None = None,
+    households_table: str | None = AUTO_HOUSEHOLDS,
 ) -> None:
     """End-to-end: connect, build graph, run METIS, write partition table.
 
@@ -556,6 +637,8 @@ def partition_from_ducklake(
         weight_by: Workload weight strategy. ``"none"`` / ``"places"``
             preserves place-count balancing. ``"persons"`` balances METIS
             vertex weights by home-person counts per place.
+        households_table: Table mapping ``sp_hh_id`` to a home place
+            (``"auto"`` pairs it with ``persons_table``; ``None`` disables).
     """
     persons_table = persons_table or f"{schema}.persons"
     places_table_resolved = places_table or f"{schema}.places"
@@ -578,6 +661,7 @@ def partition_from_ducklake(
             ufactor=ufactor,
             force=force,
             weight_attribute=weight_attribute,
+            households_table=households_table,
         )
     finally:
         conn.close()
@@ -598,6 +682,7 @@ def partition_many_from_ducklake(
     force: bool = False,
     weight_by: str = "none",
     catalog_uri: str | None = None,
+    households_table: str | None = AUTO_HOUSEHOLDS,
 ) -> None:
     """Partition one or more imputations for one or more MPI rank counts."""
     persons_table = persons_table or f"{schema}.persons"
@@ -625,6 +710,7 @@ def partition_many_from_ducklake(
                 ufactor=ufactor,
                 force=force,
                 weight_attribute=weight_attribute,
+                households_table=households_table,
             )
     finally:
         conn.close()
@@ -708,6 +794,15 @@ def main(
             "'persons' balances home-person vertex weights."
         ),
     ),
+    households_table: str = typer.Option(
+        AUTO_HOUSEHOLDS,
+        "--households-table",
+        help=(
+            "Table mapping each person's sp_hh_id to a home place (place_id or sp_home_id). "
+            "'auto' pairs it with --persons-table (persons -> households, "
+            "persons_1000_households -> hh_1000_households); 'none' uses sp_hh_id as the place id."
+        ),
+    ),
     catalog_uri: str | None = typer.Option(
         None,
         "--catalog-uri",
@@ -766,6 +861,7 @@ def main(
         force=force,
         weight_by=weight_by,
         catalog_uri=catalog_uri,
+        households_table=households_table,
     )
 
     logger.info(f"Done. Partition rows are in {output_table}.")

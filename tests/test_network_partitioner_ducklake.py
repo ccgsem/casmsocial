@@ -388,3 +388,59 @@ def test_write_partition_table_replaces_existing_partition_rows():
         assert rows == [(1, 1), (2, 1), (3, 0)]
     finally:
         conn.close()
+
+
+def test_build_graph_maps_household_ids_to_home_places_through_paired_households():
+    # Household ids are not place ids: household 1 lives at place 101.
+    conn = _create_connection()
+    try:
+        conn.execute("CREATE TABLE households (Imputation INTEGER, sp_id BIGINT, sp_home_id BIGINT)")
+        conn.execute("INSERT INTO households VALUES (1, 1, 101), (2, 1, 102)")
+        conn.execute("INSERT INTO persons VALUES (1, 1, 5, NULL), (1, 1, NULL, NULL)")
+
+        graph = build_graph_from_ducklake(conn, "persons", 1)
+
+        assert sorted(graph.nodes()) == [5, 101]
+        assert graph.has_edge(101, 5)
+        assert graph.nodes[101][partitioner.PERSON_WEIGHT_ATTR] == 2
+    finally:
+        conn.close()
+
+
+def test_auto_pairs_sample_persons_with_sample_households():
+    conn = _create_connection()
+    try:
+        conn.execute("CREATE SCHEMA wake")
+        conn.execute("CREATE TABLE wake.persons_1000_households AS SELECT * FROM persons")
+        conn.execute("CREATE TABLE wake.hh_1000_households (sp_id BIGINT, sp_home_id BIGINT)")
+        assert (
+            partitioner.resolve_households_table(conn, "wake.persons_1000_households", "auto")
+            == "wake.hh_1000_households"
+        )
+        assert partitioner.resolve_households_table(conn, "wake.persons_1000_households", "none") is None
+    finally:
+        conn.close()
+
+
+def test_without_households_table_sp_hh_id_is_the_home_place():
+    conn = _create_connection()
+    try:
+        conn.execute("INSERT INTO persons VALUES (1, 7, NULL, NULL)")
+
+        graph = build_graph_from_ducklake(conn, "persons", 1)
+
+        assert sorted(graph.nodes()) == [7]
+    finally:
+        conn.close()
+
+
+def test_named_households_table_must_exist_and_have_a_home_column():
+    conn = _create_connection()
+    try:
+        with pytest.raises(partitioner.NetworkPartitionerError):
+            partitioner.resolve_households_table(conn, "persons", "missing_households")
+        conn.execute("CREATE TABLE bad_households (sp_id BIGINT)")
+        with pytest.raises(partitioner.NetworkPartitionerError):
+            partitioner.resolve_households_table(conn, "persons", "bad_households")
+    finally:
+        conn.close()
