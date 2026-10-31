@@ -14,6 +14,7 @@ import re
 import threading
 import time
 from collections import OrderedDict, namedtuple
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, ClassVar
@@ -21,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 import polars as pl
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import repast4py
 import repast4py.random
@@ -80,7 +82,7 @@ class InvalidSocialNetworkTableError(ValueError):
 
 class InvalidTimeStepError(Exception):
     def __init__(self, value):
-        super().__init__(f"Invalid time step value: {value}. Time step must be " "an integer.")
+        super().__init__(f"Invalid time step value: {value}. Time step must be an integer.")
 
 
 class InvalidTableNameError(Exception):
@@ -370,14 +372,90 @@ def _model_run_id(model: Model) -> str:
     return _safe_run_id(f"seed_{_model_random_seed(model)}")
 
 
-def _output_partition_schema() -> pa.Schema:
-    return pa.schema(
-        [
-            pa.field("run_id", pa.string()),
-            pa.field("tick", pa.int32()),
-            pa.field("rank", pa.int32()),
-        ]
-    )
+def _output_partition_schema(*, by_tick: bool = True) -> pa.Schema:
+    fields = [pa.field("run_id", pa.string())]
+    if by_tick:
+        fields.append(pa.field("tick", pa.int32()))
+    fields.append(pa.field("rank", pa.int32()))
+    return pa.schema(fields)
+
+
+OBSERVER_PARTITION_BY_TICK_PARAM = "observers.partition_by_tick"
+OBSERVER_FLUSH_TICKS_PARAM = "observers.flush_ticks"
+
+
+class _ObserverLogWriter:
+    """Writes one observer output as Hive-partitioned Parquet.
+
+    By default every tick is written immediately to
+    ``run_id=…/tick=…/rank=…/part-0.parquet`` (one file per tick and rank).
+    Long runs and large sweeps produce many small files that way, which can
+    exhaust file-count quotas (MITRE HPC project directories allow 1 million).
+
+    ``observers.partition_by_tick: false`` writes ``run_id=…/rank=…/`` with
+    ``tick`` kept as a column, and ``observers.flush_ticks: N`` buffers N
+    ticks per file; the observer flushes the remainder at the end of the run.
+    Readers using ``read_parquet(..., hive_partitioning=true)`` see the same
+    ``run_id``/``tick``/``rank`` columns either way.
+    """
+
+    def __init__(self, base_dir: str, params: Mapping[str, Any]) -> None:
+        self.base_dir = base_dir
+        self.by_tick = _param_bool(params.get(OBSERVER_PARTITION_BY_TICK_PARAM, True))
+        self.flush_ticks = max(1, int(params.get(OBSERVER_FLUSH_TICKS_PARAM, 1) or 1))
+        self._pending: list[pa.Table] = []
+        self._pending_ticks = 0
+
+    def write(self, table: pa.Table) -> None:
+        if self.by_tick and self.flush_ticks == 1:
+            self._write(table, basename_template=None)
+            return
+        self._pending.append(table)
+        self._pending_ticks += 1
+        if self._pending_ticks >= self.flush_ticks:
+            self.flush()
+
+    def flush(self) -> None:
+        if not self._pending:
+            return
+        table = pa.concat_tables(self._pending, promote_options="permissive")
+        first_tick = pc.min(table["tick"]).as_py() if "tick" in table.column_names else 0
+        self._pending = []
+        self._pending_ticks = 0
+        # Unique names: several flushes land in the same run_id/rank directory.
+        self._write(table, basename_template=f"part-t{first_tick}-{{i}}.parquet")
+
+    def _write(self, table: pa.Table, *, basename_template: str | None) -> None:
+        kwargs: dict[str, Any] = {}
+        if basename_template is not None:
+            kwargs["basename_template"] = basename_template
+        ds.write_dataset(
+            data=table,
+            base_dir=self.base_dir,
+            format="parquet",
+            partitioning=HivePartitioning(_output_partition_schema(by_tick=self.by_tick)),
+            existing_data_behavior="overwrite_or_ignore",
+            **kwargs,
+        )
+
+
+def _param_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off", ""}
+    return bool(value)
+
+
+def _observer_log_writer(observer: Any, model: Model, base_dir: str) -> _ObserverLogWriter:
+    writers: dict[str, _ObserverLogWriter] = observer.__dict__.setdefault("_log_writers", {})
+    writer = writers.get(base_dir)
+    if writer is None:
+        writer = writers[base_dir] = _ObserverLogWriter(base_dir, getattr(model, "params", {}))
+    return writer
+
+
+def _flush_observer_log_writers(observer: Any) -> None:
+    for writer in observer.__dict__.get("_log_writers", {}).values():
+        writer.flush()
 
 
 OBSERVER_OUTPUT_DIR_PARAM = "observers.output_dir"
@@ -581,17 +659,10 @@ class AgentLogger(Observer):
         agent_log_table = self._normalize_table(agent_log_df.to_arrow())
         self._last_table = agent_log_table
 
-        # Set Hive-style partitioning
-        partitioning = HivePartitioning(_output_partition_schema())
+        _observer_log_writer(self, model, self.log_file).write(agent_log_table)
 
-        # Write dataset
-        ds.write_dataset(
-            data=agent_log_table,
-            base_dir=self.log_file,
-            format="parquet",
-            partitioning=partitioning,
-            existing_data_behavior="overwrite_or_ignore",
-        )
+    def on_end(self, model: Model) -> None:
+        _flush_observer_log_writers(self)
 
     def get_output_tables(self, model: Model) -> dict[str, pa.Table]:
         """Return the most recently logged agent table, keyed by channel name."""
@@ -639,13 +710,10 @@ class SocialInteractionLogger(Observer):
         ]
         table = pl.DataFrame(rows).to_arrow()
         self._last_table = table
-        ds.write_dataset(
-            data=table,
-            base_dir=self.log_file,
-            format="parquet",
-            partitioning=HivePartitioning(_output_partition_schema()),
-            existing_data_behavior="overwrite_or_ignore",
-        )
+        _observer_log_writer(self, model, self.log_file).write(table)
+
+    def on_end(self, model: Model) -> None:
+        _flush_observer_log_writers(self)
 
     def get_output_tables(self, model: Model) -> dict[str, pa.Table]:
         if self._last_table is None:
@@ -692,13 +760,10 @@ class ScheduleOccupancyLogger(Observer):
         }
         table = pl.DataFrame([row]).to_arrow()
         self._last_table = table
-        ds.write_dataset(
-            data=table,
-            base_dir=self.log_file,
-            format="parquet",
-            partitioning=HivePartitioning(_output_partition_schema()),
-            existing_data_behavior="overwrite_or_ignore",
-        )
+        _observer_log_writer(self, model, self.log_file).write(table)
+
+    def on_end(self, model: Model) -> None:
+        _flush_observer_log_writers(self)
 
     def get_output_tables(self, model: Model) -> dict[str, pa.Table]:
         if self._last_table is None:
@@ -752,14 +817,10 @@ class BehaviorLogger(Observer):
         behavior_log_df = pl.DataFrame([self.get_person_log_data(model, person) for person in people])
         behavior_log_table = behavior_log_df.to_arrow()
         self._last_table = behavior_log_table
-        partitioning = HivePartitioning(_output_partition_schema())
-        ds.write_dataset(
-            data=behavior_log_table,
-            base_dir=self.log_file,
-            format="parquet",
-            partitioning=partitioning,
-            existing_data_behavior="overwrite_or_ignore",
-        )
+        _observer_log_writer(self, model, self.log_file).write(behavior_log_table)
+
+    def on_end(self, model: Model) -> None:
+        _flush_observer_log_writers(self)
 
     def get_output_tables(self, model: Model) -> dict[str, pa.Table]:
         """Return the most recently logged behavior table, keyed by channel name."""
@@ -842,18 +903,19 @@ class DeltaAgentStateLogger(Observer):
         )
 
     def _write_partitioned_rows(
-        self, rows: list[Any], base_dir: str, schema_overrides: dict[str, Any] | None = None
+        self,
+        rows: list[Any],
+        base_dir: str,
+        schema_overrides: dict[str, Any] | None = None,
+        *,
+        model: Model | None = None,
     ) -> pa.Table:
         table = pl.DataFrame(rows, schema_overrides=schema_overrides).to_arrow()
-        partitioning = HivePartitioning(_output_partition_schema())
-        ds.write_dataset(
-            data=table,
-            base_dir=base_dir,
-            format="parquet",
-            partitioning=partitioning,
-            existing_data_behavior="overwrite_or_ignore",
-        )
+        _observer_log_writer(self, model, base_dir).write(table)
         return table
+
+    def on_end(self, model: Model) -> None:
+        _flush_observer_log_writers(self)
 
     def _write_audit_row(self, model: Model, *, agents_evaluated: int, agents_changed: int) -> pa.Table:
         return self._write_partitioned_rows(
@@ -868,6 +930,7 @@ class DeltaAgentStateLogger(Observer):
                 )
             ],
             self.audit_file,
+            model=model,
         )
 
     def on_step(self, model: Model) -> None:
@@ -879,7 +942,7 @@ class DeltaAgentStateLogger(Observer):
             logger.info("Logging changed agents' state...")
             # x/y may be null for leading rows; do not infer their type from a sample.
             self._last_delta_table = self._write_partitioned_rows(
-                delta_rows, self.log_file, schema_overrides={"x": pl.Float64, "y": pl.Float64}
+                delta_rows, self.log_file, schema_overrides={"x": pl.Float64, "y": pl.Float64}, model=model
             )
         self._last_audit_table = self._write_audit_row(
             model, agents_evaluated=len(people), agents_changed=len(delta_rows)
@@ -1133,7 +1196,7 @@ class CasmPop(Model):
         self._compute_ticks()
         self._configure_parallel_processing()
 
-        logger.info(f"Rank {self.rank} starting CasmPop with params: " f"{self.params}")
+        logger.info(f"Rank {self.rank} starting CasmPop with params: {self.params}")
 
         # Cooperative cancellation flag.  Set via cancel() from an external
         # thread (e.g. the gRPC SimulatorControl servicer).  Checked at the
@@ -1336,7 +1399,7 @@ class CasmPop(Model):
         ]
         for key in optional_keys:
             if key not in self.params:
-                logger.warning(f"Optional parameter {key} not found, using " f"default value.")
+                logger.warning(f"Optional parameter {key} not found, using default value.")
                 self.params[key] = None
 
         self._set_default_start_datetime()
@@ -1382,13 +1445,11 @@ class CasmPop(Model):
             try:
                 self.params["time.step.minutes"] = int(self.params["time.step.minutes"])
             except ValueError as err:
-                logger.error(f"Invalid time step value: " f"{self.params['time.step.minutes']}")
+                logger.error(f"Invalid time step value: {self.params['time.step.minutes']}")
                 raise InvalidTimeStepError(self.params["time.step.minutes"]) from err
         if self.params["time.step.minutes"] <= 0:
             logger.error(
-                f"Invalid time step value: "
-                f"{self.params['time.step.minutes']}. "
-                f"Time step must be a positive integer."
+                f"Invalid time step value: {self.params['time.step.minutes']}. Time step must be a positive integer."
             )
             raise InvalidTimeStepError(self.params["time.step.minutes"])
         if 1440 % self.params["time.step.minutes"] != 0:
@@ -1488,9 +1549,7 @@ class CasmPop(Model):
         return self._param_enabled("social_networks.enabled", False)
 
     def _social_network_remote_messages_enabled(self) -> bool:
-        return self._social_networks_enabled() and self._param_enabled(
-            "social_networks.remote_messages.enabled", False
-        )
+        return self._social_networks_enabled() and self._param_enabled("social_networks.remote_messages.enabled", False)
 
     def _communication_enabled(self) -> bool:
         return self._param_enabled("communication.enabled", True)
@@ -1550,7 +1609,7 @@ class CasmPop(Model):
         for phase in phases:
             values = [rank_timings.get(phase, 0.0) for rank_timings in gathered]
             avg_value = sum(values) / len(values)
-            logger.info(f"  {phase}: " f"min={min(values):.3f}, " f"avg={avg_value:.3f}, " f"max={max(values):.3f}")
+            logger.info(f"  {phase}: min={min(values):.3f}, avg={avg_value:.3f}, max={max(values):.3f}")
 
     def _social_networks_table_name(self) -> str | None:
         social_networks_table = self.params.get("social_networks.table")
@@ -1568,7 +1627,7 @@ class CasmPop(Model):
 
     def _compute_ticks(self):
         if "time.step.minutes" not in self.params or "duration.hours" not in self.params:
-            logger.error("Missing required parameters: time.step.minutes or " "duration.hours")
+            logger.error("Missing required parameters: time.step.minutes or duration.hours")
             raise MissingRequiredParameterError(["time.step.minutes", "duration.hours"])
         self.params["ticks"] = int(self.params["duration.hours"] * 60 / self.params["time.step.minutes"])
 
@@ -1672,7 +1731,7 @@ class CasmPop(Model):
         self._time_phase("startup.load_road_network", self.load_road_network)
 
         local_places = self.places_proj.get_local_places()
-        logger.info(f"rank {self.rank}: number of local " f"places={len(local_places)}")
+        logger.info(f"rank {self.rank}: number of local places={len(local_places)}")
         # add geometry to the places table
         # self.conn.execute(self.queries["add_geometries"])
 
@@ -1685,9 +1744,7 @@ class CasmPop(Model):
             if social_networks_table is None:
                 raise MissingRequiredParameterError("social_networks.table")
             logger.info(f"Loading social network table {social_networks_table}...")
-            self.social_network_map = self._time_phase(
-                "startup.create_social_networks", self.create_social_networks
-            )
+            self.social_network_map = self._time_phase("startup.create_social_networks", self.create_social_networks)
         else:
             self.social_network_map = {}
             if social_networks_table:
@@ -1707,7 +1764,7 @@ class CasmPop(Model):
             self._time_phase("startup.refresh_place_membership", self.refresh_place_membership)
 
         result = self.conn.execute(self.queries["get_tables"]).fetchall()
-        logger.info(f"rank {self.rank}: DuckDB tables after " f"initialization: {result}")
+        logger.info(f"rank {self.rank}: DuckDB tables after initialization: {result}")
 
     def _configure_behavior_engine(self) -> None:
         """Register the configured person behavior engine.
@@ -2429,7 +2486,7 @@ class CasmPop(Model):
         persons_identifier = quote_table_identifier(persons_table)
         if partition_table is None:
             if imputation is not None:
-                logger.info(f"Using imputation {imputation} for <persons> " f"table <{persons_table}>...")
+                logger.info(f"Using imputation {imputation} for <persons> table <{persons_table}>...")
                 logger.info(f"persons_identifier: {persons_identifier}")
                 if self._use_minimal_person_input_columns():
                     person_columns = self._minimal_person_columns_expr(persons_table, "pe")
@@ -2519,9 +2576,11 @@ class CasmPop(Model):
         if "household_id" not in available_column_set and "sp_id" not in available_column_set:
             raise MissingRequiredTableError([f"{households_table}.household_id", f"{households_table}.sp_id"])
         if not {"place_id", "sp_home_id", "sp_id"} & available_column_set:
-            raise MissingRequiredTableError(
-                [f"{households_table}.place_id", f"{households_table}.sp_home_id", f"{households_table}.sp_id"]
-            )
+            raise MissingRequiredTableError([
+                f"{households_table}.place_id",
+                f"{households_table}.sp_home_id",
+                f"{households_table}.sp_id",
+            ])
 
         household_columns = self._select_columns_expr(households_table, alias, exclude=exclude)
         derived_columns: list[str] = []
@@ -2537,9 +2596,11 @@ class CasmPop(Model):
             derived_columns.append(f"{place_expr} AS {self._quote_column_identifier('place_id')}")
         else:
             if sp_id_expr is None:
-                raise MissingRequiredTableError(
-                    [f"{households_table}.place_id", f"{households_table}.sp_home_id", f"{households_table}.sp_id"]
-                )
+                raise MissingRequiredTableError([
+                    f"{households_table}.place_id",
+                    f"{households_table}.sp_home_id",
+                    f"{households_table}.sp_id",
+                ])
             place_expr = sp_id_expr
             derived_columns.append(f"{sp_id_expr} AS {self._quote_column_identifier('place_id')}")
         if derived_columns:
@@ -2641,7 +2702,7 @@ class CasmPop(Model):
             return
 
         if imputation is not None:
-            logger.info(f"Using imputation {imputation} for activities " f"table {activities_table}...")
+            logger.info(f"Using imputation {imputation} for activities table {activities_table}...")
             activity_columns = self._activity_columns_expr(activities_table, "a")
             self.conn.execute(
                 f"""
@@ -2951,7 +3012,7 @@ class CasmPop(Model):
         if not schedulesList or len(schedulesList) == 0:
             logger.error("Error: no activities found.")
             raise MissingRequiredParameterError("activities.file")
-        logger.info(f"rank {self.rank}: weekday activitiesMap " f"size={len(schedulesList[0])}")
+        logger.info(f"rank {self.rank}: weekday activitiesMap size={len(schedulesList[0])}")
 
         # get the weekday activity map. Currently, we assume there is only
         # one source activity set in the list and derive additional plans
@@ -3121,12 +3182,12 @@ class CasmPop(Model):
 
                     rank = household_place.rank
                     if rank != self.rank:
-                        logger.error(f"Error: Person {personID} tagged on " f"rank={rank} is not on this rank.")
+                        logger.error(f"Error: Person {personID} tagged on rank={rank} is not on this rank.")
                         continue
 
                     schedule = activitiesMap.get(personID)
                     if schedule is None:
-                        logger.error(f"Error: No activities found for " f"person {personID}.")
+                        logger.error(f"Error: No activities found for person {personID}.")
                         continue
 
                     person = make_schedule_person(
@@ -3246,7 +3307,7 @@ class CasmPop(Model):
                 if collect_this_construct_detail:
                     plan_lookup_seconds += time.perf_counter() - detail_start
                 if schedule is None:
-                    logger.error(f"Error: No activities found for " f"person {personID}.")
+                    logger.error(f"Error: No activities found for person {personID}.")
                     continue
 
                 # get the schedule for the person
@@ -3706,9 +3767,7 @@ class CasmPop(Model):
         required_columns = {"person_id_a", "person_id_b", "network_kind"}
         missing_columns = required_columns - columns
         if missing_columns:
-            raise MissingRequiredTableError(
-                [f"social_networks.{column}" for column in sorted(missing_columns)]
-            )
+            raise MissingRequiredTableError([f"social_networks.{column}" for column in sorted(missing_columns)])
 
         tie_strength = "tie_strength" if "tie_strength" in columns else "NULL"
         rows = self.conn.execute(f"""
@@ -3720,12 +3779,7 @@ class CasmPop(Model):
         social_ties: list[SocialTie] = []
         seen_edges: set[tuple[int, int, str]] = set()
         for person_id_a, person_id_b, network_kind, strength in rows:
-            if (
-                person_id_a is None
-                or person_id_b is None
-                or network_kind is None
-                or person_id_a >= person_id_b
-            ):
+            if person_id_a is None or person_id_b is None or network_kind is None or person_id_a >= person_id_b:
                 raise InvalidSocialNetworkTableError(
                     "social_networks rows must use non-null canonical endpoints "
                     "(person_id_a < person_id_b) and a network_kind"
@@ -3735,15 +3789,9 @@ class CasmPop(Model):
                 raise InvalidSocialNetworkTableError("social_networks contains duplicate canonical ties")
             seen_edges.add(edge_key)
             normalized_strength = None if strength is None else float(strength)
-            social_ties.append(
-                SocialTie(person_id_a, person_id_b, network_kind, normalized_strength)
-            )
-            network_map.setdefault(person_id_a, []).append(
-                (person_id_b, network_kind, normalized_strength)
-            )
-            network_map.setdefault(person_id_b, []).append(
-                (person_id_a, network_kind, normalized_strength)
-            )
+            social_ties.append(SocialTie(person_id_a, person_id_b, network_kind, normalized_strength))
+            network_map.setdefault(person_id_a, []).append((person_id_b, network_kind, normalized_strength))
+            network_map.setdefault(person_id_b, []).append((person_id_a, network_kind, normalized_strength))
 
         self.social_ties = social_ties
         return network_map
@@ -3764,11 +3812,7 @@ class CasmPop(Model):
                     place_id = resolver(plan_state.element)
                 else:
                     legacy_resolver = getattr(person, "_place_id_for_activity", None)
-                    place_id = (
-                        legacy_resolver(plan_state.element.activity_id)
-                        if callable(legacy_resolver)
-                        else None
-                    )
+                    place_id = legacy_resolver(plan_state.element.activity_id) if callable(legacy_resolver) else None
             if not place_id:
                 continue
             presences.append(
@@ -3825,9 +3869,11 @@ class CasmPop(Model):
             )
             if sender_id not in local_person_ids or sender_id not in directory or receiver_id not in directory:
                 continue
-            candidates.setdefault(sender_id, []).append(
-                (-(tie.tie_strength if tie.tie_strength is not None else 0.0), receiver_id, tie)
-            )
+            candidates.setdefault(sender_id, []).append((
+                -(tie.tie_strength if tie.tie_strength is not None else 0.0),
+                receiver_id,
+                tie,
+            ))
 
         intents: list[MessageIntent] = []
         for sender_id, sender_candidates in candidates.items():
@@ -3875,6 +3921,7 @@ class CasmPop(Model):
         local_cancel = 1 if cancel_event is not None and cancel_event.is_set() else 0
         if getattr(self, "size", 1) > 1:
             from mpi4py import MPI as _MPI
+
             global_cancel = self.comm.allreduce(local_cancel, op=_MPI.SUM)
         else:
             global_cancel = local_cancel
@@ -3890,12 +3937,7 @@ class CasmPop(Model):
         self.cal.increment(self.time_step_minutes)
 
         # log the current step
-        logger.info(
-            "Step on "
-            f"day {self.cal.day_of_year}, "
-            f"hour {self.cal.hour_of_day}, "
-            f"minute {self.cal.minute_of_day}"
-        )
+        logger.info(f"Step on day {self.cal.day_of_year}, hour {self.cal.hour_of_day}, minute {self.cal.minute_of_day}")
 
         # Automatic place updates are disabled - they caused
         # performance degradation
