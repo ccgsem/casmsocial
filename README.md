@@ -270,6 +270,22 @@ filenames only. Output datasets are Hive-partitioned by `run_id`, `tick`, and
 `rank`. The run id defaults to `seed_<random.seed>` when `simulation.run_id` is
 omitted, and `random_seed` is stored as row metadata.
 
+That layout writes one Parquet file per tick, rank and output, which adds up in
+long runs and large sweeps. MITRE HPC project directories allow 1 million
+files; a 750-job, 96-tick sweep on 8 ranks can exceed that. Two options write
+fewer, larger files:
+
+```yaml
+observers.partition_by_tick: false   # run_id=…/rank=…/, tick kept as a column
+observers.flush_ticks: 24            # buffer 24 ticks per file; the rest is written at the end
+```
+
+With both set, a run writes about `ticks / flush_ticks` files per rank and
+output instead of `ticks`. Readers using
+`read_parquet(..., hive_partitioning=true)` see the same `run_id`, `tick` and
+`rank` columns either way. `flush_ticks` holds that many ticks of rows in
+memory per output, so keep it modest for full-population runs.
+
 The behavior log records:
 
 - `run_id`
