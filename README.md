@@ -253,6 +253,14 @@ target also loads the delta outputs into `examples/mvp/mvp.ducklake` under the
 `data/output/mvp_agent_state_delta_ducklake_report.md` with example queries and
 results.
 
+### Congestion-aware vehicle mobsim (prototype)
+
+`casmsocial.traffic` adds an MPI-distributed, event-driven vehicle simulation
+on the same road artifacts. It uses BPR link times, BATSim-style strategic
+rerouting, and per-edge travel-time profiles that can feed the next run's
+router (MATSim-style). It is not yet wired into `CasmPop` legs. See
+[docs/traffic-mobsim.md](docs/traffic-mobsim.md).
+
 ## Behavior Logging
 
 `casmsocial` can now log lightweight behavior-engine state for each person at each tick using `BehaviorLogger`.
