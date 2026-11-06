@@ -586,7 +586,7 @@ def find_closest_location(lat, lon, places, n=3, filter_func=None):
 
 def test_parallel_updates():
     """Test the parallel place updates system."""
-    from mpi4py import MPI
+    from casmsocial.mpi_compat import MPI
 
     logger.info("Testing parallel place updates...")
 

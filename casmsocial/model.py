@@ -7,7 +7,7 @@ Defining abstract Model interface
 
 from abc import ABC, abstractmethod
 
-from mpi4py import MPI
+from casmsocial.mpi_compat import MPI
 
 
 class Model(ABC):

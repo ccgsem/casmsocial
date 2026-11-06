@@ -24,7 +24,7 @@ from casmsim.observation_broker import ObservationBroker
 from casmsim.protocols import RunnerModelAdapter
 
 if TYPE_CHECKING:
-    from mpi4py import MPI
+    from casmsocial.mpi_compat import MPI
 
 _CASMPOP_ENTRY_POINT = "casmsocial.adapters.runner:CasmPopAdapter"
 _MSG_START = "start"

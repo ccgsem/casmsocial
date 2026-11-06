@@ -28,7 +28,7 @@ import repast4py
 import repast4py.random
 from dotenv import load_dotenv
 from loguru import logger
-from mpi4py import MPI
+from casmsocial.mpi_compat import MPI
 from numpy.random import Generator
 from pyarrow.dataset import HivePartitioning
 from repast4py import context as ctx, schedule
@@ -3920,7 +3920,7 @@ class CasmPop(Model):
         cancel_event = getattr(self, "_cancel_event", None)
         local_cancel = 1 if cancel_event is not None and cancel_event.is_set() else 0
         if getattr(self, "size", 1) > 1:
-            from mpi4py import MPI as _MPI
+            from casmsocial.mpi_compat import MPI as _MPI
 
             global_cancel = self.comm.allreduce(local_cancel, op=_MPI.SUM)
         else:

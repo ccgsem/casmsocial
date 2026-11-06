@@ -6,7 +6,7 @@ Defining the artificial social model for the Artificial Societies project
 """
 
 from loguru import logger
-from mpi4py import MPI
+from casmsocial.mpi_compat import MPI
 
 from casmsocial.casmpop import AgentLogger, CasmPop
 from casmsocial.factory import Models

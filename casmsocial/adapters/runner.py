@@ -10,7 +10,7 @@ from casmsim.protocols import ObservationAdapter
 from casmsim.run_state import RunState
 
 if TYPE_CHECKING:
-    from mpi4py import MPI
+    from casmsocial.mpi_compat import MPI
 
 
 class _ObservationBridge:

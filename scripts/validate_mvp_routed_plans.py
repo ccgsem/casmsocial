@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from mpi4py import MPI
+from casmsocial.mpi_compat import MPI
 from repast4py.parameters import init_params
 
 from casmsocial.activities import Leg

@@ -5,7 +5,7 @@ from collections import namedtuple
 from datetime import datetime
 
 import pytest
-from mpi4py import MPI
+from casmsocial.mpi_compat import MPI
 
 from casmsocial.activities import DEFAULT_TRAVEL_LEG, Act, activity_semantics_for, default_activity_semantics, make_plan
 from casmsocial.communication.types import CommMessage, MessageKind, build_message_payload

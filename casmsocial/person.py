@@ -10,7 +10,7 @@ from typing import Any, ClassVar, NamedTuple
 
 import repast4py.context as ctx
 from loguru import logger
-from mpi4py import MPI
+from casmsocial.mpi_compat import MPI
 from repast4py import core
 from repast4py.space import ContinuousPoint as cpt
 

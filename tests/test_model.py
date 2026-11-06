@@ -11,7 +11,7 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
 from loguru import logger
-from mpi4py import MPI
+from casmsocial.mpi_compat import MPI
 
 from casmsocial.activities import DEFAULT_TRAVEL_LEG, Act, Leg
 from casmsocial.casmpop import (

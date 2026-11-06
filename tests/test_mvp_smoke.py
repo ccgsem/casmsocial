@@ -4,7 +4,7 @@ from pathlib import Path
 
 import duckdb
 import pyarrow.dataset as ds
-from mpi4py import MPI
+from casmsocial.mpi_compat import MPI
 from repast4py.parameters import init_params
 
 from casmsocial.casmpop import CasmPop

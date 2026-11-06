@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from loguru import logger
-from mpi4py import MPI
+from casmsocial.mpi_compat import MPI
 
 from casmsocial.casmpop import AgentLogger, CasmPop
 from casmsocial.factory import Models

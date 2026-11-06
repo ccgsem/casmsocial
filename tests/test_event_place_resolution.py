@@ -1,6 +1,6 @@
 from collections import namedtuple
 
-from mpi4py import MPI
+from casmsocial.mpi_compat import MPI
 
 from casmsocial.activities import Act, make_plan, make_routed_plan, resolve_activity_place
 from casmsocial.person import Person
