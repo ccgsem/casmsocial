@@ -80,6 +80,10 @@ class InvalidSocialNetworkTableError(ValueError):
     """Raised when potential social ties do not satisfy the input contract."""
 
 
+class MissingProfilePriorsError(Exception):
+    """Raised when ``behavior.profile_priors.required`` is set and people have no priors."""
+
+
 class InvalidTimeStepError(Exception):
     def __init__(self, value):
         super().__init__(f"Invalid time step value: {value}. Time step must be an integer.")
@@ -1618,6 +1622,112 @@ class CasmPop(Model):
         social_networks_table = str(social_networks_table).strip()
         return social_networks_table or None
 
+    def _profile_priors_table_name(self) -> str | None:
+        profile_priors_table = self.params.get("person_profile_priors.table")
+        if profile_priors_table is None:
+            return None
+        profile_priors_table = str(profile_priors_table).strip()
+        return profile_priors_table or None
+
+    def load_profile_priors(self) -> None:
+        """Attach each local person's ``person_profile_priors`` rows to their cognition.
+
+        Opt-in through ``person_profile_priors.table``. The rows reach the LLM
+        adapter unchanged as ``context["profile_priors"]``: one dict per row
+        with ``profile_id``, ``prior_name``, ``prior_value``, ``prior_payload``
+        and ``uncertainty``. Only rows for people in this rank's ``persons``
+        table are read. ``behavior.profile_priors.required: true`` stops
+        start-up on every rank when any person has no rows.
+        """
+        self.profile_priors_missing = 0
+        table = self._profile_priors_table_name()
+        required = bool(self.params.get("behavior.profile_priors.required", False))
+        if table is None:
+            if required:
+                raise MissingRequiredParameterError("person_profile_priors.table")
+            return
+        if not issubclass(Person.getBehaviorEngine(), BehaviorEngineV2):
+            message = (
+                f"person_profile_priors.table is set but behavior engine {Person.getBehaviorEngine().__name__} "
+                "has no cognition to hold priors"
+            )
+            if required:
+                raise MissingProfilePriorsError(message)
+            logger.warning(f"{message}; skipping prior load.")
+            return
+        if not check_if_table_exists(self.conn, table):
+            raise MissingRequiredTableError(table)
+
+        identifier = quote_table_identifier(table)
+        columns = {column[0] for column in self.conn.execute(f"SELECT * FROM {identifier} LIMIT 0").description}  # noqa: S608
+        missing_columns = {"sp_persons_id", "profile_id", "prior_name", "prior_value"} - columns
+        if missing_columns:
+            raise MissingRequiredTableError([f"{table}.{column}" for column in sorted(missing_columns)])
+        payload = "prior_payload" if "prior_payload" in columns else "NULL"
+        uncertainty = "uncertainty" if "uncertainty" in columns else "NULL"
+        rows = self.conn.execute(f"""
+            SELECT sp_persons_id, profile_id, prior_name, prior_value, {payload}, {uncertainty}
+            FROM {identifier}
+            WHERE sp_persons_id IN (SELECT sp_id FROM persons)
+            ORDER BY sp_persons_id, prior_name
+        """).fetchall()  # noqa: S608
+
+        priors_by_person: dict[Any, list[dict[str, Any]]] = {}
+        for person_id, profile_id, prior_name, prior_value, prior_payload, prior_uncertainty in rows:
+            priors_by_person.setdefault(person_id, []).append({
+                "profile_id": profile_id,
+                "prior_name": prior_name,
+                "prior_value": prior_value,
+                "prior_payload": prior_payload,
+                "uncertainty": prior_uncertainty,
+            })
+
+        attached = 0
+        missing_ids: list[Any] = []
+        for person in _person_agents(self.context):
+            priors = priors_by_person.get(person.id)
+            cognition = getattr(person.behavior_engine, "cognition", None)
+            if priors is None or cognition is None:
+                missing_ids.append(person.id)
+                continue
+            cognition.profile_priors = tuple(priors)
+            attached += 1
+        self.profile_priors_missing = len(missing_ids)
+        logger.info(
+            f"rank {self.rank}: profile priors from {table}: {len(rows)} rows, "
+            f"{attached} people with priors, {len(missing_ids)} without"
+        )
+
+        global_missing = int(self.comm.allreduce(len(missing_ids), op=MPI.SUM))
+        if global_missing and required:
+            examples = ", ".join(str(person_id) for person_id in missing_ids[:5])
+            raise MissingProfilePriorsError(
+                f"{global_missing} people have no rows in {table} "
+                f"(behavior.profile_priors.required is true; on rank {self.rank}: {examples or 'none'})"
+            )
+
+    def _log_behavior_summary(self) -> None:
+        """Report adapter failures and missing priors across all ranks.
+
+        A failed deliberation falls back to the deterministic engine, so a run
+        can exit cleanly without the adapter having decided anything.
+        """
+        if not issubclass(Person.getBehaviorEngine(), LLMBehaviorEngine):
+            return
+        local_failures = 0
+        for person in _person_agents(self.context):
+            cognition = getattr(person.__dict__.get("_behavior_engine"), "cognition", None)
+            if cognition is not None:
+                local_failures += cognition.llm_failures
+        global_failures = int(self.comm.allreduce(local_failures, op=MPI.SUM))
+        global_missing = int(self.comm.allreduce(int(getattr(self, "profile_priors_missing", 0)), op=MPI.SUM))
+        self.behavior_summary = {"llm_failures": global_failures, "profile_priors_missing": global_missing}
+        if self.rank == 0:
+            logger.info(
+                f"Behavior summary: llm_failures={global_failures} (each fell back to the deterministic engine), "
+                f"profile_priors_missing={global_missing}"
+            )
+
     def _households_table_name(self) -> str | None:
         households_table = self.params.get("households.table")
         if households_table is None:
@@ -1759,6 +1869,7 @@ class CasmPop(Model):
         # agent_id_map is a map of personID->repast4py.Agent.uid
         # self.person_id_map = {}
         self._time_phase("startup.create_persons", self.create_persons, self.rng)
+        self._time_phase("startup.load_profile_priors", self.load_profile_priors)
         if self._communication_enabled():
             self._time_phase("startup.refresh_person_index", self.refresh_person_index)
             self._time_phase("startup.refresh_place_membership", self.refresh_place_membership)
@@ -4040,6 +4151,8 @@ class CasmPop(Model):
 
     def at_end(self) -> None:
         """Actions to take at the end of the simulation."""
+        self._log_behavior_summary()
+
         # Notify observers of the end event
         self._notify_end_observers()
 

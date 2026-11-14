@@ -117,6 +117,11 @@ class CognitiveState:
     last_llm_tick: int | None = None
     llm_failures: int = 0
     last_llm_summary: str = ""
+    # Rows from ``person_profile_priors`` for this person, loaded once at
+    # start-up and passed read-only to the LLM adapter as ``profile_priors``.
+    # Kept last so positional save_state()/restore_state() stays aligned and
+    # the priors migrate with the agent between ranks.
+    profile_priors: tuple[dict[str, Any], ...] = ()
 
 
 def _field_getter(dataclass_type: type) -> attrgetter:
@@ -479,6 +484,8 @@ class LLMBehaviorEngine(BehaviorEngineV2):
             "attitudes": dict(self.cognition.attitudes),
             "recent_messages": recent_messages,
             "recent_memory": list(recent_memories),
+            # Shared, not copied: priors are fixed for the run and adapters must not mutate them.
+            "profile_priors": self.cognition.profile_priors,
             "current_place_id": self.agent.place_id,
             "rank_place_id": self.agent.rank_place_id,
             "plan_state": {

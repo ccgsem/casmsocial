@@ -120,6 +120,17 @@ required, while `tie_strength` is optional. Endpoints must be canonical
 network_kind)` may appear once. Simulation behavior derives in-person
 encounters from schedule overlap and co-location; it may derive remote messages
 from the same ties without co-location.
+
+`person_profile_priors.table` is optional and opt-in. Its rows (`sp_persons_id`,
+`profile_id`, `prior_name`, `prior_value`, and optionally `prior_payload` and
+`uncertainty`) are loaded at start-up for the people on each rank, kept with
+each person's cognition (including across rank migration), and passed to the
+LLM behavior adapter as `context["profile_priors"]`: one dict per row, without
+the person id. Set `behavior.profile_priors.required: true` to stop start-up
+when any person has no rows. With an LLM engine, the end of the run logs the
+total `llm_failures` (deliberations that fell back to the deterministic engine)
+and the number of people without priors.
+
 `Place` agents represent physical locations. `Household` agents represent social
 household units loaded from `households.table`, often named `hh` in input
 schemas; each household links to a physical `Place` and to its member `Person`
