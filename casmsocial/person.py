@@ -317,17 +317,17 @@ class BehaviorEngineV2(BehaviorEngine):
         self.agent.move(cal, places_proj)
 
     def _force_home_if_possible(self, places_proj, cal: SimTime) -> None:
-        """Move to home place (index 0) if available."""
+        """Move to home place (index 0) if available.
+
+        Uses the same transition as a scheduled move, so a home owned by another
+        rank is targeted like any remote place: the person leaves the local place
+        and ``sync_person_ranks_with_places`` migrates them. A home with no known
+        owner leaves the person where they are.
+        """
         home_place_id = self.agent.places[0] if len(self.agent.places) > 0 else None
         if home_place_id is None:
             return
-        home_place = places_proj.lookup_place(home_place_id)
-        if home_place is None:
-            return
-        self.agent.state.place_id = home_place_id
-        self.agent.state.rank_place_id = home_place_id
-        places_proj.move_agent_to_place(self.agent, home_place)
-        self.agent.state.minute_last_moved = cal.minute_of_day
+        self.agent._transition_to_activity_place_at_minute(None, home_place_id, places_proj, cal.minute_of_day)
 
     def _update_memory(self, observation: dict[str, float], action: str) -> None:
         """Persist minimal traces for future decision logic."""
@@ -1489,7 +1489,7 @@ class Person(core.Agent):
 
     def _transition_to_activity_place_at_minute(
         self,
-        activity: Act,
+        activity: Act | None,
         next_place_id: int,
         places_proj,
         minute_of_day: int,
