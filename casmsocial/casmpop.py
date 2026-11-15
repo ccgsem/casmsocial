@@ -1250,6 +1250,7 @@ class CasmPop(Model):
 
         # set the data resources (e.g. data paths, DuckLake connection, etc.)
         self._set_data_resources()
+        self._configure_duckdb_resources()
 
         self.queries = {}
 
@@ -1374,7 +1375,6 @@ class CasmPop(Model):
             )
         else:
             raise MissingDataPathError("CASMSOCIAL_DUCKLAKE_PATH")
-        self._configure_duckdb_resources()
 
     def _configure_duckdb_resources(self) -> None:
         """Size DuckDB for this process, not the whole machine.
@@ -1385,14 +1385,15 @@ class CasmPop(Model):
         ``duckdb.threads`` (default ``auto``: the CPUs this process may run on) and ``duckdb.memory_limit`` (default:
         DuckDB's own) set them. Results do not depend on either.
         """
-        threads = self.params.get("duckdb.threads", "auto")
+        params = self.params
+        threads = params.get("duckdb.threads", "auto")
         if threads is None or str(threads).strip().lower() in {"", "auto"}:
             threads = _usable_cpu_count()
         threads = int(threads)
         if threads < 1:
             raise ValueError(f"duckdb.threads must be at least 1 or 'auto', got {threads}")
         self.conn.execute(f"SET threads TO {threads}")
-        memory_limit = self.params.get("duckdb.memory_limit")
+        memory_limit = params.get("duckdb.memory_limit")
         if memory_limit:
             self.conn.execute("SET memory_limit = ?", [str(memory_limit)])
         settings = dict(
