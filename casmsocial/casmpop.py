@@ -357,6 +357,17 @@ def _behavior_memory_state(person: Person) -> tuple[Any, dict[str, Any], Any]:
     return last_event, last_data, cognition
 
 
+def _usable_cpu_count() -> int:
+    """CPUs this process may run on (its affinity mask under Slurm or taskset), else all of the machine's."""
+    affinity = getattr(os, "sched_getaffinity", None)
+    if affinity is not None:
+        try:
+            return max(1, len(affinity(0)))
+        except OSError:
+            pass
+    return max(1, os.cpu_count() or 1)
+
+
 _PRIOR_KEYS = frozenset({"profile_id", "prior_name", "prior_value", "prior_payload", "uncertainty"})
 
 
@@ -1363,6 +1374,36 @@ class CasmPop(Model):
             )
         else:
             raise MissingDataPathError("CASMSOCIAL_DUCKLAKE_PATH")
+        self._configure_duckdb_resources()
+
+    def _configure_duckdb_resources(self) -> None:
+        """Size DuckDB for this process, not the whole machine.
+
+        DuckDB starts one thread per core of the machine. Under MPI many ranks share a node, each with a few CPUs
+        (Slurm's ``--cpus-per-task``), yet each rank's DuckDB would still run, and allocate for, one thread per core of
+        the node: on a 64-core node that cost ~2 GB per rank to load profile priors that 4 threads load in 0.4 GB.
+        ``duckdb.threads`` (default ``auto``: the CPUs this process may run on) and ``duckdb.memory_limit`` (default:
+        DuckDB's own) set them. Results do not depend on either.
+        """
+        threads = self.params.get("duckdb.threads", "auto")
+        if threads is None or str(threads).strip().lower() in {"", "auto"}:
+            threads = _usable_cpu_count()
+        threads = int(threads)
+        if threads < 1:
+            raise ValueError(f"duckdb.threads must be at least 1 or 'auto', got {threads}")
+        self.conn.execute(f"SET threads TO {threads}")
+        memory_limit = self.params.get("duckdb.memory_limit")
+        if memory_limit:
+            self.conn.execute("SET memory_limit = ?", [str(memory_limit)])
+        settings = dict(
+            self.conn.execute(
+                "SELECT name, value FROM duckdb_settings() WHERE name IN ('threads', 'memory_limit')"
+            ).fetchall()
+        )
+        logger.info(
+            f"rank {getattr(self, 'rank', 0)}: DuckDB threads {settings.get('threads')}, "
+            f"memory limit {settings.get('memory_limit')}"
+        )
 
     def _validate_and_set_required_params(self):
         """Validate and set required parameters."""

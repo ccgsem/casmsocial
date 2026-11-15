@@ -214,6 +214,18 @@ The Compose file uses `CASMSOCIAL_MPI_DATA_PATH` and
 `CASMSOCIAL_MPI_DUCKLAKE_PATH` as optional overrides so the repository `.env`
 does not accidentally inject host-only paths into the containers.
 
+### DuckDB per rank
+
+Each rank opens its own DuckDB connection. DuckDB would start one thread per
+core of the machine, so on a cluster node many ranks would each run (and
+allocate for) one thread per core of the whole node. `duckdb.threads` defaults
+to `auto`: the CPUs this process may run on, which under Slurm with
+`--cpus-per-task` and CPU binding is that count (on a laptop with plain
+`mpirun`, all cores, as before). On a 64-core node with 4 CPUs per rank this
+cut each rank's start-up memory by about 1.5 GB. Set `duckdb.threads: N` to fix
+it, and `duckdb.memory_limit` (e.g. `'8GB'`) to cap DuckDB's memory; results do
+not depend on either.
+
 ## Code Quality
 
 The repository ships with dedicated helpers for the standard Python code-quality trio:

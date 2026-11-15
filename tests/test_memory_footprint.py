@@ -84,3 +84,51 @@ def test_shared_values_are_equal_objects_of_the_same_type():
     assert _shared_value(nan) is nan
     big = 10**6 + 1
     assert _shared_value(big) == big
+
+
+def _duckdb_model(params):
+    import duckdb
+
+    from casmsocial.casmpop import CasmPop
+
+    model = CasmPop.__new__(CasmPop)
+    model.rank = 0
+    model.params = params
+    model.conn = duckdb.connect(":memory:")
+    return model
+
+
+def _setting(model, name):
+    return model.conn.execute("SELECT value FROM duckdb_settings() WHERE name = ?", [name]).fetchone()[0]
+
+
+def test_duckdb_threads_default_to_the_cpus_this_process_may_use(monkeypatch):
+    import casmsocial.casmpop as casmpop
+
+    monkeypatch.setattr(casmpop, "_usable_cpu_count", lambda: 3)
+    model = _duckdb_model({})
+    model._configure_duckdb_resources()
+    assert _setting(model, "threads") == "3"
+
+
+def test_duckdb_threads_and_memory_limit_can_be_set():
+    model = _duckdb_model({"duckdb.threads": 2, "duckdb.memory_limit": "1GB"})
+    model._configure_duckdb_resources()
+    assert _setting(model, "threads") == "2"
+    assert _setting(model, "memory_limit") in {"1.0 GiB", "953.6 MiB", "1.0 GB"}
+
+
+def test_duckdb_threads_must_be_positive():
+    model = _duckdb_model({"duckdb.threads": 0})
+    with pytest.raises(ValueError, match="duckdb.threads"):
+        model._configure_duckdb_resources()
+
+
+def test_usable_cpu_count_follows_the_affinity_mask(monkeypatch):
+    import casmsocial.casmpop as casmpop
+
+    monkeypatch.setattr(casmpop.os, "sched_getaffinity", lambda pid: {0, 1, 2, 3}, raising=False)
+    assert casmpop._usable_cpu_count() == 4
+    monkeypatch.delattr(casmpop.os, "sched_getaffinity")
+    monkeypatch.setattr(casmpop.os, "cpu_count", lambda: 10)
+    assert casmpop._usable_cpu_count() == 10
