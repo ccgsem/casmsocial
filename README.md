@@ -122,12 +122,15 @@ encounters from schedule overlap and co-location; it may derive remote messages
 from the same ties without co-location.
 
 `person_profile_priors.table` is optional and opt-in. Its rows (`sp_persons_id`,
-`profile_id`, `prior_name`, `prior_value`, and optionally `prior_payload` and
-`uncertainty`) are loaded at start-up for the people on each rank, kept with
+`profile_id`, `prior_name`, `prior_value`, and optionally `prior_payload`,
+`uncertainty` and `persona_value`) are loaded at start-up for the people on each rank, kept with
 each person's cognition (including across rank migration), and passed to the
 LLM behavior adapter as `context["profile_priors"]`: one dict per row, without
 the person id. Set `behavior.profile_priors.required: true` to stop start-up
-when any person has no rows. With an LLM engine, the end of the run logs the
+when any person has no rows. Set `person_profile_priors.read_payload: false` to
+leave `prior_payload` unread (`None`): the payload is free-form JSON and usually
+most of the table, so skipping it when the adapter does not need it cuts the
+start-up read and each rank's memory several-fold. With an LLM engine, the end of the run logs the
 total `llm_failures` (deliberations that fell back to the deterministic engine)
 and the number of people without priors.
 
