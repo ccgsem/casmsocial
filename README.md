@@ -130,7 +130,9 @@ the person id. Set `behavior.profile_priors.required: true` to stop start-up
 when any person has no rows. Set `person_profile_priors.read_payload: false` to
 leave `prior_payload` unread (`None`): the payload is free-form JSON and usually
 most of the table, so skipping it when the adapter does not need it cuts the
-start-up read and each rank's memory several-fold. With an LLM engine, the end of the run logs the
+start-up read and each rank's memory several-fold; each rank's start-up log line
+says when the payload was left unread. A row has a `persona_value` key only when
+the table has that column, so adapters should read it with `.get()`. With an LLM engine, the end of the run logs the
 total `llm_failures` (deliberations that fell back to the deterministic engine)
 and the number of people without priors.
 

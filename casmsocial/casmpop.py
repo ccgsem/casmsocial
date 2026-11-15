@@ -1705,9 +1705,14 @@ class CasmPop(Model):
             cognition.profile_priors = tuple(priors)
             attached += 1
         self.profile_priors_missing = len(missing_ids)
+        payload_note = ""
+        if not read_payload:
+            payload_note = ", payload unread (person_profile_priors.read_payload: false)"
+        elif payload == "NULL":
+            payload_note = ", no payload column"
         logger.info(
             f"rank {self.rank}: profile priors from {table}: {len(rows)} rows, "
-            f"{attached} people with priors, {len(missing_ids)} without"
+            f"{attached} people with priors, {len(missing_ids)} without{payload_note}"
         )
 
         global_missing = int(self.comm.allreduce(len(missing_ids), op=MPI.SUM))
