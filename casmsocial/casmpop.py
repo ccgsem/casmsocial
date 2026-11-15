@@ -357,6 +357,14 @@ def _behavior_memory_state(person: Person) -> tuple[Any, dict[str, Any], Any]:
     return last_event, last_data, cognition
 
 
+_PRIOR_KEYS = frozenset({"profile_id", "prior_name", "prior_value", "prior_payload", "uncertainty"})
+
+
+def _json_path(name: str) -> str:
+    """JSON path for one top-level payload key, quoted for DuckDB's json_extract inside a SQL string literal."""
+    return "$." + json.dumps(name).replace("'", "''")
+
+
 def _safe_run_id(raw_value: Any) -> str:
     run_id = str(raw_value).strip()
     run_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", run_id).strip("_.-")
@@ -1674,25 +1682,44 @@ class CasmPop(Model):
         uncertainty = "uncertainty" if "uncertainty" in columns else "NULL"
         has_persona_value = "persona_value" in columns
         persona_value = ", persona_value" if has_persona_value else ""
+        # Payload fields lifted into each prior as their own keys, read from the JSON in the query so the payload text
+        # itself need not be kept. A column of the same name wins (persona_value).
+        payload_fields = [
+            str(name)
+            for name in (self.params.get("person_profile_priors.payload_fields") or [])
+            if str(name) not in columns and str(name) not in _PRIOR_KEYS
+        ]
+        if payload_fields and "prior_payload" not in columns:
+            raise MissingRequiredTableError([f"{table}.prior_payload"])
+        lifted = "".join(f", json_extract(prior_payload, '{_json_path(name)}')::VARCHAR" for name in payload_fields)
         rows = self.conn.execute(f"""
-            SELECT sp_persons_id, profile_id, prior_name, prior_value, {payload}, {uncertainty}{persona_value}
+            SELECT sp_persons_id, profile_id, prior_name, prior_value, {payload}, {uncertainty}{persona_value}{lifted}
             FROM {identifier}
             WHERE sp_persons_id IN (SELECT sp_id FROM persons)
             ORDER BY sp_persons_id, prior_name
         """).fetchall()  # noqa: S608
 
+        # Repeated strings (persona ids, prior names, uncertainty labels) share one object across people.
+        shared: dict[str, str] = {}
         priors_by_person: dict[Any, list[dict[str, Any]]] = {}
         for person_id, profile_id, prior_name, prior_value, prior_payload, prior_uncertainty, *extra in rows:
             prior = {
-                "profile_id": profile_id,
-                "prior_name": prior_name,
+                "profile_id": shared.setdefault(profile_id, profile_id) if profile_id is not None else None,
+                "prior_name": shared.setdefault(prior_name, prior_name) if prior_name is not None else None,
                 "prior_value": prior_value,
                 "prior_payload": prior_payload,
-                "uncertainty": prior_uncertainty,
+                "uncertainty": shared.setdefault(prior_uncertainty, prior_uncertainty)
+                if prior_uncertainty is not None
+                else None,
             }
             if has_persona_value:
                 prior["persona_value"] = extra[0]
+                extra = extra[1:]
+            for name, raw in zip(payload_fields, extra, strict=True):
+                prior[name] = None if raw is None else json.loads(raw)
             priors_by_person.setdefault(person_id, []).append(prior)
+        n_rows = len(rows)
+        del rows[:]
 
         attached = 0
         missing_ids: list[Any] = []
@@ -1706,12 +1733,14 @@ class CasmPop(Model):
             attached += 1
         self.profile_priors_missing = len(missing_ids)
         payload_note = ""
+        if payload_fields:
+            payload_note = f", payload fields {payload_fields} lifted"
         if not read_payload:
-            payload_note = ", payload unread (person_profile_priors.read_payload: false)"
+            payload_note += ", payload unread (person_profile_priors.read_payload: false)"
         elif payload == "NULL":
-            payload_note = ", no payload column"
+            payload_note += ", no payload column"
         logger.info(
-            f"rank {self.rank}: profile priors from {table}: {len(rows)} rows, "
+            f"rank {self.rank}: profile priors from {table}: {n_rows} rows, "
             f"{attached} people with priors, {len(missing_ids)} without{payload_note}"
         )
 

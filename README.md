@@ -132,7 +132,13 @@ leave `prior_payload` unread (`None`): the payload is free-form JSON and usually
 most of the table, so skipping it when the adapter does not need it cuts the
 start-up read and each rank's memory several-fold; each rank's start-up log line
 says when the payload was left unread. A row has a `persona_value` key only when
-the table has that column, so adapters should read it with `.get()`. With an LLM engine, the end of the run logs the
+the table has that column, so adapters should read it with `.get()`.
+`person_profile_priors.payload_fields: [name, ...]` lifts those top-level keys of
+each row's payload into the row as their own keys (parsed JSON values, `None`
+when absent), read in the query so the payload text need not be kept: with
+`read_payload: false` an adapter that needs only, say, `persona_value` from an
+older package gets it without each rank holding every payload. A column of the
+same name wins, and the standard keys cannot be replaced. With an LLM engine, the end of the run logs the
 total `llm_failures` (deliberations that fell back to the deterministic engine)
 and the number of people without priors.
 

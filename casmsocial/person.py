@@ -339,8 +339,7 @@ class BehaviorEngineV2(BehaviorEngine):
 class LLMBehaviorEngine(BehaviorEngineV2):
     """Behavior engine that uses a configurable LLM adapter and typed proposals.
 
-    The adapter is selected via ``_config["adapter"]`` and is constructed once
-    per engine instance. Two named kinds are built in:
+    The adapter is selected via ``_config["adapter"]``. Two named kinds are built in:
 
     * ``"local"`` (default) — :class:`LocalBehaviorLLMAdapter`. Deterministic,
       no network, no third-party dependencies.
@@ -352,7 +351,12 @@ class LLMBehaviorEngine(BehaviorEngineV2):
     OpenAI / vLLM clients), set ``_config["adapter_instance"]`` to a pre-built
     object satisfying :class:`~casmsocial.llm_adapter.BehaviorLLMAdapter`. When
     set, this short-circuits the named-kind dispatch and is used directly.
+
+    The local adapter keeps no per-person state, so every engine shares one instance for as long as the
+    configuration is unchanged (one per rank rather than one per person). Other kinds are still built per engine.
     """
+
+    _shared_local_adapter: ClassVar[tuple[dict[str, Any], dict[str, Any], BehaviorLLMAdapter] | None] = None
 
     _config: ClassVar[dict[str, Any]] = {
         # Adapter selection.
@@ -413,9 +417,22 @@ class LLMBehaviorEngine(BehaviorEngineV2):
 
         raise UnsupportedAdapterKindError(kind)
 
+    @classmethod
+    def _adapter_for_new_engine(cls) -> BehaviorLLMAdapter:
+        """Return the adapter for a new engine: the shared local adapter while the configuration is unchanged."""
+        config = cls._config
+        if config.get("adapter_instance") is not None or str(config.get("adapter", "local")).lower() != "local":
+            return cls._build_adapter_from_config(config)
+        shared = cls._shared_local_adapter
+        if shared is not None and shared[0] is config and shared[1] == config:
+            return shared[2]
+        adapter = cls._build_adapter_from_config(config)
+        cls._shared_local_adapter = (config, dict(config), adapter)
+        return adapter
+
     def __init__(self, agent: Person):
         super().__init__(agent)
-        self.adapter: BehaviorLLMAdapter = self._build_adapter_from_config(self._config)
+        self.adapter: BehaviorLLMAdapter = self._adapter_for_new_engine()
         self.deliberation_interval = int(self._config["deliberation_interval"])
         self.max_memory_events = int(self._config["max_memory_events"])
 
@@ -909,11 +926,16 @@ class LLMBehaviorEngine(BehaviorEngineV2):
     ) -> None:
         """Append a bounded short-term memory trace."""
         event = MemoryEvent(
-            tick=int(cal.tick),
-            event_type=event_type,
-            summary=summary,
-            data={} if data is None else dict(data),
+            tick=_shared_value(int(cal.tick)),
+            event_type=_shared_value(event_type),
+            summary=_shared_value(summary),
+            data={} if data is None else {key: _shared_value(value) for key, value in data.items()},
         )
+        memory = self.cognition.episodic_memory
+        if memory and memory[-1].get("data") == event.data:
+            # Consecutive traces often carry the same data (only the tick differs): keep one dict for both. Readers
+            # treat stored traces as read-only.
+            event.data = memory[-1]["data"]
         self.cognition.episodic_memory.append(
             {
                 "tick": event.tick,
@@ -924,6 +946,36 @@ class LLMBehaviorEngine(BehaviorEngineV2):
         )
         if len(self.cognition.episodic_memory) > self.max_memory_events:
             self.cognition.episodic_memory = self.cognition.episodic_memory[-self.max_memory_events :]
+
+
+_SHARED_VALUES: dict[tuple[type, Any], Any] = {}
+_SHARED_VALUES_MAX = 1 << 17
+
+
+def _shared_value(value: Any) -> Any:
+    """Return one shared object for an equal float, int or short string kept in memory events.
+
+    Each person keeps up to ``max_memory_events`` traces, and most of their values repeat (actions, reasons, policy
+    dates, rounded appraisal values), yet every trace held its own float and string objects. Equal values now share one
+    object; the stored values are unchanged. Floats are keyed by type and value, with signed zero and NaN left as they
+    are; the table stops growing at ``_SHARED_VALUES_MAX`` entries.
+    """
+    kind = type(value)
+    if kind is float:
+        if value != value or (value == 0.0 and math.copysign(1.0, value) < 0):
+            return value
+    elif kind is int:
+        if -5 <= value <= 256:  # CPython already shares these
+            return value
+    elif kind is not str or len(value) > 256:
+        return value
+    key = (kind, value)
+    shared = _SHARED_VALUES.get(key)
+    if shared is not None:
+        return shared
+    if len(_SHARED_VALUES) < _SHARED_VALUES_MAX:
+        _SHARED_VALUES[key] = value
+    return value
 
 
 # 1. Define a PersonData Class

@@ -239,3 +239,80 @@ def _sim_time() -> SimTime:
     cal = SimTime(datetime(2025, 1, 1))
     cal.set_datetime(datetime(2025, 1, 1, 0, 30))
     return cal
+
+
+def _load(model):
+    messages: list[str] = []
+    sink_id = logger.add(messages.append, format="{message}")
+    try:
+        model.load_profile_priors()
+    finally:
+        logger.remove(sink_id)
+    return messages
+
+
+def test_payload_fields_are_lifted_without_keeping_the_payload():
+    rows = [
+        (1, "pod-a", "risk_sensitivity", 0.8, '{"persona_value": 0.30000000000000004, "note": "x"}', None, "ref"),
+        (1, "pod-a", "authority_trust", 0.3, '{"persona_value": 1e-300, "nested": {"a": [1, 2]}}', None, "ref"),
+        (2, "pod-b", "risk_sensitivity", 0.2, '{"other": 1}', None, "ref"),
+    ]
+    people = [_person(1), _person(2)]
+    model = _model(
+        people,
+        params={
+            "person_profile_priors.read_payload": False,
+            "person_profile_priors.payload_fields": ["persona_value", "nested", "note"],
+        },
+        priors_rows=rows,
+    )
+
+    messages = _load(model)
+
+    first = people[0].behavior_engine.cognition.profile_priors
+    # Values are exactly what parsing the whole payload gives.
+    assert [(p["prior_name"], p["persona_value"], p["nested"], p["note"], p["prior_payload"]) for p in first] == [
+        ("authority_trust", 1e-300, {"a": [1, 2]}, None, None),
+        ("risk_sensitivity", 0.30000000000000004, None, "x", None),
+    ]
+    second = people[1].behavior_engine.cognition.profile_priors
+    assert second[0]["persona_value"] is None  # absent from the payload
+    assert any("payload fields ['persona_value', 'nested', 'note'] lifted, payload unread" in m for m in messages)
+
+
+def test_a_column_wins_over_a_payload_field_of_the_same_name():
+    people = [_person(1), _person(2)]
+    model = _model(
+        people,
+        params={"person_profile_priors.payload_fields": ["persona_value", "profile_id"]},
+        priors_rows=ROWS,
+    )
+    model.conn.execute("ALTER TABLE pkg.person_profile_priors ADD COLUMN persona_value DOUBLE")
+    model.conn.execute("UPDATE pkg.person_profile_priors SET persona_value = 9.0")
+
+    model.load_profile_priors()
+
+    prior = people[0].behavior_engine.cognition.profile_priors[0]
+    assert prior["persona_value"] == 9.0 and prior["profile_id"] == "pod-a"
+    assert prior["prior_payload"] == '{"persona_value": 0.5}'  # read_payload stays on by default
+
+
+def test_payload_fields_need_a_payload_column():
+    people = [_person(1)]
+    model = _model(people, params={"person_profile_priors.payload_fields": ["persona_value"]}, priors_rows=ROWS)
+    model.conn.execute("ALTER TABLE pkg.person_profile_priors DROP COLUMN prior_payload")
+
+    with pytest.raises(MissingRequiredTableError):
+        model.load_profile_priors()
+
+
+def test_repeated_strings_are_shared_across_people():
+    people = [_person(1), _person(2)]
+    model = _model(people, priors_rows=ROWS)
+
+    model.load_profile_priors()
+
+    a = next(p for p in people[0].behavior_engine.cognition.profile_priors if p["prior_name"] == "risk_sensitivity")
+    b = people[1].behavior_engine.cognition.profile_priors[0]
+    assert a["prior_name"] == b["prior_name"] == "risk_sensitivity"
+    assert a["prior_name"] is b["prior_name"]
