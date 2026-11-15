@@ -14,6 +14,7 @@ from datetime import datetime
 
 import duckdb
 import pytest
+from loguru import logger
 
 from casmsocial.activities import Act, make_plan
 from casmsocial.casmpop import CasmPop, MissingProfilePriorsError, MissingRequiredTableError
@@ -103,8 +104,14 @@ def test_priors_attach_to_local_people_in_adapter_shape():
 def test_payload_can_be_left_unread():
     people = [_person(1), _person(2)]
     model = _model(people, params={"person_profile_priors.read_payload": False}, priors_rows=ROWS)
+    messages: list[str] = []
+    sink_id = logger.add(messages.append, format="{message}")
+    try:
+        model.load_profile_priors()
+    finally:
+        logger.remove(sink_id)
 
-    model.load_profile_priors()
+    assert any("payload unread (person_profile_priors.read_payload: false)" in m for m in messages)
 
     priors = people[0].behavior_engine.cognition.profile_priors
     assert [row["prior_payload"] for row in priors] == [None, None]
