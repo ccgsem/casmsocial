@@ -1635,9 +1635,15 @@ class CasmPop(Model):
         Opt-in through ``person_profile_priors.table``. The rows reach the LLM
         adapter unchanged as ``context["profile_priors"]``: one dict per row
         with ``profile_id``, ``prior_name``, ``prior_value``, ``prior_payload``
-        and ``uncertainty``. Only rows for people in this rank's ``persons``
-        table are read. ``behavior.profile_priors.required: true`` stops
-        start-up on every rank when any person has no rows.
+        and ``uncertainty``, plus ``persona_value`` when the table has that
+        column. Only rows for people in this rank's ``persons`` table are kept.
+        ``behavior.profile_priors.required: true`` stops start-up on every rank
+        when any person has no rows.
+
+        ``person_profile_priors.read_payload: false`` leaves ``prior_payload``
+        unread (``None`` in every row). The payload is free-form JSON and
+        usually most of the table's bytes, so an adapter that needs only the
+        typed columns loads far faster and holds far less without it.
         """
         self.profile_priors_missing = 0
         table = self._profile_priors_table_name()
@@ -1663,24 +1669,30 @@ class CasmPop(Model):
         missing_columns = {"sp_persons_id", "profile_id", "prior_name", "prior_value"} - columns
         if missing_columns:
             raise MissingRequiredTableError([f"{table}.{column}" for column in sorted(missing_columns)])
-        payload = "prior_payload" if "prior_payload" in columns else "NULL"
+        read_payload = bool(self.params.get("person_profile_priors.read_payload", True))
+        payload = "prior_payload" if read_payload and "prior_payload" in columns else "NULL"
         uncertainty = "uncertainty" if "uncertainty" in columns else "NULL"
+        has_persona_value = "persona_value" in columns
+        persona_value = ", persona_value" if has_persona_value else ""
         rows = self.conn.execute(f"""
-            SELECT sp_persons_id, profile_id, prior_name, prior_value, {payload}, {uncertainty}
+            SELECT sp_persons_id, profile_id, prior_name, prior_value, {payload}, {uncertainty}{persona_value}
             FROM {identifier}
             WHERE sp_persons_id IN (SELECT sp_id FROM persons)
             ORDER BY sp_persons_id, prior_name
         """).fetchall()  # noqa: S608
 
         priors_by_person: dict[Any, list[dict[str, Any]]] = {}
-        for person_id, profile_id, prior_name, prior_value, prior_payload, prior_uncertainty in rows:
-            priors_by_person.setdefault(person_id, []).append({
+        for person_id, profile_id, prior_name, prior_value, prior_payload, prior_uncertainty, *extra in rows:
+            prior = {
                 "profile_id": profile_id,
                 "prior_name": prior_name,
                 "prior_value": prior_value,
                 "prior_payload": prior_payload,
                 "uncertainty": prior_uncertainty,
-            })
+            }
+            if has_persona_value:
+                prior["persona_value"] = extra[0]
+            priors_by_person.setdefault(person_id, []).append(prior)
 
         attached = 0
         missing_ids: list[Any] = []

@@ -100,6 +100,34 @@ def test_priors_attach_to_local_people_in_adapter_shape():
     assert model.profile_priors_missing == 0
 
 
+def test_payload_can_be_left_unread():
+    people = [_person(1), _person(2)]
+    model = _model(people, params={"person_profile_priors.read_payload": False}, priors_rows=ROWS)
+
+    model.load_profile_priors()
+
+    priors = people[0].behavior_engine.cognition.profile_priors
+    assert [row["prior_payload"] for row in priors] == [None, None]
+    assert priors[1]["prior_value"] == 0.8 and "persona_value" not in priors[1]
+
+
+def test_a_persona_value_column_reaches_the_adapter():
+    people = [_person(1), _person(2)]
+    model = _model(people, params={"person_profile_priors.read_payload": False}, priors_rows=ROWS)
+    model.conn.execute("ALTER TABLE pkg.person_profile_priors ADD COLUMN persona_value DOUBLE")
+    model.conn.execute(
+        "UPDATE pkg.person_profile_priors SET persona_value = CAST(prior_payload->>'persona_value' AS DOUBLE)"
+    )
+
+    model.load_profile_priors()
+
+    priors = people[0].behavior_engine.cognition.profile_priors
+    assert [(row["prior_name"], row["persona_value"], row["prior_payload"]) for row in priors] == [
+        ("authority_trust", 0.5, None),
+        ("risk_sensitivity", 0.6, None),
+    ]
+
+
 def test_people_without_priors_are_counted():
     people = [_person(1), _person(3)]
     model = _model(people, priors_rows=ROWS)
