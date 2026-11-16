@@ -9,7 +9,7 @@ from collections import namedtuple
 
 import pytest
 
-from casmsocial.activities import Act, make_plan
+from casmsocial.activities import DEFAULT_TRAVEL_LEG, Act, Leg, make_plan, restore_plans, serialize_plans
 from casmsocial.household import Household, HouseholdData
 from casmsocial.llm_adapter import LocalBehaviorLLMAdapter
 from casmsocial.person import LLMBehaviorEngine, Person, _shared_value
@@ -232,3 +232,17 @@ def test_a_person_coming_home_rejoins_their_household():
 
     back = model.restore_person(data)
     assert household.getHouseholdMembers() == [back]
+
+
+def test_restored_plans_share_the_travel_leg_and_equal_integers():
+    person_id, home = 70_000_001, 900_001_234
+    plan = [Act(person_id, 1, 0, 0, 480, home), DEFAULT_TRAVEL_LEG, Act(person_id, 2, 1, 510, 1020, 900_005_678),
+            Leg("drive", home, 900_005_678, 1, 2, 1234.5, 17), Act(person_id, 3, 2, 1050, 1440, home)]
+
+    restored = restore_plans(pickle.loads(pickle.dumps(serialize_plans([plan]))))[0]
+
+    assert restored == plan
+    assert restored[1] is DEFAULT_TRAVEL_LEG
+    assert restored[3] is not DEFAULT_TRAVEL_LEG and isinstance(restored[3], Leg)
+    assert restored[0].person_id is restored[2].person_id is restored[4].person_id
+    assert restored[0].place_id is restored[4].place_id
