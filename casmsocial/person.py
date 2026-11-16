@@ -232,6 +232,9 @@ class BehaviorEngineV2(BehaviorEngine):
     def restore_state(self, state: tuple) -> None:
         """Replace the default cognitive state with a migrated one."""
         self.cognition = CognitiveState(*state)
+        # Migration rebuilds every trace from serialized data, as new objects: share them again as _record_memory_event
+        # does, or each person who changes rank keeps full-size copies of their traces.
+        self.cognition.episodic_memory = _share_memory_events(self.cognition.episodic_memory)
 
     def decide(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Run one cognitive decision cycle and execute the chosen action."""
@@ -946,6 +949,24 @@ class LLMBehaviorEngine(BehaviorEngineV2):
         )
         if len(self.cognition.episodic_memory) > self.max_memory_events:
             self.cognition.episodic_memory = self.cognition.episodic_memory[-self.max_memory_events :]
+
+
+def _share_memory_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return migrated memory traces with values shared and consecutive equal data dicts reused (as recorded)."""
+    shared: list[dict[str, Any]] = []
+    for event in events:
+        if not isinstance(event, dict):
+            shared.append(event)
+            continue
+        event = {key: _shared_value(value) for key, value in event.items()}
+        data = event.get("data")
+        if isinstance(data, dict):
+            data = {key: _shared_value(value) for key, value in data.items()}
+            if shared and isinstance(shared[-1], dict) and shared[-1].get("data") == data:
+                data = shared[-1]["data"]
+            event["data"] = data
+        shared.append(event)
+    return shared
 
 
 _SHARED_VALUES: dict[tuple[type, Any], Any] = {}

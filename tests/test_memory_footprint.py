@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import gc
+import pickle
+import weakref
 from collections import namedtuple
 
 import pytest
 
 from casmsocial.activities import Act, make_plan
+from casmsocial.household import Household, HouseholdData
 from casmsocial.llm_adapter import LocalBehaviorLLMAdapter
 from casmsocial.person import LLMBehaviorEngine, Person, _shared_value
 
@@ -132,3 +136,31 @@ def test_usable_cpu_count_follows_the_affinity_mask(monkeypatch):
     monkeypatch.delattr(casmpop.os, "sched_getaffinity")
     monkeypatch.setattr(casmpop.os, "cpu_count", lambda: 10)
     assert casmpop._usable_cpu_count() == 10
+
+
+def test_a_household_does_not_keep_a_member_who_left_alive():
+    household = Household({"household_id": 7, "place_id": 100}, HouseholdData)
+    stays, leaves = _engine(1).agent, _engine(2).agent
+    household.addMember(stays)
+    household.addMember(leaves)
+    household.addMember(stays)
+    assert household.getHouseholdMembers() == [stays, leaves]
+
+    gone = weakref.ref(leaves)
+    del leaves
+    gc.collect()  # the person and its engine refer to each other
+    assert gone() is None
+    assert household.getHouseholdMembers() == [stays]
+
+
+def test_migrated_traces_are_shared_again_and_keep_their_values():
+    engine = _engine()
+    for tick in (1, 2):
+        engine._record_memory_event(_Cal(tick), "decision", "follow_schedule", {"action": "stay_home", "score": 0.25})
+    arrived = _engine(2)
+    # Migration pickles the state, so every trace and value arrives as a new object.
+    arrived.restore_state(pickle.loads(pickle.dumps(engine.save_state())))
+    events = arrived.cognition.episodic_memory
+    assert events == engine.cognition.episodic_memory
+    assert events[0]["data"] is events[1]["data"]
+    assert events[0]["summary"] is _shared_value("follow_schedule")
