@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from collections import namedtuple
 from dataclasses import astuple, dataclass, field, fields
@@ -430,7 +431,8 @@ class LLMBehaviorEngine(BehaviorEngineV2):
         if shared is not None and shared[0] is config and shared[1] == config:
             return shared[2]
         adapter = cls._build_adapter_from_config(config)
-        cls._shared_local_adapter = (config, dict(config), adapter)
+        # A deep snapshot, so a nested value changed in place (e.g. an activity-semantics list) also builds a new one.
+        cls._shared_local_adapter = (config, copy.deepcopy(config), adapter)
         return adapter
 
     def __init__(self, agent: Person):
@@ -503,7 +505,12 @@ class LLMBehaviorEngine(BehaviorEngineV2):
             "needs": dict(self.cognition.needs),
             "attitudes": dict(self.cognition.attitudes),
             "recent_messages": recent_messages,
-            "recent_memory": list(recent_memories),
+            # Copies: stored traces share data dicts between them (see _compact_event), so an adapter editing one in
+            # place must not change the others.
+            "recent_memory": [
+                {**event, "data": dict(event["data"])} if isinstance(event.get("data"), dict) else dict(event)
+                for event in recent_memories
+            ],
             # Shared, not copied: priors are fixed for the run and adapters must not mutate them.
             "profile_priors": self.cognition.profile_priors,
             "current_place_id": self.agent.place_id,
@@ -928,44 +935,55 @@ class LLMBehaviorEngine(BehaviorEngineV2):
         data: dict[str, Any] | None = None,
     ) -> None:
         """Append a bounded short-term memory trace."""
-        event = MemoryEvent(
-            tick=_shared_value(int(cal.tick)),
-            event_type=_shared_value(event_type),
-            summary=_shared_value(summary),
-            data={} if data is None else {key: _shared_value(value) for key, value in data.items()},
-        )
+        event = MemoryEvent(tick=int(cal.tick), event_type=event_type, summary=summary, data=data or {})
         memory = self.cognition.episodic_memory
-        if memory and memory[-1].get("data") == event.data:
-            # Consecutive traces often carry the same data (only the tick differs): keep one dict for both. Readers
-            # treat stored traces as read-only.
-            event.data = memory[-1]["data"]
-        self.cognition.episodic_memory.append(
-            {
-                "tick": event.tick,
-                "event_type": event.event_type,
-                "summary": event.summary,
-                "data": event.data,
-            }
+        memory.append(
+            _compact_event(
+                {"tick": event.tick, "event_type": event.event_type, "summary": event.summary, "data": event.data},
+                memory[-1] if memory else None,
+            )
         )
         if len(self.cognition.episodic_memory) > self.max_memory_events:
             self.cognition.episodic_memory = self.cognition.episodic_memory[-self.max_memory_events :]
 
 
+def _same_value(a: Any, b: Any) -> bool:
+    """Equal and of the same type all the way down (1 vs 1.0 vs True, or 0.0 vs -0.0, are different here)."""
+    if a is b:
+        return True
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, float):
+        return a == b and math.copysign(1.0, a) == math.copysign(1.0, b)
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(_same_value(value, b[key]) for key, value in a.items())
+    if isinstance(a, list | tuple):
+        return len(a) == len(b) and all(_same_value(x, y) for x, y in zip(a, b, strict=True))
+    return bool(a == b)
+
+
+def _compact_event(event: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any]:
+    """A memory trace with its values shared, reusing the previous trace's data dict when it holds the same values.
+
+    Consecutive traces often carry the same data (only the tick differs), so they keep one dict between them. Readers
+    treat stored traces as read-only; adapters get copies (see ``_build_llm_context``).
+    """
+    event = {key: _shared_value(value) for key, value in event.items()}
+    data = event.get("data")
+    if isinstance(data, dict):
+        data = {key: _shared_value(value) for key, value in data.items()}
+        previous_data = previous.get("data") if isinstance(previous, dict) else None
+        if isinstance(previous_data, dict) and _same_value(previous_data, data):
+            data = previous_data
+        event["data"] = data
+    return event
+
+
 def _share_memory_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return migrated memory traces with values shared and consecutive equal data dicts reused (as recorded)."""
+    """Return migrated memory traces compacted as they were when recorded (migration rebuilds them unshared)."""
     shared: list[dict[str, Any]] = []
     for event in events:
-        if not isinstance(event, dict):
-            shared.append(event)
-            continue
-        event = {key: _shared_value(value) for key, value in event.items()}
-        data = event.get("data")
-        if isinstance(data, dict):
-            data = {key: _shared_value(value) for key, value in data.items()}
-            if shared and isinstance(shared[-1], dict) and shared[-1].get("data") == data:
-                data = shared[-1]["data"]
-            event["data"] = data
-        shared.append(event)
+        shared.append(_compact_event(event, shared[-1] if shared else None) if isinstance(event, dict) else event)
     return shared
 
 
@@ -979,11 +997,13 @@ def _shared_value(value: Any) -> Any:
     Each person keeps up to ``max_memory_events`` traces, and most of their values repeat (actions, reasons, policy
     dates, rounded appraisal values), yet every trace held its own float and string objects. Equal values now share one
     object; the stored values are unchanged. Floats are keyed by type and value, with signed zero and NaN left as they
-    are; the table stops growing at ``_SHARED_VALUES_MAX`` entries.
+    are, and floats with more than 6 decimals are not shared (they rarely repeat); the table stops growing at
+    ``_SHARED_VALUES_MAX`` entries and is emptied when a model starts (``reset_shared_values``).
     """
     kind = type(value)
     if kind is float:
-        if value != value or (value == 0.0 and math.copysign(1.0, value) < 0):
+        # NaN and -0.0 stay as they are; unrounded floats rarely repeat and would only fill the table.
+        if value != value or (value == 0.0 and math.copysign(1.0, value) < 0) or value != round(value, 6):
             return value
     elif kind is int:
         if -5 <= value <= 256:  # CPython already shares these
@@ -997,6 +1017,11 @@ def _shared_value(value: Any) -> Any:
     if len(_SHARED_VALUES) < _SHARED_VALUES_MAX:
         _SHARED_VALUES[key] = value
     return value
+
+
+def reset_shared_values() -> None:
+    """Empty the shared-value table (each model starts its own, so values from an earlier run don't hold places)."""
+    _SHARED_VALUES.clear()
 
 
 # 1. Define a PersonData Class

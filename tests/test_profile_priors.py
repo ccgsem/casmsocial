@@ -255,7 +255,7 @@ def test_payload_fields_are_lifted_without_keeping_the_payload():
     rows = [
         (1, "pod-a", "risk_sensitivity", 0.8, '{"persona_value": 0.30000000000000004, "note": "x"}', None, "ref"),
         (1, "pod-a", "authority_trust", 0.3, '{"persona_value": 1e-300, "nested": {"a": [1, 2]}}', None, "ref"),
-        (2, "pod-b", "risk_sensitivity", 0.2, '{"other": 1}', None, "ref"),
+        (2, "pod-b", "risk_sensitivity", 0.2, '{"other": 1, "note": null}', None, "ref"),
     ]
     people = [_person(1), _person(2)]
     model = _model(
@@ -271,12 +271,15 @@ def test_payload_fields_are_lifted_without_keeping_the_payload():
 
     first = people[0].behavior_engine.cognition.profile_priors
     # Values are exactly what parsing the whole payload gives.
-    assert [(p["prior_name"], p["persona_value"], p["nested"], p["note"], p["prior_payload"]) for p in first] == [
+    assert [(p["prior_name"], p["persona_value"], p.get("nested"), p.get("note"), p["prior_payload"]) for p in first] == [
         ("authority_trust", 1e-300, {"a": [1, 2]}, None, None),
         ("risk_sensitivity", 0.30000000000000004, None, "x", None),
     ]
-    second = people[1].behavior_engine.cognition.profile_priors
-    assert second[0]["persona_value"] is None  # absent from the payload
+    assert "note" not in first[0] and "nested" not in first[1]
+    second = people[1].behavior_engine.cognition.profile_priors[0]
+    # Absent from the payload: no key, so a reader checking for one sees it missing. A JSON null is kept as None.
+    assert "persona_value" not in second
+    assert "note" in second and second["note"] is None
     assert any("payload fields ['persona_value', 'nested', 'note'] lifted, payload unread" in m for m in messages)
 
 
@@ -316,3 +319,16 @@ def test_repeated_strings_are_shared_across_people():
     b = people[1].behavior_engine.cognition.profile_priors[0]
     assert a["prior_name"] == b["prior_name"] == "risk_sensitivity"
     assert a["prior_name"] is b["prior_name"]
+
+
+def test_shared_prior_values_keep_their_types():
+    rows = [(1, "1", "risk_sensitivity", 0.8, '{"persona_value": 0.5}', 1.0, "ref")]
+    people = [_person(1)]
+    model = _model(people, priors_rows=rows)
+    model.conn.execute("ALTER TABLE pkg.person_profile_priors ALTER profile_id TYPE BIGINT")
+
+    model.load_profile_priors()
+
+    prior = people[0].behavior_engine.cognition.profile_priors[0]
+    assert isinstance(prior["profile_id"], int) and not isinstance(prior["profile_id"], bool) and prior["profile_id"] == 1
+    assert isinstance(prior["uncertainty"], float) and prior["uncertainty"] == 1.0

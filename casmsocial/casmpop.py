@@ -56,7 +56,14 @@ from casmsocial.factory import Models
 from casmsocial.household import Household
 from casmsocial.model import Model
 from casmsocial.observer import Observer
-from casmsocial.person import BehaviorEngineV2, LLMBehaviorEngine, Person, PersonData, ScheduleBehaviorEngine
+from casmsocial.person import (
+    BehaviorEngineV2,
+    LLMBehaviorEngine,
+    Person,
+    PersonData,
+    ScheduleBehaviorEngine,
+    reset_shared_values,
+)
 from casmsocial.place import Place, PlaceData, PlacesProjectionV2
 from casmsocial.road_network import RoadNetwork
 from casmsocial.sim_time import SimTime
@@ -251,7 +258,7 @@ class SimEnvironment(Environment):
                     "tick.environment.move_agents",
                     context.move_agents,
                     moves_to_apply,
-                    Person.restore,
+                    getattr(model, "restore_person", Person.restore),
                 )
             else:
                 sync_place_memberships = False
@@ -357,15 +364,36 @@ def _behavior_memory_state(person: Person) -> tuple[Any, dict[str, Any], Any]:
     return last_event, last_data, cognition
 
 
-def _usable_cpu_count() -> int:
-    """CPUs this process may run on (its affinity mask under Slurm or taskset), else all of the machine's."""
+def _usable_cpu_count(ranks_on_node: int = 1) -> int:
+    """CPUs this process may run on: its affinity mask under Slurm or taskset.
+
+    When the mask covers the whole machine (plain ``mpirun`` without binding, or no mask at all), the machine's CPUs
+    are split between the ``ranks_on_node`` processes sharing it.
+    """
+    machine = max(1, os.cpu_count() or 1)
     affinity = getattr(os, "sched_getaffinity", None)
     if affinity is not None:
         try:
-            return max(1, len(affinity(0)))
+            allowed = max(1, len(affinity(0)))
         except OSError:
-            pass
-    return max(1, os.cpu_count() or 1)
+            allowed = machine
+    else:
+        allowed = machine
+    if allowed >= machine:
+        return max(1, machine // max(1, ranks_on_node))
+    return allowed
+
+
+def _ranks_on_this_node(comm: Any) -> int:
+    """Number of ranks sharing this process's node (collective: every rank must call it)."""
+    try:
+        node = comm.Split_type(MPI.COMM_TYPE_SHARED)
+    except Exception:  # noqa: BLE001 - a stub communicator, or an MPI without shared-memory split
+        return 1
+    try:
+        return int(node.Get_size())
+    finally:
+        node.Free()
 
 
 _PRIOR_KEYS = frozenset({"profile_id", "prior_name", "prior_value", "prior_payload", "uncertainty"})
@@ -1251,6 +1279,7 @@ class CasmPop(Model):
         # set the data resources (e.g. data paths, DuckLake connection, etc.)
         self._set_data_resources()
         self._configure_duckdb_resources()
+        reset_shared_values()
 
         self.queries = {}
 
@@ -1382,13 +1411,14 @@ class CasmPop(Model):
         DuckDB starts one thread per core of the machine. Under MPI many ranks share a node, each with a few CPUs
         (Slurm's ``--cpus-per-task``), yet each rank's DuckDB would still run, and allocate for, one thread per core of
         the node: on a 64-core node that cost ~2 GB per rank to load profile priors that 4 threads load in 0.4 GB.
-        ``duckdb.threads`` (default ``auto``: the CPUs this process may run on) and ``duckdb.memory_limit`` (default:
+        ``duckdb.threads`` (default ``auto``: the CPUs this process may run on, or its share of the machine's when it
+        may run on all of them) and ``duckdb.memory_limit`` (default:
         DuckDB's own) set them. Results do not depend on either.
         """
         params = self.params
         threads = params.get("duckdb.threads", "auto")
         if threads is None or str(threads).strip().lower() in {"", "auto"}:
-            threads = _usable_cpu_count()
+            threads = _usable_cpu_count(_ranks_on_this_node(getattr(self, "comm", None)))
         threads = int(threads)
         if threads < 1:
             raise ValueError(f"duckdb.threads must be at least 1 or 'auto', got {threads}")
@@ -1741,24 +1771,28 @@ class CasmPop(Model):
             ORDER BY sp_persons_id, prior_name
         """).fetchall()  # noqa: S608
 
-        # Repeated strings (persona ids, prior names, uncertainty labels) share one object across people.
-        shared: dict[str, str] = {}
+        # Repeated values (persona ids, prior names, uncertainty labels) share one object across people; keyed by type
+        # too, so equal values of different types (1, 1.0, True) stay as they are.
+        shared: dict[tuple[type, Any], Any] = {}
+
+        def share(value: Any) -> Any:
+            return None if value is None else shared.setdefault((type(value), value), value)
+
         priors_by_person: dict[Any, list[dict[str, Any]]] = {}
         for person_id, profile_id, prior_name, prior_value, prior_payload, prior_uncertainty, *extra in rows:
             prior = {
-                "profile_id": shared.setdefault(profile_id, profile_id) if profile_id is not None else None,
-                "prior_name": shared.setdefault(prior_name, prior_name) if prior_name is not None else None,
+                "profile_id": share(profile_id),
+                "prior_name": share(prior_name),
                 "prior_value": prior_value,
                 "prior_payload": prior_payload,
-                "uncertainty": shared.setdefault(prior_uncertainty, prior_uncertainty)
-                if prior_uncertainty is not None
-                else None,
+                "uncertainty": share(prior_uncertainty),
             }
             if has_persona_value:
                 prior["persona_value"] = extra[0]
                 extra = extra[1:]
             for name, raw in zip(payload_fields, extra, strict=True):
-                prior[name] = None if raw is None else json.loads(raw)
+                if raw is not None:  # absent from this payload: leave the key out, as a reader checking for it expects
+                    prior[name] = json.loads(raw)
             priors_by_person.setdefault(person_id, []).append(prior)
         n_rows = len(rows)
         del rows[:]
@@ -2138,6 +2172,19 @@ class CasmPop(Model):
         if current_place is not None and remove_agent_from_place is not None:
             remove_agent_from_place(person)
         return (person.uid, target_rank)
+
+    def restore_person(self, person_data: tuple) -> Person:
+        """Rebuild a person arriving from another rank, and link them to their household if it lives on this rank.
+
+        Households hold members weakly (a person who leaves is not kept alive), so one coming home is re-linked here.
+        """
+        person = Person.restore(person_data)
+        places = getattr(getattr(person, "state", None), "places", None)
+        if places:
+            household = getattr(self, "households_by_place_id", {}).get(places[0])
+            if household is not None:
+                household.addMember(person)
+        return person
 
     def sync_place_projection_memberships(self) -> None:
         """Ensure local people are attached to local place objects after migration."""

@@ -220,8 +220,9 @@ Each rank opens its own DuckDB connection. DuckDB would start one thread per
 core of the machine, so on a cluster node many ranks would each run (and
 allocate for) one thread per core of the whole node. `duckdb.threads` defaults
 to `auto`: the CPUs this process may run on, which under Slurm with
-`--cpus-per-task` and CPU binding is that count (on a laptop with plain
-`mpirun`, all cores, as before). On a 64-core node with 4 CPUs per rank this
+`--cpus-per-task` and CPU binding is that count. Where a rank may run on the
+whole machine (plain `mpirun` without binding, or macOS), the machine's cores
+are split between the ranks on it. On a 64-core node with 4 CPUs per rank this
 cut each rank's start-up memory by about 1.5 GB. Set `duckdb.threads: N` to fix
 it, and `duckdb.memory_limit` (e.g. `'8GB'`) to cap DuckDB's memory; results do
 not depend on either.

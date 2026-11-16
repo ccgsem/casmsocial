@@ -13,6 +13,7 @@ from casmsocial.activities import Act, make_plan
 from casmsocial.household import Household, HouseholdData
 from casmsocial.llm_adapter import LocalBehaviorLLMAdapter
 from casmsocial.person import LLMBehaviorEngine, Person, _shared_value
+from casmsocial.sim_time import SimTime
 
 _Places = namedtuple("_Places", ["home", "work"])
 _Cal = namedtuple("_Cal", ["tick"])
@@ -109,7 +110,7 @@ def _setting(model, name):
 def test_duckdb_threads_default_to_the_cpus_this_process_may_use(monkeypatch):
     import casmsocial.casmpop as casmpop
 
-    monkeypatch.setattr(casmpop, "_usable_cpu_count", lambda: 3)
+    monkeypatch.setattr(casmpop, "_usable_cpu_count", lambda ranks_on_node=1: 3)
     model = _duckdb_model({})
     model._configure_duckdb_resources()
     assert _setting(model, "threads") == "3"
@@ -164,3 +165,70 @@ def test_migrated_traces_are_shared_again_and_keep_their_values():
     assert events == engine.cognition.episodic_memory
     assert events[0]["data"] is events[1]["data"]
     assert events[0]["summary"] is _shared_value("follow_schedule")
+
+
+def test_trace_data_is_reused_only_for_values_of_the_same_type():
+    engine = _engine()
+    for data in ({"score": 1.0}, {"score": 1}, {"score": True}, {"x": 0.0}, {"x": -0.0}, {"x": -0.0}):
+        engine._record_memory_event(_Cal(1), "decision", "follow_schedule", data)
+    stored = [event["data"] for event in engine.cognition.episodic_memory]
+    assert [type(d.get("score", d.get("x"))) for d in stored] == [float, int, bool, float, float, float]
+    assert str(stored[4]["x"]) == "-0.0"
+    assert stored[5] is stored[4]  # same values, same type: shared
+    assert stored[1] is not stored[0] and stored[2] is not stored[1] and stored[4] is not stored[3]
+
+
+def test_adapters_get_copies_of_the_shared_trace_data():
+    engine = _engine()
+    for tick in (1, 2):
+        engine._record_memory_event(_Cal(tick), "decision", "follow_schedule", {"action": "stay_home"})
+    context = engine._build_llm_context({}, SimTime())
+    context["recent_memory"][0]["data"]["action"] = "edited"
+    assert [event["data"]["action"] for event in engine.cognition.episodic_memory] == ["stay_home", "stay_home"]
+
+
+def test_unrounded_floats_are_not_shared_and_the_table_resets(monkeypatch):
+    import casmsocial.person as person
+
+    monkeypatch.setattr(person, "_SHARED_VALUES", {})
+    assert _shared_value(float("0.123456789")) is not None and person._SHARED_VALUES == {}
+    _shared_value(float("0.25"))
+    _shared_value("stay_home")
+    assert len(person._SHARED_VALUES) == 2
+    person.reset_shared_values()
+    assert person._SHARED_VALUES == {}
+
+
+def test_a_nested_config_change_builds_a_new_shared_adapter():
+    LLMBehaviorEngine.configure(activity_semantics_overrides={"social_ids": [1]})
+    a = _engine(1)
+    LLMBehaviorEngine._config["activity_semantics_overrides"]["social_ids"].append(2)
+    b = _engine(2)
+    assert b.adapter is not a.adapter
+
+
+def test_usable_cpu_count_splits_the_machine_between_unbound_ranks(monkeypatch):
+    import casmsocial.casmpop as casmpop
+
+    monkeypatch.setattr(casmpop.os, "cpu_count", lambda: 64)
+    monkeypatch.setattr(casmpop.os, "sched_getaffinity", lambda pid: set(range(64)), raising=False)
+    assert casmpop._usable_cpu_count(16) == 4  # plain mpirun: every rank may use the whole node
+    monkeypatch.setattr(casmpop.os, "sched_getaffinity", lambda pid: {0, 1, 2, 3}, raising=False)
+    assert casmpop._usable_cpu_count(16) == 4  # bound by Slurm: the mask is the answer
+    assert casmpop._ranks_on_this_node(None) == 1
+
+
+def test_a_person_coming_home_rejoins_their_household():
+    from casmsocial.casmpop import CasmPop
+
+    person = _engine(1).agent  # home place 100
+    household = Household({"household_id": 7, "place_id": 100}, HouseholdData)
+    model = CasmPop.__new__(CasmPop)
+    model.households_by_place_id = {100: household}
+    data = person.save()
+    del person
+    gc.collect()
+    assert household.getHouseholdMembers() == []
+
+    back = model.restore_person(data)
+    assert household.getHouseholdMembers() == [back]
