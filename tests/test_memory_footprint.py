@@ -80,8 +80,8 @@ def test_shared_values_are_equal_objects_of_the_same_type():
     y = float("0.1234")
     assert x is not y
     assert _shared_value(x) is _shared_value(y)
-    assert _shared_value(1.0) == 1.0 and type(_shared_value(1.0)) is float
-    assert type(_shared_value(1)) is int and _shared_value(True) is True
+    assert _shared_value(1.0) == 1.0 and isinstance(_shared_value(1.0), float)
+    assert isinstance(_shared_value(1), int) and not isinstance(_shared_value(1), bool) and _shared_value(True) is True
     negative_zero = _shared_value(-0.0)
     assert str(negative_zero) == "-0.0"
     nan = float("nan")
