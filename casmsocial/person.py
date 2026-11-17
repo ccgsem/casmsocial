@@ -508,10 +508,7 @@ class LLMBehaviorEngine(BehaviorEngineV2):
             "recent_messages": recent_messages,
             # Copies: stored traces share data dicts between them (see _compact_event), so an adapter editing one in
             # place must not change the others.
-            "recent_memory": [
-                {**event, "data": dict(event["data"])} if isinstance(event.get("data"), Mapping) else dict(event)
-                for event in recent_memories
-            ],
+            "recent_memory": _memory_event_dicts(recent_memories),
             # Shared, not copied: priors are fixed for the run and adapters must not mutate them.
             "profile_priors": self.cognition.profile_priors,
             "current_place_id": self.agent.place_id,
@@ -1003,7 +1000,26 @@ class MemoryRecord(Mapping[str, Any]):
         return len(self._values)
 
     def __repr__(self) -> str:
-        return repr(dict(self.items()))
+        return repr(self.to_dict())
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, MemoryRecord) and other._layout.keys == self._layout.keys:
+            return self._values == other._values
+        if isinstance(other, MemoryRecord):
+            return self.to_dict() == other.to_dict()
+        if isinstance(other, Mapping):
+            return self.to_dict() == dict(other)
+        return NotImplemented
+
+    __hash__ = None  # type: ignore[assignment]  # equal to dicts, which are unhashable
+
+    def to_dict(self) -> dict[str, Any]:
+        """A plain dict of this record's keys and values (shallow; nested records stay records).
+
+        ``dict(record)`` and ``{**record}`` work too, but look each key up through Python; this builds the dict in C,
+        which matters where every decision copies a person's traces (``_build_llm_context``).
+        """
+        return dict(zip(self._layout.keys, self._values, strict=True))
 
     def __reduce__(self) -> tuple[Any, ...]:
         return (dict, (list(zip(self._layout.keys, self._values, strict=True)),))
@@ -1031,7 +1047,7 @@ def _compact_event(event: Mapping[str, Any], previous: Mapping[str, Any] | None)
     values = []
     for key, value in event.items():
         if key == "data" and isinstance(value, Mapping):
-            data_values = tuple(_shared_value(item) for item in value.values())
+            data_values = tuple([_shared_value(item) for item in value.values()])
             layout = _trace_layout(tuple(value.keys()))
             previous_data = previous.get("data") if isinstance(previous, Mapping) else None
             if (
@@ -1046,6 +1062,36 @@ def _compact_event(event: Mapping[str, Any], previous: Mapping[str, Any] | None)
             value = _shared_value(value)
         values.append(value)
     return MemoryRecord(_trace_layout(tuple(event.keys())), tuple(values))
+
+
+def memory_event_dict(event: Mapping[str, Any]) -> dict[str, Any]:
+    """A plain-dict copy of a stored memory trace, with its data copied to a plain dict too.
+
+    Stored traces are ``MemoryRecord`` (or plain dicts appended by other code) and share their data; adapters and logs
+    get copies they may change and serialize.
+    """
+    copy = event.to_dict() if isinstance(event, MemoryRecord) else dict(event)
+    data = copy.get("data")
+    if isinstance(data, MemoryRecord):
+        copy["data"] = data.to_dict()
+    elif isinstance(data, Mapping):
+        copy["data"] = dict(data)
+    return copy
+
+
+def _memory_event_dicts(events: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """``memory_event_dict`` for each trace, with the common case inline: every decision copies a person's traces."""
+    copies = []
+    for event in events:
+        if type(event) is MemoryRecord:
+            copy = dict(zip(event._layout.keys, event._values, strict=True))
+            data = copy.get("data")
+            if type(data) is MemoryRecord:
+                copy["data"] = dict(zip(data._layout.keys, data._values, strict=True))
+                copies.append(copy)
+                continue
+        copies.append(memory_event_dict(event))
+    return copies
 
 
 def _share_memory_events(events: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:

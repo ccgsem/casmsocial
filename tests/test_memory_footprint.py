@@ -12,7 +12,14 @@ import pytest
 from casmsocial.activities import DEFAULT_TRAVEL_LEG, Act, Leg, make_plan, restore_plans, serialize_plans
 from casmsocial.household import Household, HouseholdData
 from casmsocial.llm_adapter import LocalBehaviorLLMAdapter
-from casmsocial.person import LLMBehaviorEngine, MemoryRecord, Person, _shared_value, reset_shared_values
+from casmsocial.person import (
+    LLMBehaviorEngine,
+    MemoryRecord,
+    Person,
+    _shared_value,
+    memory_event_dict,
+    reset_shared_values,
+)
 from casmsocial.sim_time import SimTime
 
 _Places = namedtuple("_Places", ["home", "work"])
@@ -293,3 +300,28 @@ def test_resetting_shared_values_also_forgets_trace_layouts():
     engine._record_memory_event(_Cal(2), "decision", "a", {"action": "stay_home"})
     after = engine.cognition.episodic_memory[-1]
     assert after == {**before, "tick": 2} and after._layout is not before._layout
+
+
+def test_trace_copies_are_plain_dicts_equal_to_the_stored_traces():
+    engine = _engine()
+    for tick in (1, 2):
+        engine._record_memory_event(_Cal(tick), "decision", "follow_schedule", {"action": "stay_home", "nested": [1]})
+    engine.cognition.episodic_memory.append({"tick": 3, "event_type": "x", "summary": "", "data": {"a": 1}})
+    stored = engine.cognition.episodic_memory
+
+    copies = [memory_event_dict(event) for event in stored]
+    assert copies == stored and stored == copies
+    assert all(isinstance(c, dict) and isinstance(c["data"], dict) for c in copies)
+    copies[0]["data"]["action"] = "edited"
+    assert stored[0]["data"]["action"] == "stay_home" and stored[1]["data"]["action"] == "stay_home"
+    assert engine._build_llm_context({}, SimTime())["recent_memory"] == [memory_event_dict(e) for e in stored]
+
+
+def test_records_compare_by_keys_and_values():
+    first, second = _engine(1), _engine(2)
+    first._record_memory_event(_Cal(1), "decision", "a", {"action": "stay_home", "score": 0.5})
+    second._record_memory_event(_Cal(1), "decision", "a", {"score": 0.5, "action": "stay_home"})
+    a, b = first.cognition.episodic_memory[-1], second.cognition.episodic_memory[-1]
+    assert a == b  # same keys in another order, as dicts compare
+    assert a["data"] != {"action": "stay_home", "score": 0.25} and a != 3
+    assert a["data"].to_dict() == {"action": "stay_home", "score": 0.5}
