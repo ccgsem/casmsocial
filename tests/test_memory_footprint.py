@@ -12,7 +12,7 @@ import pytest
 from casmsocial.activities import DEFAULT_TRAVEL_LEG, Act, Leg, make_plan, restore_plans, serialize_plans
 from casmsocial.household import Household, HouseholdData
 from casmsocial.llm_adapter import LocalBehaviorLLMAdapter
-from casmsocial.person import LLMBehaviorEngine, Person, _shared_value
+from casmsocial.person import LLMBehaviorEngine, MemoryRecord, Person, _shared_value, reset_shared_values
 from casmsocial.sim_time import SimTime
 
 _Places = namedtuple("_Places", ["home", "work"])
@@ -246,3 +246,50 @@ def test_restored_plans_share_the_travel_leg_and_equal_integers():
     assert restored[3] is not DEFAULT_TRAVEL_LEG and isinstance(restored[3], Leg)
     assert restored[0].person_id is restored[2].person_id is restored[4].person_id
     assert restored[0].place_id is restored[4].place_id
+
+def test_stored_traces_read_like_dicts_and_cannot_be_changed():
+    engine = _engine()
+    data = {"action": "stay_home", "threat": 0.25, "pathway": "none"}
+    engine._record_memory_event(_Cal(3), "message_appraisal", "reason", dict(data))
+    event = engine.cognition.episodic_memory[-1]
+
+    assert isinstance(event, MemoryRecord) and isinstance(event["data"], MemoryRecord)
+    assert event == {"tick": 3, "event_type": "message_appraisal", "summary": "reason", "data": data}
+    assert {"tick": 3, "event_type": "message_appraisal", "summary": "reason", "data": data} == event
+    assert list(event) == ["tick", "event_type", "summary", "data"] and len(event["data"]) == 3
+    assert event["data"].get("action") == "stay_home" and event["data"].get("missing", 7) == 7
+    assert "threat" in event["data"] and "missing" not in event["data"]
+    assert dict(event["data"]) == data and {**event}["tick"] == 3
+    with pytest.raises(KeyError):
+        event["data"]["missing"]
+    with pytest.raises(TypeError):
+        event["data"]["action"] = "edited"  # type: ignore[index]
+
+
+def test_traces_with_the_same_keys_share_one_layout():
+    first, second = _engine(1), _engine(2)
+    first._record_memory_event(_Cal(1), "decision", "a", {"action": "stay_home", "score": 0.1})
+    second._record_memory_event(_Cal(2), "decision", "b", {"action": "go", "score": 0.9})
+    a, b = first.cognition.episodic_memory[-1], second.cognition.episodic_memory[-1]
+    assert a._layout is b._layout and a["data"]._layout is b["data"]._layout
+
+
+def test_stored_traces_pickle_as_plain_dicts():
+    engine = _engine()
+    engine._record_memory_event(_Cal(1), "decision", "follow_schedule", {"action": "stay_home", "nested": [1, 2]})
+    event = engine.cognition.episodic_memory[-1]
+
+    plain = pickle.loads(pickle.dumps(event))
+    assert isinstance(plain, dict) and isinstance(plain["data"], dict)  # MemoryRecord is not a dict
+    assert plain == {"tick": 1, "event_type": "decision", "summary": "follow_schedule",
+                     "data": {"action": "stay_home", "nested": [1, 2]}}
+
+
+def test_resetting_shared_values_also_forgets_trace_layouts():
+    engine = _engine()
+    engine._record_memory_event(_Cal(1), "decision", "a", {"action": "stay_home"})
+    before = engine.cognition.episodic_memory[-1]
+    reset_shared_values()
+    engine._record_memory_event(_Cal(2), "decision", "a", {"action": "stay_home"})
+    after = engine.cognition.episodic_memory[-1]
+    assert after == {**before, "tick": 2} and after._layout is not before._layout

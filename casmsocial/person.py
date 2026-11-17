@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import math
 from collections import namedtuple
+from collections.abc import Iterator, Mapping
 from dataclasses import astuple, dataclass, field, fields
 from operator import attrgetter
 from typing import Any, ClassVar, NamedTuple
@@ -110,7 +111,7 @@ class CognitiveState:
     emotions: dict[str, float] = field(default_factory=dict)
     needs: dict[str, float] = field(default_factory=dict)
     attitudes: dict[str, float] = field(default_factory=dict)
-    episodic_memory: list[dict[str, Any]] = field(default_factory=list)
+    episodic_memory: list[Mapping[str, Any]] = field(default_factory=list)
     stress: float = 0.0
     social_influence: float = 0.0
     last_decision: str = "follow_schedule"
@@ -508,7 +509,7 @@ class LLMBehaviorEngine(BehaviorEngineV2):
             # Copies: stored traces share data dicts between them (see _compact_event), so an adapter editing one in
             # place must not change the others.
             "recent_memory": [
-                {**event, "data": dict(event["data"])} if isinstance(event.get("data"), dict) else dict(event)
+                {**event, "data": dict(event["data"])} if isinstance(event.get("data"), Mapping) else dict(event)
                 for event in recent_memories
             ],
             # Shared, not copied: priors are fixed for the run and adapters must not mutate them.
@@ -962,26 +963,94 @@ def _same_value(a: Any, b: Any) -> bool:
     return bool(a == b)
 
 
-def _compact_event(event: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any]:
-    """A memory trace with its values shared, reusing the previous trace's data dict when it holds the same values.
+class _TraceLayout:
+    """The keys of one kind of memory trace, in order, shared by every trace with those keys."""
 
-    Consecutive traces often carry the same data (only the tick differs), so they keep one dict between them. Readers
-    treat stored traces as read-only; adapters get copies (see ``_build_llm_context``).
+    __slots__ = ("index", "keys")
+
+    def __init__(self, keys: tuple[str, ...]) -> None:
+        self.keys = keys
+        self.index = {key: position for position, key in enumerate(keys)}
+
+
+class MemoryRecord(Mapping[str, Any]):
+    """A stored memory trace (or its data): a read-only mapping kept as one tuple of values against shared keys.
+
+    A trace was a dict with a 19-key data dict, and every person keeps up to ``max_memory_events`` of them; through a
+    day they were most of the memory a person gained (~10 KB each with the living_agents brain). Traces with the same
+    keys now share one key layout and keep only their values, about half the memory. Read them like dicts
+    (``event["data"]["action"]``, ``.get``, ``dict(event)``, ``==`` against a dict); they cannot be changed in place.
+    They pickle as plain dicts, so migration and anything else that serializes cognitive state sees what it always
+    did; the receiving rank compacts them again (``_share_memory_events``).
     """
-    event = {key: _shared_value(value) for key, value in event.items()}
-    data = event.get("data")
-    if isinstance(data, dict):
-        data = {key: _shared_value(value) for key, value in data.items()}
-        previous_data = previous.get("data") if isinstance(previous, dict) else None
-        if isinstance(previous_data, dict) and _same_value(previous_data, data):
-            data = previous_data
-        event["data"] = data
-    return event
+
+    __slots__ = ("_layout", "_values")
+
+    def __init__(self, layout: _TraceLayout, values: tuple[Any, ...]) -> None:
+        self._layout = layout
+        self._values = values
+
+    def __getitem__(self, key: str) -> Any:
+        return self._values[self._layout.index[key]]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._layout.index
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._layout.keys)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __repr__(self) -> str:
+        return repr(dict(self.items()))
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (dict, (list(zip(self._layout.keys, self._values, strict=True)),))
 
 
-def _share_memory_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return migrated memory traces compacted as they were when recorded (migration rebuilds them unshared)."""
-    shared: list[dict[str, Any]] = []
+_TRACE_LAYOUTS: dict[tuple[str, ...], _TraceLayout] = {}
+_TRACE_LAYOUTS_MAX = 1 << 12
+
+
+def _trace_layout(keys: tuple[str, ...]) -> _TraceLayout:
+    layout = _TRACE_LAYOUTS.get(keys)
+    if layout is None:
+        layout = _TraceLayout(tuple(_shared_value(key) for key in keys))
+        if len(_TRACE_LAYOUTS) < _TRACE_LAYOUTS_MAX:
+            _TRACE_LAYOUTS[keys] = layout
+    return layout
+
+
+def _compact_event(event: Mapping[str, Any], previous: Mapping[str, Any] | None) -> MemoryRecord:
+    """A memory trace stored compactly, with its values shared, reusing the previous trace's data when it is the same.
+
+    Consecutive traces often carry the same data (only the tick differs), so they keep one record between them. Readers
+    treat stored traces as read-only; adapters get dict copies (see ``_build_llm_context``).
+    """
+    values = []
+    for key, value in event.items():
+        if key == "data" and isinstance(value, Mapping):
+            data_values = tuple(_shared_value(item) for item in value.values())
+            layout = _trace_layout(tuple(value.keys()))
+            previous_data = previous.get("data") if isinstance(previous, Mapping) else None
+            if (
+                isinstance(previous_data, MemoryRecord)
+                and previous_data._layout is layout
+                and _same_value(previous_data._values, data_values)
+            ):
+                value = previous_data
+            else:
+                value = MemoryRecord(layout, data_values)
+        else:
+            value = _shared_value(value)
+        values.append(value)
+    return MemoryRecord(_trace_layout(tuple(event.keys())), tuple(values))
+
+
+def _share_memory_events(events: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Return migrated memory traces compacted as they were when recorded (migration rebuilds them as plain dicts)."""
+    shared: list[Mapping[str, Any]] = []
     for event in events:
         shared.append(_compact_event(event, shared[-1] if shared else None) if isinstance(event, dict) else event)
     return shared
@@ -1020,8 +1089,9 @@ def _shared_value(value: Any) -> Any:
 
 
 def reset_shared_values() -> None:
-    """Empty the shared-value table (each model starts its own, so values from an earlier run don't hold places)."""
+    """Empty the shared-value and trace-layout tables (each model starts its own, so an earlier run's don't hold places)."""
     _SHARED_VALUES.clear()
+    _TRACE_LAYOUTS.clear()
 
 
 # 1. Define a PersonData Class
