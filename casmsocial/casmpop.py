@@ -59,6 +59,7 @@ from casmsocial.observer import Observer
 from casmsocial.person import (
     BehaviorEngineV2,
     LLMBehaviorEngine,
+    MemoryRecord,
     Person,
     PersonData,
     ScheduleBehaviorEngine,
@@ -360,7 +361,8 @@ def _behavior_memory_state(person: Person) -> tuple[Any, dict[str, Any], Any]:
     behavior_engine = getattr(person, "behavior_engine", None)
     cognition = getattr(behavior_engine, "cognition", None)
     last_event = cognition.episodic_memory[-1] if cognition and cognition.episodic_memory else {}
-    last_data = dict(last_event.get("data", {}))
+    data = last_event.get("data", {})
+    last_data = data.to_dict() if isinstance(data, MemoryRecord) else dict(data)
     return last_event, last_data, cognition
 
 
