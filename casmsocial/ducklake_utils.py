@@ -111,7 +111,7 @@ def get_ducklake_connection(
     ducklake_path.mkdir(parents=True, exist_ok=True)
     (ducklake_path / "storage").mkdir(exist_ok=True)
     catalog_path = resolve_catalog_uri(ducklake_path, catalog_uri)
-    data_url = "".join(["file://", str(ducklake_path / "storage")])
+    data_url = (ducklake_path / "storage").as_uri()
     secret_sql = _quack_secret_sql(catalog_path, env) if _is_quack(catalog_path) else ""
 
     # create duckdb connection
