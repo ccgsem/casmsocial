@@ -11,14 +11,276 @@ casmsocial is a Python framework for implementing agent-based models that simula
 - **Github repository**: <https://github.com/ccgsem/casmsocial/>
 - **Documentation** <https://ccgsem.github.io/casmsocial/>
 
-## Installation
+## Installation for new users
 
-Install the environment with
+Start with a small local example before connecting a county-scale dataset or
+other CASM services. You need Git (downloads the code), uv (installs Python and
+packages), and MPI (runs the simulation). This guide selects **Python 3.13**;
+`pyproject.toml` supports Python 3.10–3.13 and excludes 3.14 and later.
+R, RStudio, and Quarto are not required for this repository's Python MVP.
 
-```bash
-export CC=mpicxx; export CXX=mpicxx
-make install
+| Computer | Setup path | What it supports |
+|---|---|---|
+| macOS | Terminal and the MPI instructions below | CASM Social runtime and local MVP |
+| Windows with WSL2 | Ubuntu terminal after initial PowerShell setup | CASM Social runtime and local MVP |
+| Windows without WSL | Separate PowerShell instructions below | Standalone no-MPI Repast development; CASM Social adaptation is still required |
+
+Choose your platform and run its commands in order. Copy the commands without
+adding a `$` or `%` prompt. Initial downloads include large packages such as
+PyTorch and PyArrow. Install software with administrator approval when required;
+install Python packages as your ordinary user. A password prompt may show no
+characters while you type.
+
+### 1. macOS: install the tools
+
+Open **Terminal** from Applications → Utilities. Install Apple's compiler tools:
+
+```sh
+xcode-select --install
 ```
+
+Finish the installer before continuing. If the tools are already installed,
+continue. Install Homebrew following [brew.sh](https://brew.sh/), including the
+printed **Next steps** that add it to your shell. Reopen Terminal, then run:
+
+```sh
+brew install uv open-mpi
+git --version
+uv --version
+mpicxx --version
+mpirun --version
+```
+
+Open MPI supplies `mpicxx`, the C++ compiler wrapper used to build Repast4Py.
+If your team already provides a working MPICH installation, use it instead of
+installing another MPI. See Repast's
+[macOS MPI guide](https://repast.github.io/repast4py.site/macos_mpi_install.html)
+for its compiler requirements. Continue to Step 3.
+
+### 2. Windows with WSL2: install Ubuntu and the tools
+
+Use a Windows version supported by
+[Microsoft's WSL installation guide](https://learn.microsoft.com/en-us/windows/wsl/install).
+Open **PowerShell as administrator** from the Start menu and run:
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+Restart if requested. Open **Ubuntu** from the Start menu, and create the Linux
+username and password requested on first launch. In PowerShell, verify that
+Ubuntu's version is `2`:
+
+```powershell
+wsl --list --verbose
+```
+
+If it shows `1`, use `wsl --set-version Ubuntu 2` before continuing.
+For this path, run all following commands **inside Ubuntu**, not PowerShell:
+
+```sh
+sudo apt update
+sudo apt install -y build-essential git curl ca-certificates tzdata openmpi-bin libopenmpi-dev
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+`tzdata` provides the time-zone database the model needs to read scenario
+time zones; without it, `make mvp` stops with `No time zone found with key`.
+The last line uses the [official uv installer](https://docs.astral.sh/uv/getting-started/installation/).
+
+**On an organization network that inspects HTTPS** (common on corporate
+networks), the last line can fail with `SSL certificate problem: self-signed
+certificate in certificate chain`. Ubuntu doesn't share Windows' certificate
+store, so add your organization's root certificate to Ubuntu once. Get the
+root certificate file (PEM format, `.crt`) from IT, save it in Windows'
+Downloads folder, and run these lines in Ubuntu, replacing `org-root-ca.crt`
+with its file name and `YourWindowsName` with your Windows user folder name:
+
+```sh
+sudo cp /mnt/c/Users/YourWindowsName/Downloads/org-root-ca.crt /usr/local/share/ca-certificates/org-root-ca.crt
+sudo update-ca-certificates
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+`update-ca-certificates` should report `1 added`. uv and Git then use the
+same certificate store, so the remaining steps need no further change.
+Close Ubuntu and reopen it so uv is on your command path, then check:
+
+```sh
+git --version
+uv --version
+mpicxx --version
+mpirun --version
+```
+
+Keep this checkout and its virtual environment inside Ubuntu's home directory,
+as in Step 3. Do not reuse a Windows-created environment in WSL.
+
+### 3. Download CASM Social and install the locked environment
+
+In macOS Terminal or Ubuntu:
+
+```sh
+mkdir -p ~/Projects
+cd ~/Projects
+git clone --branch main https://github.com/ccgsem/casmsocial.git
+cd casmsocial
+uv python install 3.13
+CC=mpicxx CXX=mpicxx uv sync --locked --python 3.13
+```
+
+If you already cloned the repository, enter its existing folder instead of
+cloning again. Ask your team if you should use a different branch from `main`.
+
+uv creates `.venv` in the repository and installs the versions from `uv.lock`,
+including the Git-pinned `casmsim` dependency and CPU PyTorch source configured
+in `pyproject.toml`. The compiler variables apply to this installation command.
+Wait for the downloads and native builds to finish. Do not use `sudo` or delete
+the lockfile to work around errors.
+
+You do not need to activate `.venv`: `uv run --locked` selects it for each
+command. For contributors, optionally install the repository's commit hooks:
+
+```sh
+uv run --locked pre-commit install
+```
+
+`make install` is an existing convenience target that also installs those hooks;
+it does not install system MPI or compiler tools for you.
+
+### 4. Verify the installation
+
+From the repository folder:
+
+```sh
+uv run --locked python --version
+uv run --locked python -c "from importlib.metadata import version; from casmsocial import CitySocialModel; from mpi4py import MPI; from repast4py import context, schedule; print('CASM Social:', version('casmsocial')); print('Model:', CitySocialModel.__name__); print('MPI ranks:', MPI.COMM_WORLD.Get_size())"
+```
+
+Expect Python `3.13.x`, CASM Social `2.11.0` for this checkout, model
+`CitySocialModel`, and MPI ranks `1`. Framework log messages during import are
+normal. Version numbers can change when the team updates the repository.
+
+### 5. Run the self-contained MVP
+
+The MVP creates tiny synthetic inputs locally. You do not need team population
+data, Box access, a casmdb service, or an LLM API key for this example. Its local
+behavior adapter does not contact a remote LLM provider. The initial data build
+may download DuckDB extensions, so keep internet access available.
+
+```sh
+make mvp
+```
+
+This target removes prior generated MVP artifacts, recreates the local DuckLake,
+runs `config/mvp.yaml` with one MPI process, validates the outputs, and writes a
+summary. Preserve previous MVP results elsewhere before rerunning if you need
+those results for comparison. Do not point the demo at a production catalog.
+
+Success produces:
+
+- `data/output/mvp_summary.md` — readable run summary; open this first.
+- `data/output/mvp_agent_log.parquet` — person locations over time.
+- `data/output/mvp_behavior_log.parquet` — behavior observations.
+- `examples/mvp/mvp.ducklake` — generated local DuckLake directory.
+
+The current smoke configuration has 2 agents, 24 ticks, and 1 rank; validation
+reports 48 rows in each of the agent and behavior logs. Inspect the summary in
+your editor, or print it in the terminal:
+
+```sh
+cat data/output/mvp_summary.md
+```
+
+On Windows/WSL, `explorer.exe .` opens the repository in File Explorer.
+For revalidation, two-rank runs, and other smoke scenarios, use
+[examples/mvp/README.md](examples/mvp/README.md) and the
+[MVP operator checklist](docs/mvp_operator_checklist.md). The full developer
+suite is available with `make test`; it is broader than this first-run check.
+
+### Native Windows without WSL: standalone Repast development
+
+Repast's [native Windows guide](https://repast.github.io/repast4py.site/windows_install.html)
+provides a prebuilt no-MPI wheel. It avoids an MPI installation and a C++
+compiler, but **it is not a complete deployment of this CASM Social checkout**:
+[`CitySocialModel`](casmsocial/citysim/citysocialmodel.py) and
+[`CasmPop`](casmsocial/casmpop.py) import `mpi4py` directly. Repast's single-rank
+communicator is exposed through `from repast4py import MPI`, not through a
+replacement `mpi4py` package. The published wheel is Repast4Py 1.3.0; the
+repository lockfile currently selects MPI-based 1.3.1.
+
+For a native **64-bit Intel/AMD Windows** learning environment, install
+**64-bit Python 3.13** from [Python.org](https://www.python.org/downloads/windows/),
+including its launcher. Open an ordinary PowerShell window and run:
+
+```powershell
+py -3.13 --version
+py -3.13 -c "import struct; print(struct.calcsize('P') * 8)"
+py -3.13 -m venv "$env:USERPROFILE\venvs\casmsocial-repast-native"
+$NativePython = "$env:USERPROFILE\venvs\casmsocial-repast-native\Scripts\python.exe"
+& $NativePython -m pip install --upgrade pip
+$env:R4PY_NO_MPI = "1"
+& $NativePython -m pip install "https://github.com/Repast/repast4py/releases/download/v1.3.0/repast4py-1.3.0-cp313-cp313-win_amd64.whl"
+& $NativePython -c "from repast4py import MPI, context, schedule; print('Ranks:', MPI.COMM_WORLD.Get_size()); print('Rank:', MPI.COMM_WORLD.Get_rank())"
+& $NativePython -m pip check
+```
+
+The architecture check must print `64`; the communicator check should print
+size `1` and rank `0`. This wheel targets `win_amd64`, not native ARM64 Python.
+Using the executable path avoids PowerShell activation-policy changes. In a new
+PowerShell session, set `$NativePython` and `R4PY_NO_MPI` again before continuing.
+
+Write standalone Repast experiments using `from repast4py import MPI` and run
+them with `& $NativePython your_script.py`. Do not mix MPI-based Repast or
+`mpi4py` into this environment, and do not use `uv sync`, `uv run`, `make install`,
+`make mvp`, or `mpirun` for this no-MPI environment. It is separate from the
+project's locked runtime; dependencies of the wheel are resolved by pip.
+
+To deploy CASM Social in this mode, maintainers must adapt direct MPI imports
+and MPI-dependent behavior to the single-rank interface, check the required
+APIs, lock a compatible Windows environment, and validate model initialization,
+scheduling, observation, and an end-to-end scenario on Windows. Setting
+`R4PY_NO_MPI` alone does not perform that adaptation. Use the macOS/WSL MPI path
+for the current model runtime.
+
+### Returning to your MPI checkout
+
+Open macOS Terminal or Ubuntu, then:
+
+```sh
+cd ~/Projects/casmsocial
+uv run --locked python --version
+```
+
+Before updating, review `git status` and save your changes. With a clean working
+tree, use `git pull --ff-only`, then repeat the locked sync from Step 3. Keep
+`CC=mpicxx CXX=mpicxx` on installs that may build Repast. If switching from a
+no-MPI experiment, use a fresh terminal without `R4PY_NO_MPI` set.
+
+### Installation troubleshooting
+
+| Symptom | Next step |
+|---|---|
+| `brew` or `uv` not found | Reopen the terminal and complete the installer's shell-path instructions. Install Linux uv inside Ubuntu for WSL. |
+| `make` not found | Complete Xcode command-line tools installation on macOS; install `build-essential` in Ubuntu. |
+| `mpicxx` not found | Install the MPI packages for your platform, then check `mpicxx --version`. |
+| Repast compilation fails | Check the compiler wrapper and rerun Step 3 with both `CC` and `CXX`. Capture the first compiler error. |
+| MPI library or launcher mismatch | Use one MPI implementation for compilation and execution; ask the team before replacing an existing MPI. |
+| Certificate verification fails | uv uses system certificates. Ask IT about organization certificates; keep TLS verification enabled. In WSL, add the organization root to Ubuntu as in Step 2. If Homebrew Git alone fails, prefix the sync command with `PATH="/usr/bin:/bin:$PATH"` to select Apple's Git. |
+| `No time zone found with key America/New_York` | Install the time-zone database: `sudo apt install -y tzdata` in Ubuntu. |
+| DuckDB cannot download an extension | Check network access and organizational certificate/proxy settings. The first MVP build may need extension downloads. |
+| MVP reads unexpected data | Check `.env` and inherited `CASMSOCIAL_DUCKLAKE_URI`/data-path settings; use the local demo configuration. |
+| Missing files with `config/casmsocial.yaml` | That config needs its own dataset. Start with `make mvp`, which generates its inputs. |
+| Native Windows wheel rejected | Check Python 3.13, 64-bit x86 Python, and the `cp313`/`win_amd64` wheel filename. |
+
+When asking for help, share your OS, terminal type, exact command, and first
+error message. Omit credentials and private data. These instructions follow the
+current source and upstream installation guides. Steps 2–5 of the WSL path
+were run in a fresh Ubuntu 24.04 environment (2026-11-12) through a successful
+`make mvp`; the PowerShell setup and the native Windows path have not been
+tested on a Windows machine.
+
+## Configure your own data (after the MVP)
 
 For local runs against your own data, copy `.env.example` to `.env` and set
 `CASMSOCIAL_DATA_PATH` and `CASMSOCIAL_DUCKLAKE_PATH`.
@@ -49,19 +311,18 @@ To build a Docker image for `casmsocial`:
 docker build -t casmsocial . -f Dockerfile
 ```
 
-## Launch the modeling environment:
-First create the virtual environments with
+## Using the installed environment
 
-```bash
-% python -m venv .venv
+The installation above already creates `.venv`; do not recreate it with
+`python -m venv`. Prefer `uv run --locked` for commands. If you want to use an
+activated environment in macOS Terminal or Ubuntu instead:
+
+```sh
+source .venv/bin/activate
 ```
 
-To launch the virtualenv, run
-
-```bash
-% source ./.venv/bin/activate
-(casmsocial) ...
-```
+Run `deactivate` when finished. Native Windows no-MPI instructions use their
+own separate environment and do not use this activation command.
 
 ## Quickstart: running the model
 There are three ways to run the model
