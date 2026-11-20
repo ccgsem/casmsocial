@@ -163,7 +163,7 @@ when needed:
 | `CASMSOCIAL_DUCKLAKE_S3_REGION` | `us-east-1` |
 | `CASMSOCIAL_DUCKLAKE_S3_API_PORT` | `59000` (the old `CASMSOCIAL_DUCKLAKE_MINIO_API_PORT` is still read when unset) |
 | `CASMSOCIAL_DUCKLAKE_SEAWEEDFS_IMAGE` | `dhi.io/seaweedfs:4.48@sha256:cb6ec04e…` (pinned digest) |
-| `CASMSOCIAL_DUCKLAKE_BUSYBOX_IMAGE` | `busybox:1.37.0-musl` |
+| `CASMSOCIAL_DUCKLAKE_BUSYBOX_IMAGE` | `busybox:1.38.0-musl@sha256:80e38f9a…` (pinned digest; static, which the shell-less SeaweedFS image needs) |
 | `CASMSOCIAL_DUCKLAKE_SEAWEEDFS_VOLUME_SIZE_LIMIT_MB` | `64` |
 
 SeaweedFS has no web console, so there is no console port. The bucket is
