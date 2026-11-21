@@ -1,3 +1,4 @@
+import weakref
 from dataclasses import dataclass
 
 import repast4py.core as core
@@ -46,7 +47,9 @@ class Household(core.Agent):
             init_dict["rank"] = 0
         self.rank = init_dict["rank"]
         self.place = None
-        self.members = []
+        # Weak: a member who migrates to another rank must not be kept alive here (it would keep a full stale copy of
+        # the person, decision traces included, for the rest of the run).
+        self._members: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
 
         self.household_data = create_dataclass_record_from_dict(householdDataClass, init_dict)
 
@@ -98,10 +101,14 @@ class Household(core.Agent):
         """Get the physical place linked to this household."""
         return self.place
 
+    @property
+    def members(self) -> list[core.Agent]:
+        """Household members currently alive on this rank, in the order they were added."""
+        return list(self._members.values())
+
     def addMember(self, person: core.Agent) -> None:
-        """Link a person agent to this household."""
-        if person not in self.members:
-            self.members.append(person)
+        """Link a person agent to this household (weakly: members that leave this rank drop out)."""
+        self._members.setdefault(person.uid, person)
 
     def getHouseholdData(self) -> dataclass:
         """Get the household data."""
@@ -113,4 +120,4 @@ class Household(core.Agent):
 
     def getHouseholdMembers(self) -> list[core.Agent]:
         """Get the household members."""
-        return list(self.members)
+        return self.members

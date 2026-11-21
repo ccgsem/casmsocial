@@ -37,7 +37,7 @@ class CommunicationManager:
 
             sender_place_id = getattr(sender, "rank_place_id", sender.place_id)
             message = self._create_message(intent=intent, sender_place_id=sender_place_id, tick=tick)
-            destination_rank = self._rank_for_receiver(message)
+            destination_rank = self._rank_for_receiver(message, model)
 
             if self._is_local_delivery(message, destination_rank, sender_place_id, model):
                 if self.deliver_local(message, model):
@@ -165,8 +165,22 @@ class CommunicationManager:
         receiver_place_id = getattr(receiver, "rank_place_id", receiver.place_id)
         return receiver_place_id == sender_place_id
 
-    def _rank_for_receiver(self, message: CommMessage) -> int:
-        """Resolve the owner rank for a receiver from its current uid."""
+    def _rank_for_receiver(self, message: CommMessage, model=None) -> int:
+        """Resolve the rank that holds the receiver now.
+
+        A uid's last part is the rank the agent was created on, which stops
+        being where it lives once it migrates; routing by it dropped every
+        message to a person who had moved rank. Messages are routed before
+        people move in a tick, so in order: the receiver is on this rank; or
+        the rank that owns the receiver's place (people live on the rank of
+        their place, as migration keeps them); or, for a place with no known
+        owner (a person on a leg), the rank in the uid.
+        """
+        if model is not None and model.get_person_by_uid(message.receiver_uid) is not None:
+            return self.rank
+        owner = (getattr(model, "place_to_rank", None) or {}).get(message.receiver_place_id)
+        if owner is not None:
+            return int(owner)
         return message.receiver_uid[2]
 
 

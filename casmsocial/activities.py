@@ -305,21 +305,37 @@ def serialize_plan_element(element: PlanElement) -> tuple:
     )
 
 
+_DEFAULT_TRAVEL_LEG_PAYLOAD = serialize_plan_element(DEFAULT_TRAVEL_LEG)[1]
+
+
 def restore_plans(data: tuple) -> Plans:
-    """Restore plans serialized by serialize_plans."""
-    return [restore_plan(plan) for plan in data]
+    """Restore plans serialized by serialize_plans.
+
+    People who change rank are rebuilt from these tuples, and a rebuilt plan used to take about twice the memory of the
+    plan the person started with: every unrouted leg became its own ``Leg`` where plans built at start-up all share
+    ``DEFAULT_TRAVEL_LEG``, and every integer field its own object. Unrouted legs now restore to the shared leg, and
+    equal integers within one person's plans (their id, a place visited twice) share one object.
+    """
+    ints: dict[int, int] = {}
+    return [restore_plan(plan, ints) for plan in data]
 
 
-def restore_plan(data: tuple) -> Plan:
-    """Restore a single plan serialized by serialize_plan."""
-    return [restore_plan_element(element) for element in data]
+def restore_plan(data: tuple, ints: dict[int, int] | None = None) -> Plan:
+    """Restore a single plan serialized by serialize_plan (``ints``: equal integers to share, see restore_plans)."""
+    if ints is None:
+        ints = {}
+    return [restore_plan_element(element, ints) for element in data]
 
 
-def restore_plan_element(data: tuple) -> PlanElement:
-    """Restore a single plan element."""
+def restore_plan_element(data: tuple, ints: dict[int, int] | None = None) -> PlanElement:
+    """Restore a single plan element (``ints``: equal integers to share, see restore_plans)."""
     kind, payload = data
     if kind == "activity":
+        if ints is not None:
+            payload = [ints.setdefault(v, v) if isinstance(v, int) else v for v in payload]
         return Act(*payload)
     if kind == "leg":
+        if payload == _DEFAULT_TRAVEL_LEG_PAYLOAD:
+            return DEFAULT_TRAVEL_LEG
         return Leg(*payload)
     raise ValueError(f"Unknown plan element kind: {kind}")

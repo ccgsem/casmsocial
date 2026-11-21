@@ -54,8 +54,10 @@ def test_cognitive_state_survives_migration(migration, name):
         "stress",
         "last_llm_tick",
         "last_llm_summary",
+        "profile_priors",
     ):
         assert received[key] == sent[key], key
+    assert received["profile_priors"][0]["profile_id"] == "pod-7"
 
 
 @pytest.mark.parametrize("name", ["v2", "llm"])
