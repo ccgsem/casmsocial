@@ -163,3 +163,49 @@ def test_remote_delivery_to_receiver_on_leg_uses_receiver_uid_rank():
 
     assert len(receiver.inbox) == 1
     assert receiver.inbox[0].payload == build_message_payload(MessageKind.STATUS_UPDATE, topic="leg_remote")
+
+
+def test_message_reaches_a_receiver_that_migrated_to_the_place_owners_rank():
+    # Created on rank 0 (uid rank 0), now living at place 20 on rank 1: routing by the uid sent it to rank 0 and lost it.
+    sender = build_person(local_id=1, rank=0, place_id=10)
+    receiver = build_person(local_id=2, rank=0, place_id=20)
+    model0 = FakeModel(rank=0, place_to_rank={10: 0, 20: 1}, people=[sender])
+    model1 = FakeModel(rank=1, place_to_rank={10: 0, 20: 1}, people=[receiver])
+    manager0 = CommunicationManager(FakeComm(rank=0, size=2))
+    manager1 = CommunicationManager(FakeComm(rank=1, size=2))
+
+    intent = MessageIntent(
+        sender_uid=sender.uid,
+        receiver_uid=receiver.uid,
+        receiver_place_id=receiver.rank_place_id,
+        mode="one_way",
+        payload=build_message_payload(MessageKind.WARNING, topic="heat_alert"),
+    )
+
+    manager0.route([intent], model0, tick=1)
+
+    assert manager0.remote_message_buffers[0] == []
+    manager1.consume_remote_messages(list(manager0.remote_message_buffers[1]), model1)
+    assert len(receiver.inbox) == 1
+
+
+def test_message_to_a_local_receiver_created_on_another_rank_stays_on_this_rank():
+    # A broadcaster on rank 1 messaging everyone on rank 1, including a person created on rank 0 who moved here.
+    sender = build_person(local_id=1, rank=1, place_id=20)
+    receiver = build_person(local_id=2, rank=0, place_id=20)
+    model1 = FakeModel(rank=1, place_to_rank={10: 0, 20: 1}, people=[sender, receiver])
+    manager1 = CommunicationManager(FakeComm(rank=1, size=2))
+
+    intent = MessageIntent(
+        sender_uid=sender.uid,
+        receiver_uid=receiver.uid,
+        receiver_place_id=receiver.rank_place_id,
+        mode="one_way",
+        payload=build_message_payload(MessageKind.WARNING, topic="heat_alert"),
+    )
+
+    manager1.route([intent], model1, tick=1)
+
+    assert manager1.remote_message_buffers[0] == []
+    manager1.consume_remote_messages(list(manager1.remote_message_buffers[1]), model1)
+    assert len(receiver.inbox) == 1

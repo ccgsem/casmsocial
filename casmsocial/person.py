@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from collections import namedtuple
+from collections.abc import Iterator, Mapping
 from dataclasses import astuple, dataclass, field, fields
 from operator import attrgetter
 from typing import Any, ClassVar, NamedTuple
@@ -109,7 +111,7 @@ class CognitiveState:
     emotions: dict[str, float] = field(default_factory=dict)
     needs: dict[str, float] = field(default_factory=dict)
     attitudes: dict[str, float] = field(default_factory=dict)
-    episodic_memory: list[dict[str, Any]] = field(default_factory=list)
+    episodic_memory: list[Mapping[str, Any]] = field(default_factory=list)
     stress: float = 0.0
     social_influence: float = 0.0
     last_decision: str = "follow_schedule"
@@ -117,6 +119,11 @@ class CognitiveState:
     last_llm_tick: int | None = None
     llm_failures: int = 0
     last_llm_summary: str = ""
+    # Rows from ``person_profile_priors`` for this person, loaded once at
+    # start-up and passed read-only to the LLM adapter as ``profile_priors``.
+    # Kept last so positional save_state()/restore_state() stays aligned and
+    # the priors migrate with the agent between ranks.
+    profile_priors: tuple[dict[str, Any], ...] = ()
 
 
 def _field_getter(dataclass_type: type) -> attrgetter:
@@ -227,6 +234,9 @@ class BehaviorEngineV2(BehaviorEngine):
     def restore_state(self, state: tuple) -> None:
         """Replace the default cognitive state with a migrated one."""
         self.cognition = CognitiveState(*state)
+        # Migration rebuilds every trace from serialized data, as new objects: share them again as _record_memory_event
+        # does, or each person who changes rank keeps full-size copies of their traces.
+        self.cognition.episodic_memory = _share_memory_events(self.cognition.episodic_memory)
 
     def decide(self, context: ctx.SharedContext, cal: SimTime) -> None:
         """Run one cognitive decision cycle and execute the chosen action."""
@@ -312,17 +322,17 @@ class BehaviorEngineV2(BehaviorEngine):
         self.agent.move(cal, places_proj)
 
     def _force_home_if_possible(self, places_proj, cal: SimTime) -> None:
-        """Move to home place (index 0) if available."""
+        """Move to home place (index 0) if available.
+
+        Uses the same transition as a scheduled move, so a home owned by another
+        rank is targeted like any remote place: the person leaves the local place
+        and ``sync_person_ranks_with_places`` migrates them. A home with no known
+        owner leaves the person where they are.
+        """
         home_place_id = self.agent.places[0] if len(self.agent.places) > 0 else None
         if home_place_id is None:
             return
-        home_place = places_proj.lookup_place(home_place_id)
-        if home_place is None:
-            return
-        self.agent.state.place_id = home_place_id
-        self.agent.state.rank_place_id = home_place_id
-        places_proj.move_agent_to_place(self.agent, home_place)
-        self.agent.state.minute_last_moved = cal.minute_of_day
+        self.agent._transition_to_activity_place_at_minute(None, home_place_id, places_proj, cal.minute_of_day)
 
     def _update_memory(self, observation: dict[str, float], action: str) -> None:
         """Persist minimal traces for future decision logic."""
@@ -334,8 +344,7 @@ class BehaviorEngineV2(BehaviorEngine):
 class LLMBehaviorEngine(BehaviorEngineV2):
     """Behavior engine that uses a configurable LLM adapter and typed proposals.
 
-    The adapter is selected via ``_config["adapter"]`` and is constructed once
-    per engine instance. Two named kinds are built in:
+    The adapter is selected via ``_config["adapter"]``. Two named kinds are built in:
 
     * ``"local"`` (default) — :class:`LocalBehaviorLLMAdapter`. Deterministic,
       no network, no third-party dependencies.
@@ -347,7 +356,12 @@ class LLMBehaviorEngine(BehaviorEngineV2):
     OpenAI / vLLM clients), set ``_config["adapter_instance"]`` to a pre-built
     object satisfying :class:`~casmsocial.llm_adapter.BehaviorLLMAdapter`. When
     set, this short-circuits the named-kind dispatch and is used directly.
+
+    The local adapter keeps no per-person state, so every engine shares one instance for as long as the
+    configuration is unchanged (one per rank rather than one per person). Other kinds are still built per engine.
     """
+
+    _shared_local_adapter: ClassVar[tuple[dict[str, Any], dict[str, Any], BehaviorLLMAdapter] | None] = None
 
     _config: ClassVar[dict[str, Any]] = {
         # Adapter selection.
@@ -408,9 +422,23 @@ class LLMBehaviorEngine(BehaviorEngineV2):
 
         raise UnsupportedAdapterKindError(kind)
 
+    @classmethod
+    def _adapter_for_new_engine(cls) -> BehaviorLLMAdapter:
+        """Return the adapter for a new engine: the shared local adapter while the configuration is unchanged."""
+        config = cls._config
+        if config.get("adapter_instance") is not None or str(config.get("adapter", "local")).lower() != "local":
+            return cls._build_adapter_from_config(config)
+        shared = cls._shared_local_adapter
+        if shared is not None and shared[0] is config and shared[1] == config:
+            return shared[2]
+        adapter = cls._build_adapter_from_config(config)
+        # A deep snapshot, so a nested value changed in place (e.g. an activity-semantics list) also builds a new one.
+        cls._shared_local_adapter = (config, copy.deepcopy(config), adapter)
+        return adapter
+
     def __init__(self, agent: Person):
         super().__init__(agent)
-        self.adapter: BehaviorLLMAdapter = self._build_adapter_from_config(self._config)
+        self.adapter: BehaviorLLMAdapter = self._adapter_for_new_engine()
         self.deliberation_interval = int(self._config["deliberation_interval"])
         self.max_memory_events = int(self._config["max_memory_events"])
 
@@ -478,7 +506,11 @@ class LLMBehaviorEngine(BehaviorEngineV2):
             "needs": dict(self.cognition.needs),
             "attitudes": dict(self.cognition.attitudes),
             "recent_messages": recent_messages,
-            "recent_memory": list(recent_memories),
+            # Copies: stored traces share data dicts between them (see _compact_event), so an adapter editing one in
+            # place must not change the others.
+            "recent_memory": _memory_event_dicts(recent_memories),
+            # Shared, not copied: priors are fixed for the run and adapters must not mutate them.
+            "profile_priors": self.cognition.profile_priors,
             "current_place_id": self.agent.place_id,
             "rank_place_id": self.agent.rank_place_id,
             "plan_state": {
@@ -901,22 +933,211 @@ class LLMBehaviorEngine(BehaviorEngineV2):
         data: dict[str, Any] | None = None,
     ) -> None:
         """Append a bounded short-term memory trace."""
-        event = MemoryEvent(
-            tick=int(cal.tick),
-            event_type=event_type,
-            summary=summary,
-            data={} if data is None else dict(data),
-        )
-        self.cognition.episodic_memory.append(
-            {
-                "tick": event.tick,
-                "event_type": event.event_type,
-                "summary": event.summary,
-                "data": event.data,
-            }
+        event = MemoryEvent(tick=int(cal.tick), event_type=event_type, summary=summary, data=data or {})
+        memory = self.cognition.episodic_memory
+        memory.append(
+            _compact_event(
+                {"tick": event.tick, "event_type": event.event_type, "summary": event.summary, "data": event.data},
+                memory[-1] if memory else None,
+            )
         )
         if len(self.cognition.episodic_memory) > self.max_memory_events:
             self.cognition.episodic_memory = self.cognition.episodic_memory[-self.max_memory_events :]
+
+
+def _same_value(a: Any, b: Any) -> bool:
+    """Equal and of the same type all the way down (1 vs 1.0 vs True, or 0.0 vs -0.0, are different here)."""
+    if a is b:
+        return True
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, float):
+        return a == b and math.copysign(1.0, a) == math.copysign(1.0, b)
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(_same_value(value, b[key]) for key, value in a.items())
+    if isinstance(a, list | tuple):
+        return len(a) == len(b) and all(_same_value(x, y) for x, y in zip(a, b, strict=True))
+    return bool(a == b)
+
+
+class _TraceLayout:
+    """The keys of one kind of memory trace, in order, shared by every trace with those keys."""
+
+    __slots__ = ("index", "keys")
+
+    def __init__(self, keys: tuple[str, ...]) -> None:
+        self.keys = keys
+        self.index = {key: position for position, key in enumerate(keys)}
+
+
+class MemoryRecord(Mapping[str, Any]):
+    """A stored memory trace (or its data): a read-only mapping kept as one tuple of values against shared keys.
+
+    A trace was a dict with a 19-key data dict, and every person keeps up to ``max_memory_events`` of them; through a
+    day they were most of the memory a person gained (~10 KB each with the living_agents brain). Traces with the same
+    keys now share one key layout and keep only their values, about half the memory. Read them like dicts
+    (``event["data"]["action"]``, ``.get``, ``dict(event)``, ``==`` against a dict); they cannot be changed in place.
+    They pickle as plain dicts, so migration and anything else that serializes cognitive state sees what it always
+    did; the receiving rank compacts them again (``_share_memory_events``).
+    """
+
+    __slots__ = ("_layout", "_values")
+
+    def __init__(self, layout: _TraceLayout, values: tuple[Any, ...]) -> None:
+        self._layout = layout
+        self._values = values
+
+    def __getitem__(self, key: str) -> Any:
+        return self._values[self._layout.index[key]]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._layout.index
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._layout.keys)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __repr__(self) -> str:
+        return repr(self.to_dict())
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, MemoryRecord) and other._layout.keys == self._layout.keys:
+            return self._values == other._values
+        if isinstance(other, MemoryRecord):
+            return self.to_dict() == other.to_dict()
+        if isinstance(other, Mapping):
+            return self.to_dict() == dict(other)
+        return NotImplemented
+
+    __hash__ = None  # type: ignore[assignment]  # equal to dicts, which are unhashable
+
+    def to_dict(self) -> dict[str, Any]:
+        """A plain dict of this record's keys and values (shallow; nested records stay records).
+
+        ``dict(record)`` and ``{**record}`` work too, but look each key up through Python; this builds the dict in C,
+        which matters where every decision copies a person's traces (``_build_llm_context``).
+        """
+        return dict(zip(self._layout.keys, self._values, strict=True))
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (dict, (list(zip(self._layout.keys, self._values, strict=True)),))
+
+
+_TRACE_LAYOUTS: dict[tuple[str, ...], _TraceLayout] = {}
+_TRACE_LAYOUTS_MAX = 1 << 12
+
+
+def _trace_layout(keys: tuple[str, ...]) -> _TraceLayout:
+    layout = _TRACE_LAYOUTS.get(keys)
+    if layout is None:
+        layout = _TraceLayout(tuple(_shared_value(key) for key in keys))
+        if len(_TRACE_LAYOUTS) < _TRACE_LAYOUTS_MAX:
+            _TRACE_LAYOUTS[keys] = layout
+    return layout
+
+
+def _compact_event(event: Mapping[str, Any], previous: Mapping[str, Any] | None) -> MemoryRecord:
+    """A memory trace stored compactly, with its values shared, reusing the previous trace's data when it is the same.
+
+    Consecutive traces often carry the same data (only the tick differs), so they keep one record between them. Readers
+    treat stored traces as read-only; adapters get dict copies (see ``_build_llm_context``).
+    """
+    values = []
+    for key, value in event.items():
+        if key == "data" and isinstance(value, Mapping):
+            data_values = tuple([_shared_value(item) for item in value.values()])
+            layout = _trace_layout(tuple(value.keys()))
+            previous_data = previous.get("data") if isinstance(previous, Mapping) else None
+            if (
+                isinstance(previous_data, MemoryRecord)
+                and previous_data._layout is layout
+                and _same_value(previous_data._values, data_values)
+            ):
+                value = previous_data
+            else:
+                value = MemoryRecord(layout, data_values)
+        else:
+            value = _shared_value(value)
+        values.append(value)
+    return MemoryRecord(_trace_layout(tuple(event.keys())), tuple(values))
+
+
+def memory_event_dict(event: Mapping[str, Any]) -> dict[str, Any]:
+    """A plain-dict copy of a stored memory trace, with its data copied to a plain dict too.
+
+    Stored traces are ``MemoryRecord`` (or plain dicts appended by other code) and share their data; adapters and logs
+    get copies they may change and serialize.
+    """
+    copy = event.to_dict() if isinstance(event, MemoryRecord) else dict(event)
+    data = copy.get("data")
+    if isinstance(data, MemoryRecord):
+        copy["data"] = data.to_dict()
+    elif isinstance(data, Mapping):
+        copy["data"] = dict(data)
+    return copy
+
+
+def _memory_event_dicts(events: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """``memory_event_dict`` for each trace, with the common case inline: every decision copies a person's traces."""
+    copies = []
+    for event in events:
+        if type(event) is MemoryRecord:
+            copy = dict(zip(event._layout.keys, event._values, strict=True))
+            data = copy.get("data")
+            if type(data) is MemoryRecord:
+                copy["data"] = dict(zip(data._layout.keys, data._values, strict=True))
+                copies.append(copy)
+                continue
+        copies.append(memory_event_dict(event))
+    return copies
+
+
+def _share_memory_events(events: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Return migrated memory traces compacted as they were when recorded (migration rebuilds them as plain dicts)."""
+    shared: list[Mapping[str, Any]] = []
+    for event in events:
+        shared.append(_compact_event(event, shared[-1] if shared else None) if isinstance(event, dict) else event)
+    return shared
+
+
+_SHARED_VALUES: dict[tuple[type, Any], Any] = {}
+_SHARED_VALUES_MAX = 1 << 17
+
+
+def _shared_value(value: Any) -> Any:
+    """Return one shared object for an equal float, int or short string kept in memory events.
+
+    Each person keeps up to ``max_memory_events`` traces, and most of their values repeat (actions, reasons, policy
+    dates, rounded appraisal values), yet every trace held its own float and string objects. Equal values now share one
+    object; the stored values are unchanged. Floats are keyed by type and value, with signed zero and NaN left as they
+    are, and floats with more than 6 decimals are not shared (they rarely repeat); the table stops growing at
+    ``_SHARED_VALUES_MAX`` entries and is emptied when a model starts (``reset_shared_values``).
+    """
+    kind = type(value)
+    if kind is float:
+        # NaN and -0.0 stay as they are; unrounded floats rarely repeat and would only fill the table.
+        if value != value or (value == 0.0 and math.copysign(1.0, value) < 0) or value != round(value, 6):
+            return value
+    elif kind is int:
+        if -5 <= value <= 256:  # CPython already shares these
+            return value
+    elif kind is not str or len(value) > 256:
+        return value
+    key = (kind, value)
+    shared = _SHARED_VALUES.get(key)
+    if shared is not None:
+        return shared
+    if len(_SHARED_VALUES) < _SHARED_VALUES_MAX:
+        _SHARED_VALUES[key] = value
+    return value
+
+
+def reset_shared_values() -> None:
+    """Empty the shared-value and trace-layout tables (each model starts its own, so an earlier run's don't hold places)."""
+    _SHARED_VALUES.clear()
+    _TRACE_LAYOUTS.clear()
 
 
 # 1. Define a PersonData Class
@@ -1482,7 +1703,7 @@ class Person(core.Agent):
 
     def _transition_to_activity_place_at_minute(
         self,
-        activity: Act,
+        activity: Act | None,
         next_place_id: int,
         places_proj,
         minute_of_day: int,

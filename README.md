@@ -381,6 +381,28 @@ required, while `tie_strength` is optional. Endpoints must be canonical
 network_kind)` may appear once. Simulation behavior derives in-person
 encounters from schedule overlap and co-location; it may derive remote messages
 from the same ties without co-location.
+
+`person_profile_priors.table` is optional and opt-in. Its rows (`sp_persons_id`,
+`profile_id`, `prior_name`, `prior_value`, and optionally `prior_payload`,
+`uncertainty` and `persona_value`) are loaded at start-up for the people on each rank, kept with
+each person's cognition (including across rank migration), and passed to the
+LLM behavior adapter as `context["profile_priors"]`: one dict per row, without
+the person id. Set `behavior.profile_priors.required: true` to stop start-up
+when any person has no rows. Set `person_profile_priors.read_payload: false` to
+leave `prior_payload` unread (`None`): the payload is free-form JSON and usually
+most of the table, so skipping it when the adapter does not need it cuts the
+start-up read and each rank's memory several-fold; each rank's start-up log line
+says when the payload was left unread. A row has a `persona_value` key only when
+the table has that column, so adapters should read it with `.get()`.
+`person_profile_priors.payload_fields: [name, ...]` lifts those top-level keys of
+each row's payload into the row as their own keys (parsed JSON values, `None`
+when absent), read in the query so the payload text need not be kept: with
+`read_payload: false` an adapter that needs only, say, `persona_value` from an
+older package gets it without each rank holding every payload. A column of the
+same name wins, and the standard keys cannot be replaced. With an LLM engine, the end of the run logs the
+total `llm_failures` (deliberations that fell back to the deterministic engine)
+and the number of people without priors.
+
 `Place` agents represent physical locations. `Household` agents represent social
 household units loaded from `households.table`, often named `hh` in input
 schemas; each household links to a physical `Place` and to its member `Person`
@@ -452,6 +474,19 @@ you need output rows from every rank.
 The Compose file uses `CASMSOCIAL_MPI_DATA_PATH` and
 `CASMSOCIAL_MPI_DUCKLAKE_PATH` as optional overrides so the repository `.env`
 does not accidentally inject host-only paths into the containers.
+
+### DuckDB per rank
+
+Each rank opens its own DuckDB connection. DuckDB would start one thread per
+core of the machine, so on a cluster node many ranks would each run (and
+allocate for) one thread per core of the whole node. `duckdb.threads` defaults
+to `auto`: the CPUs this process may run on, which under Slurm with
+`--cpus-per-task` and CPU binding is that count. Where a rank may run on the
+whole machine (plain `mpirun` without binding, or macOS), the machine's cores
+are split between the ranks on it. On a 64-core node with 4 CPUs per rank this
+cut each rank's start-up memory by about 1.5 GB. Set `duckdb.threads: N` to fix
+it, and `duckdb.memory_limit` (e.g. `'8GB'`) to cap DuckDB's memory; results do
+not depend on either.
 
 ## Code Quality
 

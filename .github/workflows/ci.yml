@@ -122,6 +122,49 @@ jobs:
       - name: Verify downloaded MVP output artifact
         run: uv run python scripts/verify_mvp_manifest.py --manifest downloaded-mvp-output/mvp_manifest.json --artifact-root downloaded-mvp-output
 
+  duckdb-2:
+    # DuckDB 2.0 canary, stage 1 of the 2.0 cutover. It installs DuckDB 2.0
+    # over the locked environment and runs the tests, so regressions show up
+    # before the cutover. Allowed to fail: it never blocks a merge. Remove it
+    # once the pins move to duckdb>=2.0.1.
+    name: Tests on DuckDB 2.0 (allowed to fail)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    env:
+      CC: mpicc
+      CXX: mpicxx
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmetis-dev libopenmpi-dev openmpi-bin
+
+      - name: Sync dependencies
+        run: uv sync --locked --extra data-builder
+
+      - name: Install DuckDB 2.0 over the locked environment
+        run: |
+          uv pip install "duckdb>=2.0.0,<3"
+          uv run --no-sync python -c 'import duckdb; print("duckdb", duckdb.__version__)' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Run tests
+        run: uv run --no-sync python -m pytest --doctest-modules
+
   docker-build:
     name: Docker build (prod)
     runs-on: ubuntu-latest

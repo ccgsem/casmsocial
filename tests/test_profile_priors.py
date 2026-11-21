@@ -1,0 +1,334 @@
+"""``person_profile_priors`` loading and hand-off to the LLM adapter.
+
+Covers the opt-in ``person_profile_priors.table`` key: rows reach each local
+person's cognition, then the adapter context as ``profile_priors``; people
+without rows are counted, and ``behavior.profile_priors.required`` stops
+start-up. Migration of the priors between ranks is covered by
+``test_person_migration_mpi``.
+"""
+
+from __future__ import annotations
+
+from collections import namedtuple
+from datetime import datetime
+
+import duckdb
+import pytest
+from loguru import logger
+
+from casmsocial.activities import Act, make_plan
+from casmsocial.casmpop import CasmPop, MissingProfilePriorsError, MissingRequiredTableError
+from casmsocial.person import BehaviorEngineV2, LLMBehaviorEngine, Person, ScheduleBehaviorEngine
+from casmsocial.sim_time import SimTime
+
+_Places = namedtuple("_Places", ["home", "work"])
+
+
+class _SumComm:
+    """Single-rank stand-in for ``allreduce(op=SUM)``."""
+
+    def allreduce(self, value, op=None):
+        return value
+
+
+class _Context:
+    def __init__(self, people):
+        self.people = people
+
+    def agents(self, agent_type=None):
+        return iter(self.people)
+
+
+def _person(person_id: int, engine=LLMBehaviorEngine) -> Person:
+    plan = make_plan([Act(person_id, 0, 0, 0, 60, 100)])
+    person = Person(person_id, 0, [plan], _Places(100, 200), {"sp_id": person_id})
+    person.behavior_engine = engine(person)
+    return person
+
+
+def _model(people, params=None, priors_rows=None, engine=LLMBehaviorEngine):
+    Person.registerBehaviorEngine(engine)
+    model = CasmPop.__new__(CasmPop)
+    model.rank = 0
+    model.comm = _SumComm()
+    model.context = _Context(people)
+    model.params = {"person_profile_priors.table": "pkg.person_profile_priors", **(params or {})}
+    model.conn = duckdb.connect(":memory:")
+    model.conn.execute("CREATE TEMPORARY TABLE persons AS SELECT * FROM range(1, 4) t(sp_id)")
+    model.conn.execute("CREATE SCHEMA pkg")
+    model.conn.execute("""
+        CREATE TABLE pkg.person_profile_priors (
+            sp_persons_id BIGINT, profile_id VARCHAR, prior_name VARCHAR, prior_value DOUBLE,
+            prior_payload JSON, uncertainty DOUBLE, provenance_refs VARCHAR
+        )
+    """)
+    for row in priors_rows or []:
+        model.conn.execute("INSERT INTO pkg.person_profile_priors VALUES (?, ?, ?, ?, ?, ?, ?)", row)
+    return model
+
+
+@pytest.fixture(autouse=True)
+def _restore_registered_engine():
+    previous = Person.getBehaviorEngine()
+    yield
+    Person.registerBehaviorEngine(previous)
+
+
+ROWS = [
+    (1, "pod-a", "risk_sensitivity", 0.8, '{"persona_value": 0.6}', 0.1, "ref"),
+    (1, "pod-a", "authority_trust", 0.3, '{"persona_value": 0.5}', None, "ref"),
+    (2, "pod-b", "risk_sensitivity", 0.2, '{"persona_value": 0.4}', None, "ref"),
+    (99, "pod-z", "risk_sensitivity", 0.5, "{}", None, "ref"),  # not in persons: never read
+]
+
+
+def test_priors_attach_to_local_people_in_adapter_shape():
+    people = [_person(1), _person(2)]
+    model = _model(people, priors_rows=ROWS)
+
+    model.load_profile_priors()
+
+    priors = people[0].behavior_engine.cognition.profile_priors
+    assert [row["prior_name"] for row in priors] == ["authority_trust", "risk_sensitivity"]
+    assert priors[1] == {
+        "profile_id": "pod-a",
+        "prior_name": "risk_sensitivity",
+        "prior_value": 0.8,
+        "prior_payload": '{"persona_value": 0.6}',
+        "uncertainty": 0.1,
+    }
+    assert people[1].behavior_engine.cognition.profile_priors[0]["profile_id"] == "pod-b"
+    assert model.profile_priors_missing == 0
+
+
+def test_payload_can_be_left_unread():
+    people = [_person(1), _person(2)]
+    model = _model(people, params={"person_profile_priors.read_payload": False}, priors_rows=ROWS)
+    messages: list[str] = []
+    sink_id = logger.add(messages.append, format="{message}")
+    try:
+        model.load_profile_priors()
+    finally:
+        logger.remove(sink_id)
+
+    assert any("payload unread (person_profile_priors.read_payload: false)" in m for m in messages)
+
+    priors = people[0].behavior_engine.cognition.profile_priors
+    assert [row["prior_payload"] for row in priors] == [None, None]
+    assert priors[1]["prior_value"] == 0.8 and "persona_value" not in priors[1]
+
+
+def test_a_table_without_a_payload_column_says_so():
+    people = [_person(1), _person(2)]
+    model = _model(people, priors_rows=ROWS)
+    model.conn.execute("ALTER TABLE pkg.person_profile_priors DROP COLUMN prior_payload")
+    messages: list[str] = []
+    sink_id = logger.add(messages.append, format="{message}")
+    try:
+        model.load_profile_priors()
+    finally:
+        logger.remove(sink_id)
+
+    assert people[0].behavior_engine.cognition.profile_priors[0]["prior_payload"] is None
+    assert any(m.rstrip().endswith("without, no payload column") for m in messages)
+
+
+def test_a_persona_value_column_reaches_the_adapter():
+    people = [_person(1), _person(2)]
+    model = _model(people, params={"person_profile_priors.read_payload": False}, priors_rows=ROWS)
+    model.conn.execute("ALTER TABLE pkg.person_profile_priors ADD COLUMN persona_value DOUBLE")
+    model.conn.execute(
+        "UPDATE pkg.person_profile_priors SET persona_value = CAST(prior_payload->>'persona_value' AS DOUBLE)"
+    )
+
+    model.load_profile_priors()
+
+    priors = people[0].behavior_engine.cognition.profile_priors
+    assert [(row["prior_name"], row["persona_value"], row["prior_payload"]) for row in priors] == [
+        ("authority_trust", 0.5, None),
+        ("risk_sensitivity", 0.6, None),
+    ]
+
+
+def test_people_without_priors_are_counted():
+    people = [_person(1), _person(3)]
+    model = _model(people, priors_rows=ROWS)
+
+    model.load_profile_priors()
+
+    assert people[1].behavior_engine.cognition.profile_priors == ()
+    assert model.profile_priors_missing == 1
+
+
+def test_required_priors_stop_start_up_when_any_person_lacks_them():
+    model = _model([_person(1), _person(3)], params={"behavior.profile_priors.required": True}, priors_rows=ROWS)
+
+    with pytest.raises(MissingProfilePriorsError, match="1 people have no rows"):
+        model.load_profile_priors()
+
+
+def test_no_table_key_leaves_priors_empty():
+    people = [_person(1)]
+    model = _model(people, priors_rows=ROWS)
+    del model.params["person_profile_priors.table"]
+
+    model.load_profile_priors()
+
+    assert people[0].behavior_engine.cognition.profile_priors == ()
+    assert model.profile_priors_missing == 0
+
+
+def test_missing_table_is_an_error():
+    model = _model([_person(1)], params={"person_profile_priors.table": "pkg.nope"})
+
+    with pytest.raises(MissingRequiredTableError):
+        model.load_profile_priors()
+
+
+def test_schedule_engine_skips_priors_unless_required():
+    model = _model([], priors_rows=ROWS, engine=ScheduleBehaviorEngine)
+    model.load_profile_priors()
+    assert model.profile_priors_missing == 0
+
+    model.params["behavior.profile_priors.required"] = True
+    with pytest.raises(MissingProfilePriorsError, match="no cognition"):
+        model.load_profile_priors()
+
+
+def test_v2_engine_holds_priors_too():
+    people = [_person(2, BehaviorEngineV2)]
+    model = _model(people, priors_rows=ROWS, engine=BehaviorEngineV2)
+
+    model.load_profile_priors()
+
+    assert people[0].behavior_engine.cognition.profile_priors[0]["profile_id"] == "pod-b"
+
+
+def test_adapter_context_carries_profile_priors():
+    person = _person(1)
+    priors = ({"profile_id": "pod-a", "prior_name": "risk_sensitivity", "prior_value": 0.8},)
+    person.behavior_engine.cognition.profile_priors = priors
+    engine = person.behavior_engine
+
+    context = engine._build_llm_context(OBSERVATION, _sim_time())
+
+    assert context["profile_priors"] is priors
+
+
+def test_adapter_context_priors_default_to_empty():
+    engine = _person(1).behavior_engine
+
+    assert engine._build_llm_context(OBSERVATION, _sim_time())["profile_priors"] == ()
+
+
+def test_behavior_summary_totals_failures_and_missing_priors():
+    people = [_person(1), _person(2)]
+    people[0].behavior_engine.cognition.llm_failures = 3
+    model = _model(people)
+    model.profile_priors_missing = 2
+
+    model._log_behavior_summary()
+
+    assert model.behavior_summary == {"llm_failures": 3, "profile_priors_missing": 2}
+
+
+OBSERVATION = {"incoming_messages": 0.0, "hour_of_day": 0.0, "is_weekday": 1.0, "is_transit": 0.0, "pending_acks": 0.0}
+
+
+def _sim_time() -> SimTime:
+    cal = SimTime(datetime(2025, 1, 1))
+    cal.set_datetime(datetime(2025, 1, 1, 0, 30))
+    return cal
+
+
+def _load(model):
+    messages: list[str] = []
+    sink_id = logger.add(messages.append, format="{message}")
+    try:
+        model.load_profile_priors()
+    finally:
+        logger.remove(sink_id)
+    return messages
+
+
+def test_payload_fields_are_lifted_without_keeping_the_payload():
+    rows = [
+        (1, "pod-a", "risk_sensitivity", 0.8, '{"persona_value": 0.30000000000000004, "note": "x"}', None, "ref"),
+        (1, "pod-a", "authority_trust", 0.3, '{"persona_value": 1e-300, "nested": {"a": [1, 2]}}', None, "ref"),
+        (2, "pod-b", "risk_sensitivity", 0.2, '{"other": 1, "note": null}', None, "ref"),
+    ]
+    people = [_person(1), _person(2)]
+    model = _model(
+        people,
+        params={
+            "person_profile_priors.read_payload": False,
+            "person_profile_priors.payload_fields": ["persona_value", "nested", "note"],
+        },
+        priors_rows=rows,
+    )
+
+    messages = _load(model)
+
+    first = people[0].behavior_engine.cognition.profile_priors
+    # Values are exactly what parsing the whole payload gives.
+    assert [(p["prior_name"], p["persona_value"], p.get("nested"), p.get("note"), p["prior_payload"]) for p in first] == [
+        ("authority_trust", 1e-300, {"a": [1, 2]}, None, None),
+        ("risk_sensitivity", 0.30000000000000004, None, "x", None),
+    ]
+    assert "note" not in first[0] and "nested" not in first[1]
+    second = people[1].behavior_engine.cognition.profile_priors[0]
+    # Absent from the payload: no key, so a reader checking for one sees it missing. A JSON null is kept as None.
+    assert "persona_value" not in second
+    assert "note" in second and second["note"] is None
+    assert any("payload fields ['persona_value', 'nested', 'note'] lifted, payload unread" in m for m in messages)
+
+
+def test_a_column_wins_over_a_payload_field_of_the_same_name():
+    people = [_person(1), _person(2)]
+    model = _model(
+        people,
+        params={"person_profile_priors.payload_fields": ["persona_value", "profile_id"]},
+        priors_rows=ROWS,
+    )
+    model.conn.execute("ALTER TABLE pkg.person_profile_priors ADD COLUMN persona_value DOUBLE")
+    model.conn.execute("UPDATE pkg.person_profile_priors SET persona_value = 9.0")
+
+    model.load_profile_priors()
+
+    prior = people[0].behavior_engine.cognition.profile_priors[0]
+    assert prior["persona_value"] == 9.0 and prior["profile_id"] == "pod-a"
+    assert prior["prior_payload"] == '{"persona_value": 0.5}'  # read_payload stays on by default
+
+
+def test_payload_fields_need_a_payload_column():
+    people = [_person(1)]
+    model = _model(people, params={"person_profile_priors.payload_fields": ["persona_value"]}, priors_rows=ROWS)
+    model.conn.execute("ALTER TABLE pkg.person_profile_priors DROP COLUMN prior_payload")
+
+    with pytest.raises(MissingRequiredTableError):
+        model.load_profile_priors()
+
+
+def test_repeated_strings_are_shared_across_people():
+    people = [_person(1), _person(2)]
+    model = _model(people, priors_rows=ROWS)
+
+    model.load_profile_priors()
+
+    a = next(p for p in people[0].behavior_engine.cognition.profile_priors if p["prior_name"] == "risk_sensitivity")
+    b = people[1].behavior_engine.cognition.profile_priors[0]
+    assert a["prior_name"] == b["prior_name"] == "risk_sensitivity"
+    assert a["prior_name"] is b["prior_name"]
+
+
+def test_shared_prior_values_keep_their_types():
+    rows = [(1, "1", "risk_sensitivity", 0.8, '{"persona_value": 0.5}', 1.0, "ref")]
+    people = [_person(1)]
+    model = _model(people, priors_rows=rows)
+    model.conn.execute("ALTER TABLE pkg.person_profile_priors ALTER profile_id TYPE BIGINT")
+
+    model.load_profile_priors()
+
+    prior = people[0].behavior_engine.cognition.profile_priors[0]
+    assert isinstance(prior["profile_id"], int) and not isinstance(prior["profile_id"], bool) and prior["profile_id"] == 1
+    assert isinstance(prior["uncertainty"], float) and prior["uncertainty"] == 1.0

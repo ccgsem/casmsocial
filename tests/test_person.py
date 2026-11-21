@@ -255,6 +255,50 @@ def test_person_can_target_known_remote_place_without_local_place_object():
     assert person.uid[2] == 0
 
 
+def test_stay_home_heads_for_a_home_on_another_rank():
+    """A person told to stay home whose home is owned by another rank must leave for it, as the schedule would.
+
+    Before the fix, ``_force_home_if_possible`` found no local home place and left the person where they were, so
+    the same run went home at one process and stayed out at two.
+    """
+    places_type = namedtuple("TestPlaces", ["home", "work"])
+    places = places_type(100, 200)
+    plan = make_plan([Act(1, 0, 0, 0, 60, 100), Act(1, 1, 1, 120, 1380, 200)])
+    person = Person(1, 0, [plan], places, {"sp_id": 1})
+    person.behavior_engine = BehaviorEngineV2(person)
+
+    projection = EnhancedPlacesProjection("places_projection", MPI.COMM_SELF, enable_parallel_updates=False)
+    work = Place({"sp_id": 200, "rank": 0}, Place.getPlaceDataClass())
+    projection.add_place(work)
+    projection.set_place_rank_map({100: 1, 200: 0})  # home is owned by rank 1; this is rank 0
+    projection.add(person)
+    projection.assign_agent_to_place(person, work)
+    person.state.place_id = person.state.rank_place_id = 200
+
+    person.behavior_engine._force_home_if_possible(projection, _sim_time_at(22 * 60))
+
+    assert person.place_id == 100 and person.rank_place_id == 100  # sync_person_ranks_with_places migrates them
+    assert projection.get_place_for_agent(person) is None  # no longer occupying the local workplace
+    assert person.state.minute_last_moved == 22 * 60
+
+
+def test_stay_home_with_an_unknown_home_leaves_the_person_in_place():
+    places_type = namedtuple("TestPlaces", ["home", "work"])
+    plan = make_plan([Act(1, 1, 1, 0, 1380, 200)])
+    person = Person(1, 0, [plan], places_type(100, 200), {"sp_id": 1})
+    person.behavior_engine = BehaviorEngineV2(person)
+    projection = EnhancedPlacesProjection("places_projection", MPI.COMM_SELF, enable_parallel_updates=False)
+    work = Place({"sp_id": 200, "rank": 0}, Place.getPlaceDataClass())
+    projection.add_place(work)  # home 100 has no known owner
+    projection.add(person)
+    projection.assign_agent_to_place(person, work)
+    person.state.place_id = person.state.rank_place_id = 200
+
+    person.behavior_engine._force_home_if_possible(projection, _sim_time_at(22 * 60))
+
+    assert person.place_id == 200 and projection.get_place_for_agent(person) is work
+
+
 def test_current_leg_returns_active_leg_only_during_transit():
     places_type = namedtuple("TestPlaces", ["home", "work"])
     places = places_type(100, 200)

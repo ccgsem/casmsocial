@@ -42,6 +42,15 @@ def seed_cognitive_state(person):
     cognition.stress = 0.42
     cognition.last_llm_tick = 6
     cognition.last_llm_summary = "persona says stay in"
+    cognition.profile_priors = (
+        {
+            "profile_id": "pod-7",
+            "prior_name": "risk_sensitivity",
+            "prior_value": 0.8,
+            "prior_payload": '{"persona_value": 0.6}',
+            "uncertainty": None,
+        },
+    )
     person.receive(message(person, "inbox-1"))
     person.recent_messages = [message(person, "recent-1")]
     person.queue_message_intent(
@@ -75,6 +84,7 @@ def describe(person):
             stress=cognition.stress,
             last_llm_tick=cognition.last_llm_tick,
             last_llm_summary=cognition.last_llm_summary,
+            profile_priors=cognition.profile_priors,
         )
     return record
 
