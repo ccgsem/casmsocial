@@ -207,7 +207,7 @@ compiler, but **it is not a complete deployment of this CASM Social checkout**:
 [`CasmPop`](casmsocial/casmpop.py) import `mpi4py` directly. Repast's single-rank
 communicator is exposed through `from repast4py import MPI`, not through a
 replacement `mpi4py` package. The published wheel is Repast4Py 1.3.0; the
-repository lockfile currently selects MPI-based 1.3.1.
+repository lockfile currently selects MPI-based 1.2.1.
 
 For a native **64-bit Intel/AMD Windows** learning environment, install
 **64-bit Python 3.13** from [Python.org](https://www.python.org/downloads/windows/),
