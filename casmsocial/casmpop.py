@@ -28,7 +28,6 @@ import repast4py
 import repast4py.random
 from dotenv import load_dotenv
 from loguru import logger
-from casmsocial.mpi_compat import MPI
 from numpy.random import Generator
 from pyarrow.dataset import HivePartitioning
 from repast4py import context as ctx, schedule
@@ -55,6 +54,7 @@ from casmsocial.environment import Environment
 from casmsocial.factory import Models
 from casmsocial.household import Household
 from casmsocial.model import Model
+from casmsocial.mpi_compat import MPI
 from casmsocial.observer import Observer
 from casmsocial.person import BehaviorEngineV2, LLMBehaviorEngine, Person, PersonData, ScheduleBehaviorEngine
 from casmsocial.place import Place, PlaceData, PlacesProjectionV2

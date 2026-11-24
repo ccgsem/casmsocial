@@ -1,8 +1,7 @@
 from collections import namedtuple
 
-from casmsocial.mpi_compat import MPI
-
 from casmsocial.activities import Act, make_plan, make_routed_plan, resolve_activity_place
+from casmsocial.mpi_compat import MPI
 from casmsocial.person import Person
 from casmsocial.place import EnhancedPlacesProjection, Place
 

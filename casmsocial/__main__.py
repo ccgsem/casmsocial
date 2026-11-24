@@ -3,10 +3,10 @@
 import sys
 
 from loguru import logger
-from casmsocial.mpi_compat import MPI
 from repast4py.parameters import create_args_parser, init_params
 
 from casmsocial.factory import ModelNotFoundError, Models, load_models
+from casmsocial.mpi_compat import MPI
 
 
 def _param_enabled(value, default: bool = False) -> bool:

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from loguru import logger
-from casmsocial.mpi_compat import MPI
 
 from casmsocial.casmpop import AgentLogger, CasmPop
 from casmsocial.factory import Models
+from casmsocial.mpi_compat import MPI
 from casmsocial.person import Person, PersonData
 from casmsocial.place import Place, PlaceData
 

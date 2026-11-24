@@ -1,8 +1,8 @@
 # MVP smoke scenario.
 # Runtime launch config for direct local runs.
 # Canonical casmdb scenario definitions live in scenarios/casmsocial/.
-# Run with one MPI rank, for example:
-# uv run mpirun -n 1 python -m casmsocial config/mvp.yaml
+# Run with two MPI ranks on native Windows, for example:
+# mpiexec -n 2 .venv-mpi-test\Scripts\python.exe -m casmsocial config/mvp_windows_2rank.yaml
 model.name: 'casmsocial.casmpop.CasmPop'
 random.seed: 42
 # Optional. Defaults to seed_<random.seed> when omitted.
@@ -43,7 +43,7 @@ roads.place_snap.file: ''
 roads.mode: 'drive'
 roads.time_model: 'validated_gap'
 
-# Single-rank MVP runs do not require a partition table.
+# Use the generated two-rank place partition table.
 partition.table: 'partitions.mvp_two_rank_place_partitions'
 partition.default_rank: 0
 partition.require_full_coverage: true

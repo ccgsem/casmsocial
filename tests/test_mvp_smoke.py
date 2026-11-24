@@ -4,11 +4,11 @@ from pathlib import Path
 
 import duckdb
 import pyarrow.dataset as ds
-from casmsocial.mpi_compat import MPI
 from repast4py.parameters import init_params
 
 from casmsocial.casmpop import CasmPop
 from casmsocial.model import Model
+from casmsocial.mpi_compat import MPI
 from casmsocial.person import Person
 from casmsocial.road_network import RoadNetwork
 from scripts.create_mvp_ducklake import create_mvp_tables

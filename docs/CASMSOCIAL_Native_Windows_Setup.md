@@ -2,6 +2,8 @@
 
 For Windows x64 with 64-bit CPython 3.12. Use PowerShell unless a step specifies CMD.
 
+> **Not the locked install.** The README's `uv sync --locked` installs the Repast4Py and DuckDB versions in `uv.lock`, which have no native Windows support. This guide instead creates its own environments and installs with `uv pip install`, using Repast4Py 1.3.0 (a prebuilt no-MPI wheel or a source build against Microsoft MPI). Dependency versions can therefore differ from `uv.lock`; the README's version notes do not apply here.
+
 Complete Sections 1 and 2, then choose [single-rank installation](#3-path-a-single-rank-installation) or [distributed MPI installation](#4-path-b-distributed-mpi-installation).
 
 ## 1. Shared prerequisites
@@ -103,7 +105,7 @@ Use one installation method, not both. Astral also provides standalone release b
 
 ## 2. Clone CASMSOCIAL and establish repository paths
 
-### 2.1 Clone the full repository, then switch branches
+### 2.1 Clone the repository
 
 **Shell: PowerShell.** Navigate to an existing parent directory of your choice. Replace the example path below before running it.
 
@@ -111,14 +113,13 @@ Use one installation method, not both. Astral also provides standalone release b
 cd "C:\path\to\your\chosen\parent"
 git clone https://github.com/ccgsem/casmsocial.git
 cd casmsocial
-git switch windows
 ```
 
-**Expected:** clone progress followed by a message that the `windows` branch was selected, created as a tracking branch, or was already selected. The prompt's directory should now end in `casmsocial`.
+**Expected:** clone progress. The clone is on `main`, which contains the Windows compatibility changes (`casmsocial/mpi_compat.py`). The prompt's directory should now end in `casmsocial`.
 
-**Decision:** if cloning or switching branches fails, stop here. The remote must contain the Windows compatibility branch. Do not create a new empty `windows` branch as a substitute. For an authorized fork, use its clone URL and the branch containing the same changes.
+**Decision:** if cloning fails, stop here. For an authorized fork, use its clone URL and a branch containing the same changes.
 
-If you already have the intended checkout, navigate to it instead of cloning over it. Preserve local changes before switching branches. A separate checkout is preferable for a clean-install test; deleting a working repository is not required.
+If you already have a checkout, navigate to it instead of cloning over it, and update it with `git switch main` and `git pull --ff-only`. Preserve local changes first. A separate checkout is preferable for a clean-install test; deleting a working repository is not required.
 
 ### 2.2 Record paths in the current PowerShell session
 
@@ -141,7 +142,7 @@ Run this block as a whole:
 
 **Expected:** one line identifying your chosen CASMSOCIAL checkout. The two Python executables do not need to exist yet.
 
-**Decision:** if the block stops, correct the directory or obtain the branch containing `mpi_compat.py`. Do not create environments in an unrelated directory. Later environment-creation commands use these absolute paths specifically to prevent that mistake.
+**Decision:** if the block stops, correct the directory or update the checkout to a `main` that contains `mpi_compat.py`. Do not create environments in an unrelated directory. Later environment-creation commands use these absolute paths specifically to prevent that mistake.
 
 **Next:** follow **Section 3 for Path A** or **Section 4 for Path B**. There is no need to complete both.
 
@@ -839,7 +840,7 @@ data_url = (ducklake_path / "storage").as_uri()
 data_url = "".join(["file://", str(ducklake_path / "storage")])
 ```
 
-Stop before generating data. Obtain the branch/commit containing the correction, or have the maintainer apply the one-line replacement in `casmsocial/ducklake_utils.py` and review it. Then repeat the check. Do not assume a fresh clone contains this fix merely because it contains `mpi_compat.py`.
+Stop before generating data: the checkout is older than the Windows changes. Update it (Section 2.1) and repeat the check.
 
 This correction was exercised in the successful Windows MVP run. It uses Python's path-to-URI conversion instead of concatenating a URI prefix with a Windows path. [R10] Broader path coverage and Linux regression testing remain separate validation work.
 
@@ -959,7 +960,7 @@ Run this block as a whole:
     )
     $source = $source.Replace(
         "# uv run mpirun -n 1 python -m casmsocial config/mvp.yaml",
-        "# mpiexec -n 2 <MPI-environment-python> -m casmsocial config/mvp_windows_2rank.yaml"
+        "# mpiexec -n 2 .venv-mpi-test\Scripts\python.exe -m casmsocial config/mvp_windows_2rank.yaml"
     )
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($destination, $source, $utf8)

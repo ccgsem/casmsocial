@@ -11,7 +11,6 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
 from loguru import logger
-from casmsocial.mpi_compat import MPI
 
 from casmsocial.activities import DEFAULT_TRAVEL_LEG, Act, Leg
 from casmsocial.casmpop import (
@@ -31,6 +30,7 @@ from casmsocial.casmpop import (
 from casmsocial.communication.types import CommMessage, MessageKind, build_message_payload
 from casmsocial.household import Household
 from casmsocial.model import Model
+from casmsocial.mpi_compat import MPI
 from casmsocial.person import BehaviorEngineV2, LLMBehaviorEngine, Person, ScheduleBehaviorEngine
 from casmsocial.place import EnhancedPlacesProjection, Place
 from casmsocial.road_network import RoadRoute

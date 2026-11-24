@@ -1,7 +1,11 @@
-﻿"""Tests for CASMSOCIAL's MPI compatibility interface."""
+"""Tests for CASMSOCIAL's MPI compatibility interface."""
 
 from casmsocial.mpi_compat import MPI
-from repast4py import MPI as repast_mpi
+
+try:
+    from repast4py import MPI as repast_mpi
+except ImportError:
+    from mpi4py import MPI as repast_mpi
 
 
 def test_mpi_backend_matches_repast4py():

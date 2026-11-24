@@ -20,6 +20,10 @@ export CC=mpicxx; export CXX=mpicxx
 make install
 ```
 
+On native Windows (no WSL or Docker), follow
+[docs/CASMSOCIAL_Native_Windows_Setup.md](docs/CASMSOCIAL_Native_Windows_Setup.md)
+instead. It covers a single-rank install and a two-rank Microsoft MPI install.
+
 For local runs against your own data, copy `.env.example` to `.env` and set
 `CASMSOCIAL_DATA_PATH` and `CASMSOCIAL_DUCKLAKE_PATH`.
 

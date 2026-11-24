@@ -12,12 +12,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from casmsocial.mpi_compat import MPI
 from repast4py.parameters import init_params
 
 from casmsocial.activities import Leg
 from casmsocial.casmpop import CasmPop
 from casmsocial.model import Model
+from casmsocial.mpi_compat import MPI
 from casmsocial.person import Person, ScheduleBehaviorEngine
 
 DEFAULT_CONFIG_PATH = Path("config/mvp.yaml")

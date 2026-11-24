@@ -10,7 +10,6 @@ from typing import Any, ClassVar, NamedTuple
 
 import repast4py.context as ctx
 from loguru import logger
-from casmsocial.mpi_compat import MPI
 from repast4py import core
 from repast4py.space import ContinuousPoint as cpt
 
@@ -34,6 +33,7 @@ from casmsocial.llm_adapter import (
     LocalBehaviorLLMAdapter,
     UnsupportedAdapterKindError,
 )
+from casmsocial.mpi_compat import MPI
 from casmsocial.sim_time import SimTime
 
 rank = MPI.COMM_WORLD.Get_rank()
