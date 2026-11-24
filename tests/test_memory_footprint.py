@@ -204,7 +204,7 @@ def test_copies_of_shared_trace_data_are_independent_of_each_other():
 
     recent = engine._build_llm_context({}, SimTime())["recent_memory"]
     assert recent == [memory_event_dict(event) for event in stored]
-    assert all(type(event["data"]) is dict for event in recent)
+    assert all(isinstance(event["data"], dict) for event in recent)
     assert len({id(event["data"]) for event in recent}) == len(recent)
     recent[0]["data"]["action"] = recent[3]["data"]["action"] = "edited"
     assert [event["data"]["action"] for event in recent] == ["edited", "stay_home", "go_out", "edited", "stay_home"]
