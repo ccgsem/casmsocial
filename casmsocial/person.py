@@ -1091,14 +1091,25 @@ def memory_event_dict(event: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _memory_event_dicts(events: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """``memory_event_dict`` for each trace, with the common case inline: every decision copies a person's traces."""
+    """``memory_event_dict`` for each trace, with the common case inline: every decision copies a person's traces.
+
+    Consecutive traces usually share one data record (``_compact_event``). Building a dict from a record inserts every
+    key, while copying a dict copies its table in one go, so each data record is built into a dict once and the traces
+    sharing it get copies of that dict: every trace still gets its own data dict.
+    """
     copies = []
+    last_data: MemoryRecord | None = None
+    last_data_copy: dict[str, Any] = {}
     for event in events:
         if type(event) is MemoryRecord:
             copy = dict(zip(event._layout.keys, event._values, strict=True))
             data = copy.get("data")
             if type(data) is MemoryRecord:
-                copy["data"] = dict(zip(data._layout.keys, data._values, strict=True))
+                if data is last_data:
+                    copy["data"] = last_data_copy.copy()
+                else:
+                    copy["data"] = last_data_copy = dict(zip(data._layout.keys, data._values, strict=True))
+                    last_data = data
                 copies.append(copy)
                 continue
         copies.append(memory_event_dict(event))

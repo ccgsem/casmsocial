@@ -194,6 +194,23 @@ def test_adapters_get_copies_of_the_shared_trace_data():
     assert [event["data"]["action"] for event in engine.cognition.episodic_memory] == ["stay_home", "stay_home"]
 
 
+def test_copies_of_shared_trace_data_are_independent_of_each_other():
+    engine = _engine()
+    recorded = ((1, "stay_home"), (2, "stay_home"), (3, "go_out"), (4, "stay_home"), (5, "stay_home"))
+    for tick, action in recorded:
+        engine._record_memory_event(_Cal(tick), "decision", "follow_schedule", {"action": action})
+    stored = engine.cognition.episodic_memory
+    assert stored[0]["data"] is stored[1]["data"] and stored[3]["data"] is stored[4]["data"]
+
+    recent = engine._build_llm_context({}, SimTime())["recent_memory"]
+    assert recent == [memory_event_dict(event) for event in stored]
+    assert all(type(event["data"]) is dict for event in recent)
+    assert len({id(event["data"]) for event in recent}) == len(recent)
+    recent[0]["data"]["action"] = recent[3]["data"]["action"] = "edited"
+    assert [event["data"]["action"] for event in recent] == ["edited", "stay_home", "go_out", "edited", "stay_home"]
+    assert [event["data"]["action"] for event in stored] == [action for _, action in recorded]
+
+
 def test_unrounded_floats_are_not_shared_and_the_table_resets(monkeypatch):
     import casmsocial.person as person
 
