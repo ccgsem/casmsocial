@@ -2,6 +2,7 @@
 
 import json
 import sys
+from collections.abc import Mapping
 
 import repast4py.context as ctx
 from mpi4py import MPI
@@ -10,6 +11,12 @@ from casmsocial.activities import Act, make_plan
 from casmsocial.communication.types import CommMessage, MessageIntent, MessageKind, build_message_payload
 from casmsocial.person import BehaviorEngineV2, LLMBehaviorEngine, Person, ScheduleBehaviorEngine
 from casmsocial.place import PlacesProjectionV2
+
+
+def _jsonable(value):
+    """JSON fallback: stored memory traces are read-only mappings (MemoryRecord), not dicts; other values as lists."""
+    return dict(value) if isinstance(value, Mapping) else list(value)
+
 
 PLACES = (100, 200)
 
@@ -120,7 +127,7 @@ def main():
 
     gathered = comm.gather({"sent": sent, "received": received}, root=0)
     if rank == 0:
-        print(json.dumps({"sent": gathered[0]["sent"], "received": gathered[1]["received"]}, default=list))
+        print(json.dumps({"sent": gathered[0]["sent"], "received": gathered[1]["received"]}, default=_jsonable))
 
 
 def synchronize():

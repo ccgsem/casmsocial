@@ -977,8 +977,10 @@ class MemoryRecord(Mapping[str, Any]):
     day they were most of the memory a person gained (~10 KB each with the living_agents brain). Traces with the same
     keys now share one key layout and keep only their values, about half the memory. Read them like dicts
     (``event["data"]["action"]``, ``.get``, ``dict(event)``, ``==`` against a dict); they cannot be changed in place.
-    They pickle as plain dicts, so migration and anything else that serializes cognitive state sees what it always
-    did; the receiving rank compacts them again (``_share_memory_events``).
+    They pickle as their keys and values and unpickle as records again (``_restore_record``), so a person who changes
+    rank keeps compact traces without rebuilding them: pickle sends each shared key tuple, value and data record once
+    per message, and the receiving rank shares the values with its own (traces that arrive as plain dicts, from older
+    code, are still compacted by ``_share_memory_events``).
     """
 
     __slots__ = ("_layout", "_values")
@@ -1022,7 +1024,7 @@ class MemoryRecord(Mapping[str, Any]):
         return dict(zip(self._layout.keys, self._values, strict=True))
 
     def __reduce__(self) -> tuple[Any, ...]:
-        return (dict, (list(zip(self._layout.keys, self._values, strict=True)),))
+        return (_restore_record, (self._layout.keys, self._values))
 
 
 _TRACE_LAYOUTS: dict[tuple[str, ...], _TraceLayout] = {}
@@ -1036,6 +1038,15 @@ def _trace_layout(keys: tuple[str, ...]) -> _TraceLayout:
         if len(_TRACE_LAYOUTS) < _TRACE_LAYOUTS_MAX:
             _TRACE_LAYOUTS[keys] = layout
     return layout
+
+
+def _restore_record(keys: tuple[str, ...], values: tuple[Any, ...]) -> MemoryRecord:
+    """Unpickle a ``MemoryRecord``: its shared layout, and its values shared as when it was recorded.
+
+    Pickle calls this once per record object, so data shared between consecutive traces arrives shared, and the values
+    go through ``_shared_value`` once per record rather than once per trace.
+    """
+    return MemoryRecord(_trace_layout(keys), tuple([_shared_value(value) for value in values]))
 
 
 def _compact_event(event: Mapping[str, Any], previous: Mapping[str, Any] | None) -> MemoryRecord:
@@ -1080,14 +1091,25 @@ def memory_event_dict(event: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _memory_event_dicts(events: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """``memory_event_dict`` for each trace, with the common case inline: every decision copies a person's traces."""
+    """``memory_event_dict`` for each trace, with the common case inline: every decision copies a person's traces.
+
+    Consecutive traces usually share one data record (``_compact_event``). Building a dict from a record inserts every
+    key, while copying a dict copies its table in one go, so each data record is built into a dict once and the traces
+    sharing it get copies of that dict: every trace still gets its own data dict.
+    """
     copies = []
+    last_data: MemoryRecord | None = None
+    last_data_copy: dict[str, Any] = {}
     for event in events:
         if type(event) is MemoryRecord:
             copy = dict(zip(event._layout.keys, event._values, strict=True))
             data = copy.get("data")
             if type(data) is MemoryRecord:
-                copy["data"] = dict(zip(data._layout.keys, data._values, strict=True))
+                if data is last_data:
+                    copy["data"] = last_data_copy.copy()
+                else:
+                    copy["data"] = last_data_copy = dict(zip(data._layout.keys, data._values, strict=True))
+                    last_data = data
                 copies.append(copy)
                 continue
         copies.append(memory_event_dict(event))

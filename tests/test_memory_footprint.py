@@ -194,6 +194,23 @@ def test_adapters_get_copies_of_the_shared_trace_data():
     assert [event["data"]["action"] for event in engine.cognition.episodic_memory] == ["stay_home", "stay_home"]
 
 
+def test_copies_of_shared_trace_data_are_independent_of_each_other():
+    engine = _engine()
+    recorded = ((1, "stay_home"), (2, "stay_home"), (3, "go_out"), (4, "stay_home"), (5, "stay_home"))
+    for tick, action in recorded:
+        engine._record_memory_event(_Cal(tick), "decision", "follow_schedule", {"action": action})
+    stored = engine.cognition.episodic_memory
+    assert stored[0]["data"] is stored[1]["data"] and stored[3]["data"] is stored[4]["data"]
+
+    recent = engine._build_llm_context({}, SimTime())["recent_memory"]
+    assert recent == [memory_event_dict(event) for event in stored]
+    assert all(isinstance(event["data"], dict) for event in recent)
+    assert len({id(event["data"]) for event in recent}) == len(recent)
+    recent[0]["data"]["action"] = recent[3]["data"]["action"] = "edited"
+    assert [event["data"]["action"] for event in recent] == ["edited", "stay_home", "go_out", "edited", "stay_home"]
+    assert [event["data"]["action"] for event in stored] == [action for _, action in recorded]
+
+
 def test_unrounded_floats_are_not_shared_and_the_table_resets(monkeypatch):
     import casmsocial.person as person
 
@@ -243,8 +260,13 @@ def test_a_person_coming_home_rejoins_their_household():
 
 def test_restored_plans_share_the_travel_leg_and_equal_integers():
     person_id, home = 70_000_001, 900_001_234
-    plan = [Act(person_id, 1, 0, 0, 480, home), DEFAULT_TRAVEL_LEG, Act(person_id, 2, 1, 510, 1020, 900_005_678),
-            Leg("drive", home, 900_005_678, 1, 2, 1234.5, 17), Act(person_id, 3, 2, 1050, 1440, home)]
+    plan = [
+        Act(person_id, 1, 0, 0, 480, home),
+        DEFAULT_TRAVEL_LEG,
+        Act(person_id, 2, 1, 510, 1020, 900_005_678),
+        Leg("drive", home, 900_005_678, 1, 2, 1234.5, 17),
+        Act(person_id, 3, 2, 1050, 1440, home),
+    ]
 
     restored = restore_plans(pickle.loads(pickle.dumps(serialize_plans([plan]))))[0]
 
@@ -253,6 +275,7 @@ def test_restored_plans_share_the_travel_leg_and_equal_integers():
     assert restored[3] is not DEFAULT_TRAVEL_LEG and isinstance(restored[3], Leg)
     assert restored[0].person_id is restored[2].person_id is restored[4].person_id
     assert restored[0].place_id is restored[4].place_id
+
 
 def test_stored_traces_read_like_dicts_and_cannot_be_changed():
     engine = _engine()
@@ -281,15 +304,40 @@ def test_traces_with_the_same_keys_share_one_layout():
     assert a._layout is b._layout and a["data"]._layout is b["data"]._layout
 
 
-def test_stored_traces_pickle_as_plain_dicts():
+def test_stored_traces_pickle_as_compact_records():
     engine = _engine()
-    engine._record_memory_event(_Cal(1), "decision", "follow_schedule", {"action": "stay_home", "nested": [1, 2]})
-    event = engine.cognition.episodic_memory[-1]
+    for tick in (1, 2):
+        engine._record_memory_event(
+            _Cal(tick), "decision", "follow_schedule", {"action": "stay_home", "nested": [1, 2]}
+        )
+    events = engine.cognition.episodic_memory
 
-    plain = pickle.loads(pickle.dumps(event))
-    assert isinstance(plain, dict) and isinstance(plain["data"], dict)  # MemoryRecord is not a dict
-    assert plain == {"tick": 1, "event_type": "decision", "summary": "follow_schedule",
-                     "data": {"action": "stay_home", "nested": [1, 2]}}
+    arrived = pickle.loads(pickle.dumps(events))
+    assert all(isinstance(e, MemoryRecord) and isinstance(e["data"], MemoryRecord) for e in arrived)
+    assert arrived == events
+    assert arrived[1] == {
+        "tick": 2,
+        "event_type": "decision",
+        "summary": "follow_schedule",
+        "data": {"action": "stay_home", "nested": [1, 2]},
+    }
+    assert arrived[0]._layout is events[0]._layout  # the receiving rank's layout
+    assert arrived[0]["data"] is arrived[1]["data"]  # data shared between traces stays shared
+    assert arrived[0]["summary"] is _shared_value("follow_schedule")  # values shared with this rank's
+
+
+def test_traces_pickled_as_plain_dicts_are_still_compacted_on_arrival():
+    engine = _engine()
+    for tick in (1, 2):
+        engine._record_memory_event(_Cal(tick), "decision", "follow_schedule", {"action": "stay_home"})
+    state = list(engine.save_state())
+    plain = [memory_event_dict(e) for e in engine.cognition.episodic_memory]
+    state[[i for i, v in enumerate(state) if v is engine.cognition.episodic_memory][0]] = plain
+    arrived = _engine(2)
+    arrived.restore_state(tuple(state))
+    events = arrived.cognition.episodic_memory
+    assert all(isinstance(e, MemoryRecord) for e in events) and events == plain
+    assert events[0]["data"] is events[1]["data"]
 
 
 def test_resetting_shared_values_also_forgets_trace_layouts():
