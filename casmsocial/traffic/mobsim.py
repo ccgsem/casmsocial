@@ -56,6 +56,7 @@ class Arrival:
     n_reroutes: int
     n_migrations: int
     rank: int
+    home_rank: int = -1
 
     @property
     def travel_time_s(self) -> float:
@@ -143,11 +144,13 @@ class VehicleMobsim:
         dest_node_id: int,
         depart_s: float,
         path: Iterable[int] | None = None,
+        home_rank: int | None = None,
     ) -> bool:
         """Start a trip. Returns False when no route exists.
 
         The trip can be spawned on any rank; it migrates to the origin node's
-        owner on the next ``advance_to`` exchange.
+        owner on the next ``advance_to`` exchange. ``home_rank`` (default: this
+        rank) is where ``route_arrivals_home`` delivers the arrival.
         """
         route = tuple(path) if path is not None else self.network.route(origin_node_id, dest_node_id, depart_s)
         if route is None:
@@ -164,6 +167,7 @@ class VehicleMobsim:
             depart_s,
             list(route),
             strategic=self._is_strategic(person_id, trip_id),
+            home_rank=self.rank if home_rank is None else home_rank,
         )
         self._next_local_id += 1
         self.context.add(vehicle)
@@ -289,6 +293,7 @@ class VehicleMobsim:
                 n_reroutes=vehicle.n_reroutes,
                 n_migrations=vehicle.n_migrations,
                 rank=self.rank,
+                home_rank=vehicle.home_rank,
             )
         )
         self.stats.arrived += 1
@@ -332,6 +337,21 @@ class VehicleMobsim:
         """Return and clear trips that finished on this rank."""
         arrivals, self._arrivals = self._arrivals, []
         return arrivals
+
+    def route_arrivals_home(self) -> list[Arrival]:
+        """Drain arrivals and deliver each to its vehicle's ``home_rank`` (collective).
+
+        A vehicle usually finishes on the rank that owns its destination node,
+        while the traveller is still anchored on the rank it left from.
+        """
+        arrivals = self.drain_arrivals()
+        size = self.comm.Get_size()
+        if size == 1:
+            return arrivals
+        outgoing: list[list[Arrival]] = [[] for _ in range(size)]
+        for arrival in arrivals:
+            outgoing[arrival.home_rank if 0 <= arrival.home_rank < size else self.rank].append(arrival)
+        return [arrival for part in self.comm.alltoall(outgoing) for arrival in part]
 
     def local_link_loads(self) -> dict[int, int]:
         return {edge_id: count for edge_id, count in self.link_count.items() if count > 0}

@@ -1156,6 +1156,23 @@ def _shared_value(value: Any) -> Any:
     return value
 
 
+# Optional leg-traffic coupler (casmsocial.traffic.LegTrafficCoupler). When set,
+# a person who starts a routed leg gets a vehicle, and stays in transit until
+# the coupler releases them. Module-level so the per-person hot path pays one
+# global lookup when it is off.
+_TRANSIT_COUPLER: Any = None
+
+
+def set_transit_coupler(coupler: Any) -> None:
+    """Install (or clear, with None) the coupler that holds people in transit during routed legs."""
+    global _TRANSIT_COUPLER
+    _TRANSIT_COUPLER = coupler
+
+
+def get_transit_coupler() -> Any:
+    return _TRANSIT_COUPLER
+
+
 def reset_shared_values() -> None:
     """Empty the shared-value and trace-layout tables (each model starts its own, so an earlier run's don't hold places)."""
     _SHARED_VALUES.clear()
@@ -1551,6 +1568,9 @@ class Person(core.Agent):
         plans = self.plans
         if not plans:
             return False
+        coupler = _TRANSIT_COUPLER
+        if coupler is not None and self.state.person_id in coupler.held:
+            return False  # still on the road
 
         activities_idx = self._selected_plan_index(is_weekday)
         if activities_idx >= len(plans):
@@ -1600,6 +1620,7 @@ class Person(core.Agent):
                     previous_activity,
                     places_proj,
                     minute_of_day,
+                    next_activity,
                 )
         return False
 
@@ -1672,6 +1693,7 @@ class Person(core.Agent):
             plan_state.previous_activity,
             places_proj,
             cal.minute_of_day,
+            plan_state.next_activity,
         )
 
     def _transition_to_leg_at_minute(
@@ -1680,6 +1702,7 @@ class Person(core.Agent):
         previous_activity: Act | None,
         places_proj,
         minute_of_day: int,
+        next_activity: Act | None = None,
     ) -> bool:
         """Remove the person from the origin place while in transit."""
         if not isinstance(leg, Leg):
@@ -1704,6 +1727,9 @@ class Person(core.Agent):
             self.rank_place_id = origin_place_id
         self.state.minute_last_moved = minute_of_day
         logger.debug("Rank {}: Agent {} entered leg transit via {}.", rank, self.id, leg)
+        coupler = _TRANSIT_COUPLER
+        if coupler is not None:
+            coupler.on_leg_start(self.state.person_id, leg, previous_activity, next_activity, minute_of_day)
         return True
 
     def _transition_to_activity(self, plan_state: PlanState, places_proj, cal: SimTime) -> bool:
