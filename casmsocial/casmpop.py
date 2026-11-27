@@ -64,6 +64,7 @@ from casmsocial.person import (
     PersonData,
     ScheduleBehaviorEngine,
     reset_shared_values,
+    set_transit_coupler,
 )
 from casmsocial.place import Place, PlaceData, PlacesProjectionV2
 from casmsocial.road_network import RoadNetwork
@@ -220,6 +221,10 @@ class SimEnvironment(Environment):
         # theModel = Model.get_model()
         # tick = self.runner.schedule.tick
         model = Model.get_model()
+
+        # Vehicles first, so travellers whose car arrived by now can move this tick.
+        if model is not None and getattr(model, "traffic", None) is not None:
+            self._time_model_phase(model, "tick.environment.traffic", model.advance_traffic)
 
         # move persons
         moves_to_apply = self._time_model_phase(
@@ -1088,6 +1093,10 @@ class CasmPop(Model):
             "roads.place_snap.file": "",
             "roads.mode": "drive",
             "roads.time_model": "validated_gap",
+            "traffic.enabled": False,
+            "traffic.link_model": "implied_flow",
+            "traffic.sync_window_s": 5.0,
+            "traffic.strategic_share": 0.0,
             "partition.table": "",
             "partition.default_rank": 0,
             "partition.require_full_coverage": False,
@@ -1297,6 +1306,10 @@ class CasmPop(Model):
         self.households_by_id: dict[int, Household] = {}
         self.households_by_place_id: dict[int, Household] = {}
         self.road_network: RoadNetwork | None = None
+        self._road_edge_capacity_vph: dict[int, float] = {}
+        # Vehicle mobsim for routed legs (traffic.enabled); see casmsocial.traffic.legs.
+        self.traffic = None
+        set_transit_coupler(None)
         self.communication_manager = CommunicationManager(self.comm)
 
         # **note**
@@ -1830,6 +1843,16 @@ class CasmPop(Model):
                 f"(behavior.profile_priors.required is true; on rank {self.rank}: {examples or 'none'})"
             )
 
+    def _log_traffic_summary(self) -> None:
+        """Log mobsim totals and trip delay (collective when traffic is on)."""
+        traffic = getattr(self, "traffic", None)
+        if traffic is None:
+            return
+        summary = traffic.global_summary()
+        set_transit_coupler(None)
+        if self.rank == 0:
+            logger.info("Traffic summary: {}", summary)
+
     def _log_behavior_summary(self) -> None:
         """Report adapter failures and missing priors across all ranks.
 
@@ -1963,6 +1986,7 @@ class CasmPop(Model):
         self._time_phase("startup.initialize_place_rank_index", self._initialize_place_rank_index)
         self._time_phase("startup.create_households", self.create_households)
         self._time_phase("startup.load_road_network", self.load_road_network)
+        self._time_phase("startup.create_traffic", self.create_traffic)
 
         local_places = self.places_proj.get_local_places()
         logger.info(f"rank {self.rank}: number of local places={len(local_places)}")
@@ -2079,6 +2103,45 @@ class CasmPop(Model):
         edges = self._load_road_edges(self.params["roads.edges.file"])
         place_snaps = self._load_place_snaps(self.params["roads.place_snap.file"])
         self.road_network = RoadNetwork.from_tables(nodes, edges, place_snaps)
+        self._road_edge_capacity_vph = {
+            int(edge["edge_id"]): float(edge["capacity_vph"]) for edge in edges if edge.get("capacity_vph") is not None
+        }
+
+    def create_traffic(self) -> None:
+        """Start the vehicle mobsim that carries routed legs (``traffic.enabled``)."""
+        set_transit_coupler(None)
+        self.traffic = None
+        if not self._param_enabled("traffic.enabled", False):
+            return
+        if self.road_network is None:
+            raise ValueError("traffic.enabled requires roads.enabled")
+
+        from casmsocial.traffic.legs import LegTrafficCoupler
+
+        self.traffic = LegTrafficCoupler.from_road_network(
+            self.comm,
+            self.road_network,
+            self.place_to_rank,
+            mode=self.params.get("roads.mode", "drive"),
+            capacity_vph=self._road_edge_capacity_vph,
+            link_model=self.params.get("traffic.link_model", "implied_flow"),
+            sync_window_s=float(self.params.get("traffic.sync_window_s", 5.0)),
+            strategic_share=float(self.params.get("traffic.strategic_share", 0.0)),
+            seed=_model_random_seed(self),
+        )
+        set_transit_coupler(self.traffic)
+        logger.info(
+            "Rank {}: vehicle mobsim on for routed {} legs ({} edges).",
+            self.rank,
+            self.traffic.mode,
+            len(self.traffic.mobsim.network.edges),
+        )
+
+    def advance_traffic(self) -> None:
+        """Move vehicles up to the current tick and release travellers whose car arrived (collective)."""
+        if self.traffic is None:
+            return
+        self.traffic.advance(self.cal.tick, self.cal.minute_of_day)
 
     def _load_road_nodes(self, table_or_file: str) -> list[dict]:
         """Load road-node records from the configured source."""
@@ -4289,6 +4352,7 @@ class CasmPop(Model):
     def at_end(self) -> None:
         """Actions to take at the end of the simulation."""
         self._log_behavior_summary()
+        self._log_traffic_summary()
 
         # Notify observers of the end event
         self._notify_end_observers()

@@ -1,7 +1,7 @@
 # Vehicle mobsim prototype (`casmsocial.traffic`)
 
-Status: **prototype**. It runs standalone and under MPI, and is not yet wired
-into `CasmPop` legs.
+Status: **prototype**. It runs standalone, under MPI, and behind routed
+`CasmPop` legs when `traffic.enabled` is set (off by default).
 
 ## Why
 
@@ -89,6 +89,48 @@ for tick_end in range(900, 86_400 + 1, 900):
 Edge tables may carry `capacity_vph`. Otherwise the capacity comes from
 `road_type` (`DEFAULT_CAPACITY_VPH`), which is a placeholder.
 
+## Legs in CasmPop
+
+Set `traffic.enabled: true` together with `roads.enabled: true`:
+
+```yaml
+roads.enabled: true            # routed legs, as before
+traffic.enabled: true          # carry them on the vehicle mobsim
+traffic.link_model: 'implied_flow'
+traffic.sync_window_s: 5.0
+traffic.strategic_share: 0.0
+```
+
+`LegTrafficCoupler` (`traffic/legs.py`) joins the two:
+
+* **Spawn.** When a person starts a leg in `roads.mode` that has origin and
+  destination nodes, `Person._transition_to_leg_at_minute` hands it to the
+  coupler. The vehicle departs when the previous activity ended, and the trip
+  id is that minute, so it is the same on any rank count. Unrouted legs and
+  other modes behave as before.
+* **Hold.** `Person.move_at` returns early for a held person, so neither the
+  environment step nor a behavior engine can move them into the next activity
+  while the car is on the road.
+* **Release.** At the start of each tick, before anyone moves,
+  `CasmPop.advance_traffic` runs the mobsim to the tick time and releases
+  people whose car arrived. A car that arrives early changes nothing: the
+  person still enters at the scheduled start. A late car means the person
+  enters on the first tick after arrival.
+* **Ranks.** A held person keeps the origin place as `rank_place_id`, so they
+  stay on that rank while only the vehicle migrates. Vehicles carry a
+  `home_rank`, and `VehicleMobsim.route_arrivals_home` sends each arrival
+  there with one `alltoall` per tick.
+* **Records.** Each completed leg is a `TripRecord` with departure, scheduled
+  and actual arrival, delay, free-flow time, reroutes and migrations.
+  `trip_rows()` returns them as dicts, and the end of the run logs
+  `global_summary()` (trips, delayed trips, total delay).
+
+Known approximation: a leg is found during the tick it starts in, after the
+mobsim has already run to that tick. Its car keeps its true departure time,
+but it sees link loads as of the tick, so congestion can lag departures by up
+to one tick. Finding departures one tick ahead would remove this, at the cost
+of a second plan scan per person.
+
 ## What the tests show
 
 `tests/test_traffic_mobsim.py` (single rank) and
@@ -98,6 +140,12 @@ Edge tables may carry `capacity_vph`. Otherwise the capacity comes from
   traversals equal edge entries.
 * 2- and 3-rank runs match the 1-rank mean trip time within 0.5%, and over
   95% of trips match within 2%.
+* `tests/test_traffic_legs.py` runs the MVP day with traffic on. Free-flow
+  legs keep the schedule. Squeezing one edge's capacity delays one person
+  past their 09:00 start, and they stay in transit until the tick after their
+  car arrives. `tests/test_traffic_legs_mpi.py` runs the same day on 2 ranks,
+  where person 2's cars cross ranks. The trips and every person's place at
+  every tick match the 1-rank run.
 * A 30% strategic share cuts mean trip time on a bottleneck by more than 5%.
   A 100% share herds drivers onto the same detours: more than twice the link
   entries and longer trips. This is the effect BATSim models.
@@ -120,9 +168,13 @@ the mobsim loop itself.
    Wake trips on a county network. Route on the spawning rank, cache by
    (origin node, destination node, time bin), and consider a compiled router
    (contraction hierarchies).
-2. **CasmPop integration.** When a person enters a `Leg`, spawn a vehicle.
-   On arrival, start the next activity at the actual arrival time instead of
-   the scheduled one, and log the delay.
+2. **CasmPop integration.** Done for routed legs (see *Legs in CasmPop*).
+   Still to do:
+   * Look ahead one tick for departures.
+   * Decide what a person does when the car arrives after the next activity
+     has ended. Today they stay off-place until a later activity starts.
+   * Let behavior engines react to the delay. Delay is recorded but no engine
+     reads it yet.
 3. **In-transit heat exposure.** Vehicles know their current edge, so the
    Wake model can look up weather along the route instead of skipping
    in-transit agents.
@@ -130,5 +182,6 @@ the mobsim loop itself.
    calibration against NCDOT counts.
 5. **Spillback.** Add MATSim-style queues only if BPR proves too optimistic
    in validation. This needs per-edge storage limits and ordered link exits.
-6. **Outputs.** Add a casmdb channel for the link travel-time profile and per-trip
-   arrivals (delay, reroutes), and a casmservice map layer for vehicles.
+6. **Outputs.** Add a casmdb channel for the link travel-time profile and the
+   `TripRecord` rows (delay, reroutes), and a casmservice map layer for
+   vehicles.

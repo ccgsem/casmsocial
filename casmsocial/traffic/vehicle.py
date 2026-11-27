@@ -44,6 +44,7 @@ class Vehicle(core.Agent):
         strategic: bool = False,
         n_reroutes: int = 0,
         n_migrations: int = 0,
+        home_rank: int | None = None,
     ) -> None:
         super().__init__(id=local_id, type=Vehicle.TYPE, rank=rank)
         self.person_id = int(person_id)
@@ -60,6 +61,8 @@ class Vehicle(core.Agent):
         self.strategic = bool(strategic)
         self.n_reroutes = int(n_reroutes)
         self.n_migrations = int(n_migrations)
+        # Rank that holds the traveller; arrivals are reported back there.
+        self.home_rank = int(rank if home_rank is None else home_rank)
 
     @property
     def on_edge(self) -> bool:
@@ -95,6 +98,7 @@ class Vehicle(core.Agent):
                 self.strategic,
                 self.n_reroutes,
                 self.n_migrations,
+                self.home_rank,
             ),
         )
 
@@ -115,6 +119,7 @@ class Vehicle(core.Agent):
             strategic,
             n_reroutes,
             n_migrations,
+            home_rank,
         ) = state
         return Vehicle(
             uid[0],
@@ -132,4 +137,5 @@ class Vehicle(core.Agent):
             strategic=strategic,
             n_reroutes=n_reroutes,
             n_migrations=n_migrations,
+            home_rank=home_rank,
         )
