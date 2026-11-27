@@ -37,31 +37,53 @@ def assign_node_ranks(
     node_rank: dict[int, int] = {
         node_id: min(counter.items(), key=lambda item: (-item[1], item[0]))[0] for node_id, counter in votes.items()
     }
+    node_rank = _spread_labels(network, node_rank)
 
+    for node_id in network.nodes:
+        node_rank.setdefault(node_id, default_rank)
+    return node_rank
+
+
+def nearest_place_by_node(network: TrafficNetwork) -> dict[int, int]:
+    """Return ``node_id -> place_id`` of the nearest snapped place by hop count.
+
+    A node with snapped places takes the lowest of their ids. Other nodes take
+    the label of the nearest such node over the undirected road graph (ties to
+    the lowest place id). Nodes not connected to any snapped place are left
+    out. Used to look up per-place data, such as weather, for a vehicle's
+    position.
+    """
+    seeds: dict[int, int] = {}
+    for place_id, node_id in network.road_network.place_to_node.items():
+        if node_id in network.nodes and (node_id not in seeds or place_id < seeds[node_id]):
+            seeds[node_id] = int(place_id)
+    return _spread_labels(network, seeds)
+
+
+def _spread_labels(network: TrafficNetwork, seeds: Mapping[int, int]) -> dict[int, int]:
+    """Label unlabelled nodes with the lowest label among the nearest labelled nodes (by hop count)."""
+    labels = dict(seeds)
     neighbours: dict[int, set[int]] = {node_id: set() for node_id in network.nodes}
     for edge in network.edges.values():
         neighbours[edge.from_node_id].add(edge.to_node_id)
         neighbours[edge.to_node_id].add(edge.from_node_id)
 
     # Level-synchronous BFS from all labelled nodes; on each level a node takes
-    # the lowest rank among the neighbours that reached it, so the result does
+    # the lowest label among the neighbours that reached it, so the result does
     # not depend on dict iteration order.
-    frontier = sorted(node_rank)
+    frontier = sorted(labels)
     while frontier:
         claims: dict[int, int] = {}
         for node_id in frontier:
-            rank = node_rank[node_id]
-            for other in neighbours[node_id]:
-                if other in node_rank:
+            label = labels[node_id]
+            for other in neighbours.get(node_id, ()):
+                if other in labels:
                     continue
-                if other not in claims or rank < claims[other]:
-                    claims[other] = rank
-        node_rank.update(claims)
+                if other not in claims or label < claims[other]:
+                    claims[other] = label
+        labels.update(claims)
         frontier = sorted(claims)
-
-    for node_id in network.nodes:
-        node_rank.setdefault(node_id, default_rank)
-    return node_rank
+    return labels
 
 
 def edges_per_rank(network: TrafficNetwork, node_rank: Mapping[int, int]) -> Counter:
@@ -77,4 +99,4 @@ def boundary_edge_share(network: TrafficNetwork, node_rank: Mapping[int, int]) -
     return crossing / len(network.edges)
 
 
-__all__ = ["assign_node_ranks", "boundary_edge_share", "edges_per_rank"]
+__all__ = ["assign_node_ranks", "boundary_edge_share", "edges_per_rank", "nearest_place_by_node"]

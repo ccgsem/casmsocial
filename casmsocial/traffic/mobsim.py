@@ -69,6 +69,17 @@ class Arrival:
         return 1.0 if travel <= 0 else self.free_flow_s / travel
 
 
+@dataclass(frozen=True)
+class VehiclePosition:
+    """Where a trip's vehicle is: waiting at or leaving ``node_id``, on ``edge_id`` (``NO_EDGE`` when at a node)."""
+
+    person_id: int
+    trip_id: int
+    node_id: int
+    edge_id: int
+    home_rank: int
+
+
 @dataclass
 class MobsimStats:
     spawned: int = 0
@@ -344,14 +355,41 @@ class VehicleMobsim:
         A vehicle usually finishes on the rank that owns its destination node,
         while the traveller is still anchored on the rank it left from.
         """
+        arrivals, _ = self.route_home(with_positions=False)
+        return arrivals
+
+    def vehicle_positions(self) -> list[VehiclePosition]:
+        """Positions of the vehicles on this rank."""
+        return [
+            VehiclePosition(vehicle.person_id, vehicle.trip_id, vehicle.node_id, vehicle.cur_edge, vehicle.home_rank)
+            for vehicle in self._vehicles.values()
+        ]
+
+    def route_home(self, with_positions: bool = True) -> tuple[list[Arrival], list[VehiclePosition]]:
+        """Drain arrivals and, optionally, collect vehicle positions, delivering both to each
+        vehicle's ``home_rank`` in one ``alltoall`` (collective).
+
+        Vehicles queued to migrate are reported from this rank, at the node
+        they reached.
+        """
         arrivals = self.drain_arrivals()
+        positions = self.vehicle_positions() if with_positions else []
         size = self.comm.Get_size()
         if size == 1:
-            return arrivals
-        outgoing: list[list[Arrival]] = [[] for _ in range(size)]
+            return arrivals, positions
+        outgoing: list[tuple[list[Arrival], list[VehiclePosition]]] = [([], []) for _ in range(size)]
         for arrival in arrivals:
-            outgoing[arrival.home_rank if 0 <= arrival.home_rank < size else self.rank].append(arrival)
-        return [arrival for part in self.comm.alltoall(outgoing) for arrival in part]
+            outgoing[self._home(arrival.home_rank, size)][0].append(arrival)
+        for position in positions:
+            outgoing[self._home(position.home_rank, size)][1].append(position)
+        received = self.comm.alltoall(outgoing)
+        return (
+            [arrival for part, _ in received for arrival in part],
+            [position for _, part in received for position in part],
+        )
+
+    def _home(self, home_rank: int, size: int) -> int:
+        return home_rank if 0 <= home_rank < size else self.rank
 
     def local_link_loads(self) -> dict[int, int]:
         return {edge_id: count for edge_id, count in self.link_count.items() if count > 0}
