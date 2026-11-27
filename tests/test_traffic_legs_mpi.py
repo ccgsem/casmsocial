@@ -93,3 +93,13 @@ def test_jammed_leg_is_late_on_both_rank_counts(runs):
         late = [trip for trip in run["trips"] if trip[0] == 1 and trip[3] > trip[4]]
         assert len(late) == 1
         assert run["summary"]["trips_delayed"] == 1
+
+
+def test_held_traveller_positions_match_one_rank(runs):
+    one, two = runs[1], runs[2]
+    assert one["transit"], "the jammed leg should hold person 1 across ticks"
+    assert _without_rank(one["transit"], 3) == _without_rank(two["transit"], 3)
+    # Person 1's jammed car leaves place 100's node and is reported on the way.
+    places = {place for minute, person, place, _ in one["transit"] if person == 1}
+    assert places <= {100, 300}
+    assert 100 in places

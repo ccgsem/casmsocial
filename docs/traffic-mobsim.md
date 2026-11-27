@@ -120,6 +120,13 @@ traffic.strategic_share: 0.0
   stay on that rank while only the vehicle migrates. Vehicles carry a
   `home_rank`, and `VehicleMobsim.route_arrivals_home` sends each arrival
   there with one `alltoall` per tick.
+* **Positions.** The same `alltoall` also carries every car's position
+  (`VehiclePosition`: node, edge) home, so `coupler.positions` says where each
+  held traveller is as of the tick. `transit_place(person_id)` turns that into
+  the nearest snapped place by road hops (`nearest_place_by_node`), falling
+  back to the leg's origin place before the car's first report. Models use it
+  to look up per-place data, such as weather, for people on the road. Pass
+  `track_positions=False` to skip this.
 * **Records.** Each completed leg is a `TripRecord` with departure, scheduled
   and actual arrival, delay, free-flow time, reroutes and migrations.
   `trip_rows()` returns them as dicts, and the end of the run logs
@@ -175,9 +182,11 @@ the mobsim loop itself.
      has ended. Today they stay off-place until a later activity starts.
    * Let behavior engines react to the delay. Delay is recorded but no engine
      reads it yet.
-3. **In-transit heat exposure.** Vehicles know their current edge, so the
-   Wake model can look up weather along the route instead of skipping
-   in-transit agents.
+3. **In-transit heat exposure.** casmsocial side done: `transit_place` gives
+   the place nearest a held traveller's car. wake-county-heat-risk reads
+   weather there for people on the road instead of skipping them. Still to
+   do: use the microweather grid cell under the car (needs node or edge
+   `gridindex`) instead of the nearest place.
 4. **Capacities.** Wake edges need lanes and capacity from OSM tags, or a
    calibration against NCDOT counts.
 5. **Spillback.** Add MATSim-style queues only if BPR proves too optimistic

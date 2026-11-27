@@ -260,3 +260,52 @@ def test_congested_leg_delays_entering_the_activity(mvp_model_factory):
         assert places[minute][1] == 0, minute
     assert places[first_tick_after][1] == 300
     assert places[540][2] == 300
+
+
+# ----------------------------------------------------------------------
+# Where held travellers are
+# ----------------------------------------------------------------------
+
+
+def test_nearest_place_by_node_spreads_snapped_places_by_hop_count():
+    from casmsocial.traffic import TrafficNetwork, nearest_place_by_node
+    from tests.traffic_fixtures import grid_tables
+
+    nodes, edges, _ = grid_tables(5, 1)  # nodes 0-1-2-3-4 in a row
+    snaps = [{"place_id": 70, "road_node_id": 0}, {"place_id": 50, "road_node_id": 4}, {"place_id": 60, "road_node_id": 4}]
+    network = TrafficNetwork.from_tables(nodes, edges, snaps)
+    # Node 4 holds two places and keeps the lower id; node 2 is a tie and takes the lower id.
+    assert nearest_place_by_node(network) == {0: 70, 1: 70, 2: 50, 3: 50, 4: 50}
+
+
+def test_held_traveller_position_follows_the_car():
+    network = grid_network(6, 1)  # 0..5 in a row, ~67 s per edge
+    coupler = LegTrafficCoupler(VehicleMobsim(MPI.COMM_SELF, network, assign_node_ranks(network, {})))
+    coupler.advance(tick_min=0, minute_of_day=0)
+    coupler.on_leg_start(1, _leg(0, 5), _act(0, 0, 1000), _act(60, 120, 1005), minute_of_day=0)
+
+    # Spawned this tick: no reported position yet, so the origin place stands in.
+    assert coupler.transit_node(1) is None
+    assert coupler.transit_place(1) == 1000
+
+    coupler.advance(tick_min=2, minute_of_day=2)  # 120 s in: on the second edge
+    position = coupler.positions[1]
+    assert position.node_id == 1
+    assert position.edge_id != -1
+    assert coupler.transit_place(1) == 1001
+
+    coupler.advance(tick_min=30, minute_of_day=30)  # arrived and released
+    assert coupler.transit_place(1) is None
+    assert coupler.positions == {}
+
+
+def test_positions_can_be_turned_off():
+    network = grid_network(6, 1)
+    coupler = LegTrafficCoupler(
+        VehicleMobsim(MPI.COMM_SELF, network, assign_node_ranks(network, {})), track_positions=False
+    )
+    coupler.advance(tick_min=0, minute_of_day=0)
+    coupler.on_leg_start(1, _leg(0, 5), _act(0, 0, 1000), _act(60, 120, 1005), minute_of_day=0)
+    coupler.advance(tick_min=2, minute_of_day=2)
+    assert coupler.positions == {}
+    assert coupler.transit_place(1) == 1000

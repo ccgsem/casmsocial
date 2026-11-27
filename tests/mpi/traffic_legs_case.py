@@ -66,10 +66,13 @@ def main() -> None:
         network.edges[1] = dataclasses.replace(network.edges[1], capacity_vph=jam_capacity)
 
     timeline = []  # (minute_of_day, person_id, place_id, rank)
+    transit = []  # (minute_of_day, person_id, transit_place, rank) for held travellers
     for _ in range(24 * 60 // model.time_step_minutes):
         model.step()
         for person in model.context.agents(agent_type=Person.TYPE):
             timeline.append((model.cal.minute_of_day, person.id, person.place_id, rank))
+        for person_id in model.traffic.held:
+            transit.append((model.cal.minute_of_day, person_id, model.traffic.transit_place(person_id), rank))
 
     summary = model.traffic.global_summary()
     records = [
@@ -78,6 +81,7 @@ def main() -> None:
     ]
     all_records = comm.gather(records, root=0)
     all_timeline = comm.gather(timeline, root=0)
+    all_transit = comm.gather(transit, root=0)
     vehicle_node_rank = model.traffic.mobsim.node_rank
 
     if rank == 0:
@@ -88,6 +92,7 @@ def main() -> None:
                 "node_rank": {str(k): v for k, v in sorted(vehicle_node_rank.items())},
                 "trips": sorted(item for part in all_records for item in part),
                 "timeline": sorted(item for part in all_timeline for item in part),
+                "transit": sorted(item for part in all_transit for item in part),
             })
         )
 

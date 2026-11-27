@@ -11,6 +11,11 @@ The person stays on the rank of its origin place while held: casmsocial keeps
 ``rank_place_id`` at the origin during a leg, and only the vehicle migrates.
 Arrivals are routed back to that rank (``VehicleMobsim.route_arrivals_home``).
 
+Position: each ``advance`` also brings home where every held traveller's car
+is, as of the tick time. ``transit_place`` turns that into the nearest place
+snapped to the road network, so per-place data such as weather can be looked
+up for people on the road.
+
 Timing: ``advance`` runs at the start of a tick, before anyone moves, so a
 released person enters the activity on the same tick their car arrives. Legs
 are discovered during the tick in which they start. They keep their scheduled
@@ -28,9 +33,9 @@ from mpi4py import MPI
 
 from casmsocial.activities import Act, Leg
 from casmsocial.road_network import RoadNetwork
-from casmsocial.traffic.mobsim import Arrival, VehicleMobsim
+from casmsocial.traffic.mobsim import Arrival, VehicleMobsim, VehiclePosition
 from casmsocial.traffic.network import TrafficNetwork
-from casmsocial.traffic.partition import assign_node_ranks
+from casmsocial.traffic.partition import assign_node_ranks, nearest_place_by_node
 
 MINUTES_PER_DAY = 24 * 60
 
@@ -75,11 +80,15 @@ class LegTrafficCoupler:
     ``advance`` is collective; every rank must call it once per tick.
     """
 
-    def __init__(self, mobsim: VehicleMobsim, mode: str = "drive") -> None:
+    def __init__(self, mobsim: VehicleMobsim, mode: str = "drive", track_positions: bool = True) -> None:
         self.mobsim = mobsim
         self.mode = mode
+        self.track_positions = track_positions
         self.rank = mobsim.rank
         self.held: dict[int, _PendingTrip] = {}
+        # person_id -> where their car was at the last advance (held travellers on this rank only).
+        self.positions: dict[int, VehiclePosition] = {}
+        self._place_by_node: dict[int, int] | None = None
         self.trip_records: list[TripRecord] = []
         self.skipped_legs = 0
         self._tick_min = 0.0
@@ -125,13 +134,41 @@ class LegTrafficCoupler:
         self._tick_min = float(tick_min)
         self._minute_of_day = int(minute_of_day)
         self.mobsim.advance_to(self._tick_min * 60.0)
-        completed = [self._release(arrival) for arrival in self.mobsim.route_arrivals_home()]
+        arrivals, positions = self.mobsim.route_home(with_positions=self.track_positions)
+        completed = [self._release(arrival) for arrival in arrivals]
         completed = [record for record in completed if record is not None]
+        held = self.held
+        self.positions = {
+            position.person_id: position
+            for position in positions
+            if position.person_id in held and held[position.person_id].trip_id == position.trip_id
+        }
         self.trip_records.extend(completed)
         return completed
 
     def is_held(self, person_id: int) -> bool:
         return person_id in self.held
+
+    def transit_node(self, person_id: int) -> int | None:
+        """Road node a held traveller's car was at, or leaving, at the last ``advance``."""
+        position = self.positions.get(person_id)
+        return position.node_id if position is not None else None
+
+    def transit_place(self, person_id: int) -> int | None:
+        """Nearest snapped place to a held traveller's car; None when not held.
+
+        Before the car's first reported position (it was spawned this tick),
+        this is the leg's origin place.
+        """
+        pending = self.held.get(person_id)
+        if pending is None:
+            return None
+        node_id = self.transit_node(person_id)
+        if node_id is None:
+            return pending.origin_place_id
+        if self._place_by_node is None:
+            self._place_by_node = nearest_place_by_node(self.mobsim.network)
+        return self._place_by_node.get(node_id, pending.origin_place_id)
 
     def on_leg_start(
         self,
