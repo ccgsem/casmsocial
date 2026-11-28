@@ -67,6 +67,33 @@ The subprocesses have a timeout so a collective deadlock fails the test.
 These tests do not exercise a live scientific model or durable retrieval after
 runner/gateway restart; those remain separate gates.
 
+## Supervised one-run mode
+
+`python -m casmsocial.grpc_runner --run-dir PATH --supervised` is for a
+supervisor that restarts the job after every run, such as the casmdb stack's
+`casmsocial-runner` Compose service under CASMService's prelaunch backend.
+
+- Rank 0 removes endpoint files and `.staging-*` folders an earlier job left,
+  starts its servers in a staging folder, and moves `arrow_endpoint.txt` and
+  then `runner_endpoints.json` into the run directory once both listen, so a
+  polling gateway never reads a half-written manifest.
+- The manifest declares `durable_observations` and `cooperative_cancellation`.
+  CASMService then sets `runner.artifact_root` and points
+  `observers.output_dir` at it, so the run's Parquet output lands on storage
+  the gateway reads.
+- After the run, rank 0 writes `{"state": "Completed" | "Failed" | "Cancelled"}`
+  to `<runner.artifact_root>/manifest.json` (CASMService reads it if the job
+  has exited before the gateway asked), keeps serving for `--drain-seconds`
+  (default 30, `CASMSOCIAL_RUNNER_DRAIN_SECONDS`), withdraws its endpoint files
+  and exits 0, 4 or 143.
+- A failure after collective dispatch still aborts the MPI job, as above; it
+  then exits without a durable state.
+
+Without `--supervised` nothing changes: the run directory is used as given and
+the job serves until it is stopped. Tests: `tests/test_grpc_runner_supervised.py`
+and the supervised cases in `tests/test_grpc_runner_mpi.py` (two ranks,
+completed and cancelled).
+
 ## MPI failure handling
 
 Before dispatch, malformed configuration, listener startup failures and startup

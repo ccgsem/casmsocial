@@ -133,3 +133,43 @@ def test_cli_collective_run_owns_endpoints_only_on_rank0(tmp_path, ranks, mode):
             assert item["endpoint_writes"] > 0 if item["rank"] == 0 else item["endpoint_writes"] == 0
     finally:
         stop_fixture(process, tmp_path)
+
+
+@pytest.mark.parametrize("ranks,mode,code", [(2, "complete", 0), (2, "cancel", 143)])
+def test_supervised_collective_run_exits_after_one_run(tmp_path, ranks, mode, code):
+    harness = Path(__file__).parent / "mpi" / "runner_supervised_case.py"
+    process = subprocess.Popen(
+        [MPI_LAUNCHER, "-n", str(ranks), sys.executable, str(harness), str(tmp_path)],
+        cwd=harness.parents[2],
+        env=dict(os.environ, MPI4PY_RC_THREAD_LEVEL="funneled"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    run_dir, artifacts = tmp_path / "run", tmp_path / "artifacts"
+    try:
+        manifest_path = run_dir / "runner_endpoints.json"
+        wait_until(manifest_path.exists, process, "endpoint manifest")
+        manifest = json.loads(manifest_path.read_text())
+        assert manifest["capabilities"]["durable_observations"] is True
+        params = {"runner.entry_point": "__main__:CollectiveAdapter", "mode": mode,
+                  "runner.artifact_root": str(artifacts)}
+        with grpc.insecure_channel(manifest["control"]["address"]) as channel:
+            client = rpc.SimulatorControlStub(channel)
+            client.Start(pb.StartRequest(run_id="run-1", config_json=json.dumps(params).encode()), timeout=5)
+            if mode == "cancel":
+                assert client.Cancel(pb.CancelRequest(run_id="run-1"), timeout=5).acknowledged
+            expected = pb.RUN_STATE_CANCELLED if mode == "cancel" else pb.RUN_STATE_COMPLETED
+            wait_until(
+                lambda: client.GetState(pb.GetStateRequest(run_id="run-1"), timeout=5).state == expected,
+                process,
+                "terminal state during the drain window",
+            )
+        stdout, stderr = process.communicate(timeout=30)
+        assert process.returncode == code, stdout + stderr
+        state = {"complete": "Completed", "cancel": "Cancelled"}[mode]
+        assert json.loads((artifacts / "manifest.json").read_text())["state"] == state
+        assert list(run_dir.iterdir()) == []
+    finally:
+        stop_fixture(process, tmp_path)
