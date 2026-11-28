@@ -4,6 +4,17 @@ Launch with ``python -m casmsocial.grpc_runner --run-dir PATH`` or
 ``mpirun -n N python -m casmsocial.grpc_runner --run-dir PATH``. Only rank 0
 opens transport listeners. All ranks execute the submitted model on their main
 thread; CASMSim's callback waits for rank 0 to finish execution and flushing.
+
+``--supervised`` is for a supervisor that restarts the job after every run
+(the stack's Compose runner service, under CASMService's prelaunch backend).
+Rank 0 clears endpoint files an earlier job left, publishes its own
+atomically once both servers listen, and declares durable observations, so
+CASMService points ``observers.output_dir`` at a shared artifact root. After
+the run it records the final state in ``<artifact root>/manifest.json``, keeps
+serving for ``--drain-seconds`` so the gateway sees the final state, withdraws
+its endpoint files and exits 0, 4 or 143 (completed, failed, cancelled).
+Without it, the run directory is used as given and the job serves until it is
+stopped.
 """
 
 from __future__ import annotations
@@ -11,13 +22,16 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
+import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event, Lock, current_thread, main_thread
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
-from casmsim.flight_server import start_broker_flight_server
+from casmsim.flight_server import ENDPOINT_FILENAME as FLIGHT_ENDPOINT_FILENAME, start_broker_flight_server
 from casmsim.grpc_runner import ENDPOINT_FILENAME, resolve_adapter, start_control_server
 from casmsim.mpi_lifecycle import get_comm
 from casmsim.observation_broker import ObservationBroker
@@ -29,6 +43,12 @@ if TYPE_CHECKING:
 _CASMPOP_ENTRY_POINT = "casmsocial.adapters.runner:CasmPopAdapter"
 _MSG_START = "start"
 _MSG_ABORT = "abort"
+#: casm.runner.v1 exit codes for a supervised job.
+_EXIT_CODES = {"Completed": 0, "Failed": 4, "Cancelled": 143}
+_SUPERVISED_CAPABILITIES = {
+    "durable_observations": True,
+    "cooperative_cancellation": True,
+}
 
 
 @dataclass(frozen=True)
@@ -118,6 +138,25 @@ class _MainThreadRunHandoff:
         if adapter is not None:
             adapter.cancel()
         return True
+
+    @property
+    def request(self) -> _RunRequest | None:
+        """The accepted run request, if one arrived."""
+        with self._lock:
+            return self._request
+
+    def outcome(self) -> str | None:
+        """How the run ended: Completed, Failed or Cancelled; ``None`` while it runs.
+
+        Matches the state CASMSim reports: an error is Failed, a cancellation
+        acknowledged before completion is Cancelled, anything else Completed.
+        """
+        with self._lock:
+            if not self._finished or self._request is None:
+                return None
+            if self._error is not None:
+                return "Failed"
+            return "Cancelled" if self._cancel_requested else "Completed"
 
     def complete(self, error: BaseException | None = None) -> None:
         """Release the callback, propagating ``error`` when one was supplied."""
@@ -386,19 +425,100 @@ def start_runner(
     return control, flights
 
 
+def clear_stale_endpoints(run_dir: Path) -> None:
+    """Remove the endpoint files and staging folders an earlier job left."""
+    for name in (ENDPOINT_FILENAME, FLIGHT_ENDPOINT_FILENAME):
+        (run_dir / name).unlink(missing_ok=True)
+    for staging in run_dir.glob(".staging-*"):
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def _replace_file(target: Path, text: str) -> None:
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    temporary.write_text(text, encoding="utf-8")
+    temporary.chmod(0o600)
+    temporary.replace(target)
+
+
+def publish_endpoints(run_dir: Path, staging: Path) -> dict:
+    """Move staged endpoints into ``run_dir``, Flight first and the manifest last."""
+    manifest = json.loads((staging / ENDPOINT_FILENAME).read_text(encoding="utf-8"))
+    manifest["capabilities"] = dict(_SUPERVISED_CAPABILITIES)
+    _replace_file(run_dir / FLIGHT_ENDPOINT_FILENAME,
+                  (staging / FLIGHT_ENDPOINT_FILENAME).read_text(encoding="utf-8"))
+    _replace_file(run_dir / ENDPOINT_FILENAME, json.dumps(manifest) + "\n")
+    return manifest
+
+
+def withdraw_endpoints(run_dir: Path, manifest: dict) -> None:
+    """Remove this job's endpoint files, unless a newer job replaced them."""
+    target = run_dir / ENDPOINT_FILENAME
+    try:
+        current = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if isinstance(current, dict) and current.get("control") == manifest.get("control"):
+        target.unlink(missing_ok=True)
+        (run_dir / FLIGHT_ENDPOINT_FILENAME).unlink(missing_ok=True)
+
+
+def record_durable_state(request: _RunRequest | None, state: str) -> None:
+    """Write ``manifest.json`` under the run's artifact root, when it has one.
+
+    CASMService reads the state from here if the job has exited before the
+    gateway asked for it.
+    """
+    if request is None:
+        return
+    try:
+        params = json.loads(request.config_json)
+        root = params.get("runner.artifact_root") if isinstance(params, dict) else None
+        if not isinstance(root, str) or not Path(root).is_absolute():
+            return
+        root_path = Path(root)
+        root_path.mkdir(parents=True, exist_ok=True)
+        _replace_file(root_path / "manifest.json",
+                      json.dumps({"schema_version": 1, "run_id": request.run_id, "state": state}) + "\n")
+    except (OSError, ValueError):
+        logging.getLogger(__name__).exception("could not record the run's durable state")
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--run-dir", required=True, type=Path)
+    parser.add_argument("--supervised", action="store_true",
+                        help="clear stale endpoints, serve one run, then exit (for a restarting supervisor)")
+    parser.add_argument("--drain-seconds", type=float,
+                        default=float(os.getenv("CASMSOCIAL_RUNNER_DRAIN_SECONDS", "30")),
+                        help="supervised mode: keep serving this long after the run ends (default 30)")
     args = parser.parse_args()
     _require_main_thread()
     comm = get_comm()
     if comm is not None and comm.Get_rank() != 0:
         _worker_main(comm)
         return 0
+    run_dir = args.run_dir
+    endpoint_dir = run_dir
+    if args.supervised:
+        run_dir = run_dir.resolve()
+        run_dir.mkdir(parents=True, exist_ok=True)
+        clear_stale_endpoints(run_dir)
+        endpoint_dir = run_dir / f".staging-{os.getpid()}"
     broker = ObservationBroker()
     handoff = _MainThreadRunHandoff()
+    manifest: dict = {}
     try:
-        control, flights = start_runner(args.run_dir, broker=broker, handoff=handoff)
+        control, flights = start_runner(endpoint_dir, broker=broker, handoff=handoff)
+        if args.supervised:
+            try:
+                run_dir.chmod(0o700)
+                manifest = publish_endpoints(run_dir, endpoint_dir)
+            except BaseException:
+                try:
+                    control.stop(0).wait()
+                finally:
+                    flights.shutdown()
+                raise
     except BaseException as error:
         # Workers entered their broadcast path before rank 0 opened listeners.
         # They must be released if listener or manifest initialization fails.
@@ -408,11 +528,18 @@ def main() -> int:
         finally:
             _release_waiting_workers(comm, comm.Get_size() if comm is not None else 1)
         raise
+    code = 0
     try:
         _rank0_main(comm, handoff, broker)
-        # Keep completed observations available until the supervisor stops the
-        # process, matching the existing single-run transport lifecycle.
-        control.wait_for_termination()
+        if args.supervised:
+            state = handoff.outcome() or "Failed"
+            record_durable_state(handoff.request, state)
+            time.sleep(max(args.drain_seconds, 0.0))
+            code = _EXIT_CODES[state]
+        else:
+            # Keep completed observations available until the supervisor stops
+            # the process, matching the existing single-run transport lifecycle.
+            control.wait_for_termination()
     except KeyboardInterrupt:
         pass
     finally:
@@ -420,7 +547,11 @@ def main() -> int:
             control.stop(0).wait()
         finally:
             flights.shutdown()
-    return 0
+            if args.supervised:
+                if manifest:
+                    withdraw_endpoints(run_dir, manifest)
+                shutil.rmtree(endpoint_dir, ignore_errors=True)
+    return code
 
 
 if __name__ == "__main__":
