@@ -12,11 +12,11 @@ forbidden_package_types:
 metadata_overrides:
   duckdb:
     package_type: pypi
-    version: 1.5.5
+    version: 2.0.1
     license: MIT
-    source_url: https://github.com/duckdb/duckdb-python/blob/v1.5.5/LICENSE
+    source_url: https://github.com/duckdb/duckdb-python/blob/v2.0.1/LICENSE
     evidence:
-      - path: /app/.venv/lib/python3.12/site-packages/duckdb-1.5.5.dist-info/licenses/LICENSE
+      - path: /app/.venv/lib/python3.12/site-packages/duckdb-2.0.1.dist-info/licenses/LICENSE
         sha256: 075c33400ffcb0c586dd106a029d3e733e9da3693f8fcb9cebfc651c8a2f14e3
   jinja2:
     package_type: pypi
